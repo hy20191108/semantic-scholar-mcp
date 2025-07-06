@@ -1,0 +1,326 @@
+@startuml semantic-scholar-mcp-class-diagram
+!theme plain
+skinparam classAttributeIconSize 0
+
+' Core Protocols (Interfaces)
+interface ILogger {
+  +debug(message: str, **kwargs: Any): None
+  +info(message: str, **kwargs: Any): None
+  +warning(message: str, **kwargs: Any): None
+  +error(message: str, exception: Exception, **kwargs: Any): None
+}
+
+interface ICache {
+  +get(key: str): Awaitable[Optional[Any]]
+  +set(key: str, value: Any, ttl: int): Awaitable[None]
+  +delete(key: str): Awaitable[None]
+  +clear(): Awaitable[None]
+  +exists(key: str): Awaitable[bool]
+}
+
+interface ICircuitBreaker {
+  +call(func: Callable, *args, **kwargs): Awaitable[Any]
+  +get_state(): str
+  +reset(): None
+}
+
+interface IRateLimiter {
+  +acquire(tokens: int): Awaitable[bool]
+  +wait_if_needed(tokens: int): Awaitable[None]
+  +get_status(): Dict[str, Any]
+}
+
+interface IMetricsCollector {
+  +increment(metric: str, value: float, tags: Dict[str, str]): None
+  +gauge(metric: str, value: float, tags: Dict[str, str]): None
+  +histogram(metric: str, value: float, tags: Dict[str, str]): None
+  +timing(metric: str, value: float, tags: Dict[str, str]): None
+}
+
+' Base Models
+abstract class BaseEntity {
+  +id: Optional[str]
+  +created_at: Optional[datetime]
+  +updated_at: Optional[datetime]
+  +metadata: Dict[str, Any]
+  +validate_id(): Optional[str]
+}
+
+abstract class CacheableModel {
+  +generate_cache_key(): str
+  +cache_ttl: int
+}
+
+' Domain Models
+class Paper {
+  +paper_id: PaperId
+  +title: str
+  +abstract: Optional[str]
+  +year: Optional[int]
+  +venue: Optional[str]
+  +authors: List[Author]
+  +citation_count: int
+  +reference_count: int
+  +influential_citation_count: int
+  +external_ids: Dict[str, str]
+  +url: Optional[str]
+  +fields_of_study: List[str]
+  +validate_title(): str
+  +validate_year(): Optional[int]
+  +validate_metrics(): Paper
+  +generate_cache_key(): str
+}
+
+class Author {
+  +author_id: Optional[AuthorId]
+  +name: str
+  +aliases: List[str]
+  +affiliations: List[str]
+  +homepage: Optional[str]
+  +citation_count: Optional[int]
+  +h_index: Optional[int]
+  +paper_count: Optional[int]
+  +validate_name(): str
+}
+
+class Citation {
+  +paper_id: PaperId
+  +title: str
+  +year: Optional[int]
+  +authors: List[Author]
+  +venue: Optional[str]
+  +citation_count: int
+  +is_influential: bool
+  +contexts: List[str]
+  +intents: List[str]
+}
+
+class Reference {
+  +paper_id: Optional[PaperId]
+  +title: str
+  +year: Optional[int]
+  +authors: List[Author]
+  +venue: Optional[str]
+  +citation_count: Optional[int]
+}
+
+class SearchQuery {
+  +query: str
+  +fields: Optional[List[str]]
+  +filters: Optional[SearchFilters]
+  +offset: int
+  +limit: int
+  +sort: Optional[str]
+  +validate_query(): str
+}
+
+class SearchFilters {
+  +year: Optional[int]
+  +year_range: Optional[Tuple[int, int]]
+  +publication_types: Optional[List[PublicationType]]
+  +fields_of_study: Optional[List[str]]
+  +venues: Optional[List[str]]
+  +open_access_only: bool
+  +min_citation_count: Optional[int]
+  +validate_year_range(): SearchFilters
+}
+
+' API Client Components
+class SemanticScholarClient {
+  -config: SemanticScholarConfig
+  -logger: ILogger
+  -cache: Optional[ICache]
+  -circuit_breaker: CircuitBreaker
+  -rate_limiter: TokenBucketRateLimiter
+  -retry_strategy: ExponentialBackoffRetryStrategy
+  -_client: Optional[httpx.AsyncClient]
+  +search_papers(query: SearchQuery, fields: Optional[Fields]): Awaitable[PaginatedResponse[Paper]]
+  +get_paper(paper_id: PaperId, fields: Optional[Fields], include_citations: bool, include_references: bool): Awaitable[Paper]
+  +get_paper_citations(paper_id: PaperId, fields: Optional[Fields], offset: int, limit: int): Awaitable[List[Citation]]
+  +get_paper_references(paper_id: PaperId, fields: Optional[Fields], offset: int, limit: int): Awaitable[List[Reference]]
+  +batch_get_papers(paper_ids: List[PaperId], fields: Optional[Fields]): Awaitable[List[Paper]]
+  +get_author(author_id: AuthorId, fields: Optional[Fields]): Awaitable[Author]
+  +get_author_papers(author_id: AuthorId, fields: Optional[Fields], offset: int, limit: int): Awaitable[PaginatedResponse[Paper]]
+  +search_authors(query: str, fields: Optional[Fields], offset: int, limit: int): Awaitable[PaginatedResponse[Author]]
+  +get_recommendations(paper_id: PaperId, fields: Optional[Fields], limit: int): Awaitable[List[Paper]]
+  +health_check(): Awaitable[Dict[str, Any]]
+  -_make_request(method: str, path: str, params: Optional[Dict], json: Optional[Dict], retry_count: int): Awaitable[Dict[str, Any]]
+  -_build_headers(): Dict[str, str]
+}
+
+class CircuitBreaker {
+  -failure_threshold: int
+  -recovery_timeout: float
+  -expected_exception_types: List[Type[Exception]]
+  -_failure_count: int
+  -_last_failure_time: Optional[datetime]
+  -_state: CircuitBreakerState
+  -_half_open_attempts: int
+  +state: CircuitBreakerState
+  +call(func: Callable, *args, **kwargs): Awaitable[Any]
+  +reset(): None
+  -_on_success(): None
+  -_on_failure(): None
+}
+
+class TokenBucketRateLimiter {
+  -rate: float
+  -burst: int
+  -_tokens: float
+  -_last_update: float
+  -_lock: asyncio.Lock
+  +acquire(tokens: int): Awaitable[bool]
+  +wait_if_needed(tokens: int): Awaitable[None]
+  +available_tokens: int
+}
+
+class ExponentialBackoffRetryStrategy {
+  -initial_delay: float
+  -max_delay: float
+  -exponential_base: float
+  -jitter: bool
+  +get_delay(attempt: int): float
+}
+
+' Logging Components
+class ContextLogger {
+  -_logger: logging.Logger
+  -_context: Dict[str, Any]
+  +debug(message: str, **kwargs: Any): None
+  +info(message: str, **kwargs: Any): None
+  +warning(message: str, **kwargs: Any): None
+  +error(message: str, exception: Optional[Exception], **kwargs: Any): None
+  +with_context(**context: Any): ContextLogger
+  -_log(level: int, message: str, **kwargs: Any): None
+}
+
+class LoggerFactory {
+  -config: LoggingConfig
+  +get_logger(name: str): ContextLogger
+  -_setup_root_logger(): None
+}
+
+class StructuredFormatter {
+  -include_context: bool
+  +format(record: LogRecord): str
+}
+
+' Configuration
+class ApplicationConfig {
+  +environment: Environment
+  +server: ServerConfig
+  +semantic_scholar: SemanticScholarConfig
+  +logging: LoggingConfig
+  +cache: CacheConfig
+  +monitoring: MonitoringConfig
+  +tracing: TracingConfig
+  +validate_api_key(): ApplicationConfig
+}
+
+class SemanticScholarConfig {
+  +base_url: str
+  +api_key: Optional[SecretStr]
+  +timeout: float
+  +max_connections: int
+  +max_keepalive_connections: int
+  +default_fields: List[str]
+  +rate_limit: RateLimitConfig
+  +retry: RetryConfig
+  +circuit_breaker: CircuitBreakerConfig
+}
+
+' MCP Server
+class FastMCP {
+  +name: str
+  +description: str
+  +tool()(func: Callable): Callable
+  +resource(path: str)(func: Callable): Callable
+  +prompt()(func: Callable): Callable
+  +run(transport: str): None
+}
+
+' Cache Implementation
+class InMemoryCache {
+  -_cache: Dict[str, CacheEntry]
+  -_lock: asyncio.Lock
+  -max_size: int
+  -default_ttl: int
+  +get(key: str): Awaitable[Optional[Any]]
+  +set(key: str, value: Any, ttl: Optional[int]): Awaitable[None]
+  +delete(key: str): Awaitable[None]
+  +clear(): Awaitable[None]
+  +exists(key: str): Awaitable[bool]
+  -_evict_expired(): Awaitable[None]
+  -_evict_lru(): Awaitable[None]
+}
+
+' Enums
+enum CircuitBreakerState {
+  CLOSED
+  OPEN
+  HALF_OPEN
+}
+
+enum PublicationType {
+  JOURNAL_ARTICLE
+  CONFERENCE
+  REVIEW
+  DATASET
+  BOOK
+  BOOK_CHAPTER
+  THESIS
+  EDITORIAL
+  NEWS
+  STUDY
+  LETTER
+  UNKNOWN
+}
+
+enum Environment {
+  DEVELOPMENT
+  TESTING
+  STAGING
+  PRODUCTION
+}
+
+enum LogLevel {
+  DEBUG
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+' Relationships
+Paper --|> CacheableModel
+Paper --|> BaseEntity
+Paper "1" *-- "0..*" Author : authors
+Paper "1" *-- "0..*" Citation : citations
+Paper "1" *-- "0..*" Reference : references
+
+SearchQuery "1" *-- "0..1" SearchFilters : filters
+
+SemanticScholarClient ..> ILogger : uses
+SemanticScholarClient ..> ICache : uses
+SemanticScholarClient ..> IMetricsCollector : uses
+SemanticScholarClient "1" *-- "1" CircuitBreaker : circuit_breaker
+SemanticScholarClient "1" *-- "1" TokenBucketRateLimiter : rate_limiter
+SemanticScholarClient "1" *-- "1" ExponentialBackoffRetryStrategy : retry_strategy
+SemanticScholarClient ..> Paper : creates
+SemanticScholarClient ..> Author : creates
+SemanticScholarClient ..> Citation : creates
+SemanticScholarClient ..> Reference : creates
+
+CircuitBreaker ..> ICircuitBreaker : implements
+TokenBucketRateLimiter ..> IRateLimiter : implements
+ContextLogger ..> ILogger : implements
+InMemoryCache ..> ICache : implements
+
+LoggerFactory "1" --> "*" ContextLogger : creates
+LoggerFactory ..> StructuredFormatter : uses
+
+ApplicationConfig "1" *-- "1" SemanticScholarConfig : semantic_scholar
+
+FastMCP ..> SemanticScholarClient : uses
+
+@enduml

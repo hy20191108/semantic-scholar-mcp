@@ -1,0 +1,57 @@
+@startuml semantic-scholar-mcp-state-circuit-breaker
+!theme plain
+
+title Circuit Breaker State Machine
+
+[*] --> CLOSED : Initial State
+
+state CLOSED {
+  [*] --> Monitoring
+  Monitoring : failure_count = 0
+  Monitoring : Monitor all requests
+  
+  Monitoring --> Monitoring : Success\n[Reset failure_count]
+  Monitoring --> Monitoring : Failure\n[Increment failure_count]
+}
+
+CLOSED --> OPEN : failure_count >= threshold\n[Set last_failure_time]
+
+state OPEN {
+  [*] --> Rejecting
+  Rejecting : Fast fail all requests
+  Rejecting : Return ServiceUnavailableError
+  
+  Rejecting --> CheckTimeout : Check recovery timeout
+  CheckTimeout --> Rejecting : timeout not expired
+}
+
+OPEN --> HALF_OPEN : recovery_timeout expired\n[Reset half_open_attempts]
+
+state HALF_OPEN {
+  [*] --> Testing
+  Testing : half_open_attempts = 0
+  Testing : Allow limited requests
+  
+  Testing --> Testing : Success\n[Increment half_open_attempts]
+  Testing --> Testing : Failure\n[Back to OPEN immediately]
+}
+
+HALF_OPEN --> CLOSED : half_open_attempts >= 3\n[Reset all counters]
+HALF_OPEN --> OPEN : Any failure\n[Reset timeout]
+
+note right of CLOSED
+  Normal operation
+  Track failures
+end note
+
+note right of OPEN
+  Protect downstream service
+  No requests sent
+end note
+
+note right of HALF_OPEN
+  Test if service recovered
+  Limited trial requests
+end note
+
+@enduml

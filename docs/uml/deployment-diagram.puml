@@ -1,0 +1,88 @@
+@startuml semantic-scholar-mcp-deployment-diagram
+!theme plain
+
+title Semantic Scholar MCP Server - Deployment Architecture
+
+node "Client Environment" {
+  component "Claude Desktop App" as Claude {
+    [MCP Client Runtime]
+  }
+  
+  component "VS Code" as VSCode {
+    [Continue Extension]
+  }
+  
+  component "Terminal" as Terminal {
+    [claude CLI]
+  }
+}
+
+node "MCP Server Host" {
+  component "Python Runtime" as Python {
+    [uvicorn ASGI Server]
+    [FastMCP Framework]
+    [Semantic Scholar MCP Server]
+  }
+  
+  database "In-Memory Cache" as Cache {
+    [Paper Cache]
+    [Author Cache]
+    [Search Results Cache]
+  }
+  
+  component "Monitoring" as Monitor {
+    [Prometheus Metrics]
+    [JSON Logs]
+    [Health Endpoint]
+  }
+}
+
+cloud "External Services" {
+  component "Semantic Scholar API" as SSAPI {
+    [RESTful API]
+    [Rate Limiting]
+    [Authentication]
+  }
+  
+  component "Monitoring Services" as ExtMonitor {
+    [Grafana]
+    [Loki]
+    [Alertmanager]
+  }
+}
+
+' Communication protocols
+[MCP Client Runtime] ..> [Semantic Scholar MCP Server] : stdio/JSON-RPC
+[Continue Extension] ..> [Semantic Scholar MCP Server] : stdio/JSON-RPC
+[claude CLI] ..> [Semantic Scholar MCP Server] : stdio/JSON-RPC
+
+[Semantic Scholar MCP Server] --> Cache : Read/Write
+[Semantic Scholar MCP Server] --> [Prometheus Metrics] : Export
+[Semantic Scholar MCP Server] --> [JSON Logs] : Write
+
+[Semantic Scholar MCP Server] ..> [RESTful API] : HTTPS/REST
+[Prometheus Metrics] ..> [Grafana] : Pull
+[JSON Logs] ..> [Loki] : Ship
+
+' Notes
+note top of Python
+  Requirements:
+  - Python >= 3.10
+  - uv package manager
+  - Environment variables
+end note
+
+note right of SSAPI
+  Rate Limits:
+  - 1 req/sec (no key)
+  - 10 req/sec (with key)
+end note
+
+note bottom of Cache
+  Configurable:
+  - Max size
+  - TTL per type
+  - LRU eviction
+end note
+
+@enduml

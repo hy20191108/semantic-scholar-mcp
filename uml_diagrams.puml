@@ -1,0 +1,1427 @@
+@startuml class_diagram
+!define ABSTRACT abstract
+!define INTERFACE interface
+!define PROTOCOL <<Protocol>>
+
+skinparam class {
+    BackgroundColor<<Protocol>> LightBlue
+    BackgroundColor<<abstract>> LightGray
+    BackgroundColor<<interface>> LightGreen
+    BackgroundColor<<Enum>> LightYellow
+}
+
+' Package: Core Abstractions
+package "core.abstractions" {
+    interface ILogger PROTOCOL {
+        + debug(message: str, **kwargs: Any): void
+        + info(message: str, **kwargs: Any): void
+        + warning(message: str, **kwargs: Any): void
+        + error(message: str, exception: Optional[Exception], **kwargs: Any): void
+        + critical(message: str, exception: Optional[Exception], **kwargs: Any): void
+        + log_context(**kwargs: Any): AsyncContextManager
+    }
+
+    interface IMetricsCollector PROTOCOL {
+        + increment(metric: MetricName, value: int, tags: Optional[Dict[str, str]]): void
+        + gauge(metric: MetricName, value: float, tags: Optional[Dict[str, str]]): void
+        + histogram(metric: MetricName, value: float, tags: Optional[Dict[str, str]]): void
+        + timer(metric: MetricName, tags: Optional[Dict[str, str]]): AsyncContextManager
+    }
+
+    abstract class IConfigurable {
+        + {abstract} configure(config: Dict[str, Any]): void
+        + {abstract} validate_config(config: Dict[str, Any]): bool
+        + {abstract} get_config_schema(): Dict[str, Any]
+    }
+
+    abstract class IService {
+        # logger: ILogger
+        # metrics: IMetricsCollector
+        + __init__(logger: ILogger, metrics: IMetricsCollector)
+        + {abstract} health_check(): Dict[str, Any]
+        + {abstract} initialize(): void
+        + {abstract} shutdown(): void
+    }
+
+    class PagedResult<T> {
+        + items: List[T]
+        + total: int
+        + page: int
+        + page_size: int
+        + has_next: bool
+        + has_previous: bool
+        + total_pages(): int
+    }
+
+    abstract class IRepository<TEntity, TID> {
+        # logger: ILogger
+        # metrics: IMetricsCollector
+        + {abstract} get_by_id(id: TID): Optional[TEntity]
+        + {abstract} get_many(ids: List[TID]): List[TEntity]
+        + {abstract} find(filters: Optional[Dict], pagination: Optional[PaginationParams], sort: Optional[SortOrder]): PagedResult[TEntity]
+        + {abstract} create(entity: TEntity): TEntity
+        + {abstract} update(id: TID, entity: TEntity): Optional[TEntity]
+        + {abstract} delete(id: TID): bool
+        + {abstract} exists(id: TID): bool
+        + {abstract} count(filters: Optional[Dict]): int
+    }
+
+    abstract class ICacheable<K, V> {
+        + {abstract} get(key: K): Optional[V]
+        + {abstract} set(key: K, value: V, ttl: Optional[int]): void
+        + {abstract} delete(key: K): bool
+        + {abstract} exists(key: K): bool
+        + {abstract} clear(): void
+        + {abstract} get_many(keys: List[K]): Dict[K, V]
+        + {abstract} set_many(items: Dict[K, V], ttl: Optional[int]): void
+    }
+
+    abstract class ISearchable<T> {
+        + {abstract} search(query: SearchQuery, pagination: Optional[PaginationParams], sort: Optional[SortOrder]): PagedResult[T]
+        + {abstract} suggest(prefix: str, limit: int): List[str]
+        + {abstract} index(entities: List[T]): void
+        + {abstract} remove_from_index(ids: List[str]): void
+        + {abstract} reindex(): void
+    }
+
+    abstract class ICircuitBreaker {
+        + {abstract} call(func: Any, *args: Any, **kwargs: Any): Any
+        + {abstract} is_open(): bool
+        + {abstract} is_closed(): bool
+        + {abstract} reset(): void
+    }
+
+    abstract class IRateLimiter {
+        + {abstract} is_allowed(key: str): bool
+        + {abstract} consume(key: str, tokens: int): bool
+        + {abstract} reset(key: str): void
+        + {abstract} get_remaining(key: str): int
+    }
+
+    abstract class IRetryStrategy {
+        + {abstract} should_retry(attempt: int, exception: Exception): bool
+        + {abstract} get_delay(attempt: int): float
+        + {abstract} get_max_attempts(): int
+    }
+
+    abstract class IValidator<T> {
+        + {abstract} validate(data: T): bool
+        + {abstract} get_errors(data: T): List[str]
+    }
+
+    abstract class ISerializer<T> {
+        + {abstract} serialize(obj: T): str
+        + {abstract} deserialize(data: str, target_type: Type[T]): T
+    }
+
+    abstract class IFactory<T> {
+        + {abstract} create(**kwargs: Any): T
+        + {abstract} register(key: str, creator: Any): void
+    }
+}
+
+' Package: Core Types
+package "core.types" {
+    class PaginationParams {
+        + offset: int = 0
+        + limit: int = 10
+    }
+
+    enum SortOrder {
+        ASC
+        DESC
+    }
+
+    enum MetricName {
+        API_REQUEST_COUNT
+        API_REQUEST_DURATION
+        API_REQUEST_ERROR
+        CACHE_HIT
+        CACHE_MISS
+        RATE_LIMIT_EXCEEDED
+    }
+
+    class SearchQuery {
+        + query: str
+        + filters: Optional[Dict[str, Any]]
+        + fields: Optional[List[str]]
+    }
+}
+
+' Package: Core Exceptions
+package "core.exceptions" {
+    enum ErrorCode {
+        UNKNOWN_ERROR = "E1000"
+        INTERNAL_ERROR = "E1001"
+        NOT_IMPLEMENTED = "E1002"
+        VALIDATION_ERROR = "E2000"
+        INVALID_INPUT = "E2001"
+        MISSING_REQUIRED_FIELD = "E2002"
+        INVALID_FORMAT = "E2003"
+        VALUE_OUT_OF_RANGE = "E2004"
+        API_ERROR = "E3000"
+        RATE_LIMIT_EXCEEDED = "E3001"
+        NETWORK_ERROR = "E3002"
+        TIMEOUT_ERROR = "E3003"
+        SERVICE_UNAVAILABLE = "E3004"
+        UNAUTHORIZED = "E4000"
+        FORBIDDEN = "E4001"
+        TOKEN_EXPIRED = "E4002"
+        INVALID_CREDENTIALS = "E4003"
+        NOT_FOUND = "E5000"
+        ALREADY_EXISTS = "E5001"
+        RESOURCE_LOCKED = "E5002"
+        RESOURCE_DELETED = "E5003"
+        CONFIGURATION_ERROR = "E6000"
+        MISSING_CONFIGURATION = "E6001"
+        INVALID_CONFIGURATION = "E6002"
+        CACHE_ERROR = "E7000"
+        CACHE_MISS = "E7001"
+        CACHE_EXPIRED = "E7002"
+        CACHE_FULL = "E7003"
+        DATABASE_ERROR = "E8000"
+        CONNECTION_ERROR = "E8001"
+        QUERY_ERROR = "E8002"
+        TRANSACTION_ERROR = "E8003"
+    }
+
+    class SemanticScholarMCPError {
+        + message: str
+        + error_code: ErrorCode
+        + details: Optional[Dict[str, Any]]
+        + inner_exception: Optional[Exception]
+        + timestamp: datetime
+        + __init__(message: str, error_code: ErrorCode, details: Optional[Dict], inner_exception: Optional[Exception])
+        + to_dict(): Dict[str, Any]
+        + __str__(): str
+    }
+
+    class ValidationError extends SemanticScholarMCPError {
+        + __init__(message: str, field: Optional[str], value: Optional[Any], validation_errors: Optional[List[Dict]], **kwargs)
+    }
+
+    class APIError extends SemanticScholarMCPError {
+        + __init__(message: str, status_code: Optional[int], response_body: Optional[str], request_id: Optional[str], **kwargs)
+    }
+
+    class RateLimitError extends APIError {
+        + __init__(message: str, retry_after: Optional[int], limit: Optional[int], remaining: Optional[int], reset_time: Optional[datetime], **kwargs)
+    }
+
+    class NetworkError extends APIError {
+        + __init__(message: str, url: Optional[str], timeout: Optional[float], **kwargs)
+    }
+
+    class ConfigurationError extends SemanticScholarMCPError {
+        + __init__(message: str, config_key: Optional[str], config_file: Optional[str], **kwargs)
+    }
+
+    class CacheError extends SemanticScholarMCPError {
+        + __init__(message: str, cache_key: Optional[str], operation: Optional[str], **kwargs)
+    }
+
+    class NotFoundError extends SemanticScholarMCPError {
+        + __init__(message: str, resource_type: Optional[str], resource_id: Optional[str], **kwargs)
+    }
+
+    class UnauthorizedError extends SemanticScholarMCPError {
+        + __init__(message: str, realm: Optional[str], **kwargs)
+    }
+
+    class ForbiddenError extends SemanticScholarMCPError {
+        + __init__(message: str, resource: Optional[str], action: Optional[str], **kwargs)
+    }
+
+    class DatabaseError extends SemanticScholarMCPError {
+        + __init__(message: str, query: Optional[str], table: Optional[str], **kwargs)
+    }
+
+    class ServiceUnavailableError extends APIError {
+        + __init__(message: str, service_name: Optional[str], retry_after: Optional[int], **kwargs)
+    }
+}
+
+' Package: Base Models
+package "semantic_scholar_mcp.base_models" {
+    class BaseEntity {
+        + created_at: datetime
+        + updated_at: Optional[datetime]
+        + model_post_init(__context: Any): void
+    }
+
+    abstract class CacheableModel {
+        + cache_key: Optional[str]
+        + cache_ttl: int = 3600
+        + generate_cache_key(): str
+        + model_post_init(__context: Any): void
+    }
+
+    class ApiResponse<T> {
+        + success: bool
+        + data: Optional[T]
+        + error: Optional[Dict[str, Any]]
+        + metadata: Optional[Dict[str, Any]]
+        + timestamp: datetime
+        + {static} success_response(data: T, metadata: Optional[Dict]): ApiResponse[T]
+        + {static} error_response(error_code: str, error_message: str, details: Optional[Dict]): ApiResponse[T]
+    }
+
+    class PaginatedResponse<T> {
+        + items: List[T]
+        + total: int
+        + offset: int
+        + limit: int
+        + has_more: bool
+        + model_post_init(__context: Any): void
+    }
+}
+
+' Package: Domain Models
+package "semantic_scholar_mcp.domain_models" {
+    enum PublicationType {
+        JOURNAL_ARTICLE
+        CONFERENCE
+        REVIEW
+        DATASET
+        BOOK
+        BOOK_CHAPTER
+        THESIS
+        EDITORIAL
+        NEWS
+        STUDY
+        LETTER
+        UNKNOWN
+    }
+
+    enum ExternalIdType {
+        DOI
+        ARXIV
+        MAG
+        ACMID
+        PUBMED
+        PUBMED_CENTRAL
+        DBLP
+        CORPUS_ID
+    }
+
+    class Author {
+        + author_id: Optional[str]
+        + name: str
+        + aliases: List[str]
+        + affiliations: List[str]
+        + homepage: Optional[str]
+        + citation_count: Optional[int]
+        + h_index: Optional[int]
+        + paper_count: Optional[int]
+        + validate_name(v: str): str
+    }
+
+    class PublicationVenue {
+        + id: Optional[str]
+        + name: Optional[str]
+        + type: Optional[str]
+        + alternate_names: List[str]
+        + issn: Optional[str]
+        + url: Optional[str]
+    }
+
+    class TLDR {
+        + model: str
+        + text: str
+        + validate_text(v: str): str
+    }
+
+    class Paper extends CacheableModel, BaseEntity {
+        + paper_id: str
+        + title: str
+        + abstract: Optional[str]
+        + year: Optional[int]
+        + venue: Optional[str]
+        + publication_types: List[PublicationType]
+        + publication_date: Optional[datetime]
+        + journal: Optional[Dict[str, Any]]
+        + authors: List[Author]
+        + citation_count: int
+        + reference_count: int
+        + influential_citation_count: int
+        + external_ids: Dict[str, str]
+        + url: Optional[str]
+        + s2_url: Optional[str]
+        + fields_of_study: List[str]
+        + publication_venue: Optional[PublicationVenue]
+        + tldr: Optional[TLDR]
+        + is_open_access: bool
+        + open_access_pdf: Optional[str]
+        + validate_title(v: str): str
+        + validate_year(v: Optional[int]): Optional[int]
+        + validate_metrics(): Paper
+        + generate_cache_key(): str
+    }
+
+    class Citation {
+        + paper_id: str
+        + title: str
+        + year: Optional[int]
+        + authors: List[Author]
+        + venue: Optional[str]
+        + citation_count: int
+        + is_influential: bool
+        + contexts: List[str]
+        + intents: List[str]
+    }
+
+    class Reference {
+        + paper_id: Optional[str]
+        + title: str
+        + year: Optional[int]
+        + authors: List[Author]
+        + venue: Optional[str]
+        + citation_count: Optional[int]
+    }
+
+    class SearchFilters {
+        + year: Optional[int]
+        + year_range: Optional[Tuple[int, int]]
+        + publication_types: Optional[List[PublicationType]]
+        + fields_of_study: Optional[List[str]]
+        + venues: Optional[List[str]]
+        + open_access_only: bool
+        + min_citation_count: Optional[int]
+        + validate_year_range(): SearchFilters
+    }
+
+    class SearchQuery {
+        + query: str
+        + fields: Optional[List[str]]
+        + filters: Optional[SearchFilters]
+        + offset: int
+        + limit: int
+        + sort: Optional[str]
+        + validate_query(v: str): str
+    }
+}
+
+' Package: API Client Models
+package "semantic_scholar_mcp.models" {
+    class Author {
+        + author_id: Optional[str]
+        + name: str
+    }
+
+    class Paper {
+        + paper_id: str
+        + title: str
+        + abstract: Optional[str]
+        + year: Optional[int]
+        + authors: List[Author]
+        + venue: Optional[str]
+        + citation_count: int
+        + reference_count: int
+        + url: Optional[str]
+        + arxiv_id: Optional[str]
+        + doi: Optional[str]
+        + fields_of_study: List[str]
+    }
+
+    class SearchResult {
+        + total: int
+        + offset: int
+        + next: Optional[int]
+        + data: List[Paper]
+    }
+
+    class AuthorDetails {
+        + author_id: str
+        + name: str
+        + aliases: List[str]
+        + affiliations: List[str]
+        + homepage: Optional[str]
+        + paper_count: int
+        + citation_count: int
+        + h_index: Optional[int]
+        + papers: List[Paper]
+    }
+}
+
+' Package: API Client
+package "semantic_scholar_mcp.api_client" {
+    class RateLimitError extends Exception {
+    }
+
+    class SemanticScholarClient {
+        - {static} BASE_URL: str = "https://api.semanticscholar.org/v1"
+        - {static} GRAPH_URL: str = "https://api.semanticscholar.org/graph/v1"
+        - api_key: Optional[str]
+        - timeout: float
+        - max_retries: int
+        - _client: Optional[httpx.AsyncClient]
+        - _rate_limit_reset: Optional[datetime]
+        - _request_count: int
+        - _request_window_start: datetime
+        + __init__(api_key: Optional[str], timeout: float, max_retries: int)
+        + __aenter__(): SemanticScholarClient
+        + __aexit__(exc_type, exc_val, exc_tb): void
+        - _get_headers(): Dict[str, str]
+        - _check_rate_limit(): void
+        - _make_request(method: str, url: str, params: Optional[Dict], json: Optional[Dict]): Dict[str, Any]
+        + search_papers(query: str, fields: Optional[List[str]], limit: int, offset: int): SearchResult
+        + get_paper(paper_id: str, fields: Optional[List[str]]): Paper
+        + get_author(author_id: str, fields: Optional[List[str]], papers_limit: int): AuthorDetails
+    }
+}
+
+' Relationships
+IService ..> ILogger : uses
+IService ..> IMetricsCollector : uses
+IRepository ..> ILogger : uses
+IRepository ..> IMetricsCollector : uses
+IRepository ..> PagedResult : returns
+ISearchable ..> PagedResult : returns
+ISearchable ..> SearchQuery : uses
+Paper --|> CacheableModel
+Paper --|> BaseEntity
+Paper *-- Author : contains
+Paper *-- PublicationVenue : contains
+Paper *-- TLDR : contains
+Citation *-- Author : contains
+Reference *-- Author : contains
+SearchQuery *-- SearchFilters : contains
+SemanticScholarClient ..> SearchResult : returns
+SemanticScholarClient ..> Paper : returns
+SemanticScholarClient ..> AuthorDetails : returns
+SemanticScholarClient ..> RateLimitError : throws
+SearchResult *-- Paper : contains
+AuthorDetails *-- Paper : contains
+ApiResponse ..> T : generic
+PaginatedResponse ..> T : generic
+PagedResult ..> T : generic
+IRepository ..> TEntity : generic
+IRepository ..> TID : generic
+ICacheable ..> K : generic
+ICacheable ..> V : generic
+ISearchable ..> T : generic
+IValidator ..> T : generic
+ISerializer ..> T : generic
+IFactory ..> T : generic
+
+@enduml
+
+@startuml sequence_paper_search
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam sequence {
+    ArrowColor #000000
+    ActorBorderColor #000000
+    LifeLineBorderColor #000000
+    ParticipantBorderColor #000000
+    ParticipantBackgroundColor #FFFFFF
+    ActorBackgroundColor #FFFFFF
+}
+
+title Paper Search Flow
+
+actor User
+participant "MCP Server" as Server
+participant "SemanticScholarClient" as Client
+participant "RateLimiter" as RateLimit
+participant "Cache" as Cache
+participant "HTTPClient" as HTTP
+participant "Semantic Scholar API" as API
+
+User -> Server: search_papers(query, limit, offset)
+activate Server
+
+Server -> Cache: get(cache_key)
+activate Cache
+Cache --> Server: cache_miss
+deactivate Cache
+
+Server -> Client: search_papers(query, fields, limit, offset)
+activate Client
+
+Client -> Client: _check_rate_limit()
+activate Client
+Client -> RateLimit: check_window()
+activate RateLimit
+alt Rate limit exceeded
+    RateLimit --> Client: RateLimitError
+    Client --> Server: RateLimitError
+    Server --> User: Error: Rate limit exceeded
+else Rate limit OK
+    RateLimit --> Client: proceed
+    deactivate RateLimit
+end
+deactivate Client
+
+Client -> Client: _get_headers()
+Client -> HTTP: request(GET, /paper/search, params)
+activate HTTP
+
+HTTP -> API: GET /graph/v1/paper/search
+activate API
+alt Success (200)
+    API --> HTTP: JSON response
+    HTTP --> Client: response
+    deactivate HTTP
+    
+    Client -> Client: parse response
+    Client --> Server: SearchResult
+    deactivate Client
+    
+    Server -> Cache: set(cache_key, result, ttl=3600)
+    activate Cache
+    Cache --> Server: cached
+    deactivate Cache
+    
+    Server --> User: SearchResult
+else Rate Limit (429)
+    API --> HTTP: 429 + Retry-After header
+    HTTP --> Client: 429 response
+    Client --> Server: RateLimitError
+    Server --> User: Error: Rate limit, retry after X seconds
+else Error (4xx/5xx)
+    API --> HTTP: Error response
+    HTTP --> Client: HTTPError
+    Client --> Server: APIError
+    Server --> User: Error: API request failed
+end
+deactivate API
+deactivate Server
+
+@enduml
+
+@startuml sequence_paper_citations
+!theme plain
+skinparam backgroundColor #FEFEFE
+
+title Get Paper with Citations Flow
+
+actor User
+participant "MCP Server" as Server
+participant "SemanticScholarClient" as Client
+participant "Cache" as Cache
+participant "CircuitBreaker" as CB
+participant "RetryStrategy" as Retry
+participant "HTTPClient" as HTTP
+participant "Semantic Scholar API" as API
+
+User -> Server: get_paper_with_citations(paper_id)
+activate Server
+
+Server -> Cache: get(f"paper:{paper_id}")
+activate Cache
+Cache --> Server: cache_miss
+deactivate Cache
+
+Server -> CB: call(get_paper, paper_id)
+activate CB
+
+CB -> CB: check_circuit_state()
+alt Circuit Open
+    CB --> Server: ServiceUnavailableError
+    Server --> User: Error: Service unavailable
+else Circuit Closed/Half-Open
+    CB -> Client: get_paper(paper_id, fields)
+    activate Client
+    
+    Client -> Retry: execute_with_retry()
+    activate Retry
+    
+    loop retry attempts (max 3)
+        Retry -> Client: _make_request()
+        Client -> HTTP: GET /paper/{paper_id}
+        activate HTTP
+        
+        HTTP -> API: GET /graph/v1/paper/{paper_id}
+        activate API
+        
+        alt Success (200)
+            API --> HTTP: Paper data
+            HTTP --> Client: response
+            deactivate HTTP
+            Client --> Retry: success
+            break
+        else Timeout/Network Error
+            API --> HTTP: timeout/error
+            deactivate API
+            HTTP --> Client: HTTPError
+            deactivate HTTP
+            
+            Retry -> Retry: should_retry(attempt, error)
+            alt Should retry
+                Retry -> Retry: wait(exponential_backoff)
+                note right: Wait 4s, 8s, 16s...
+            else Max retries reached
+                Retry --> Client: raise error
+                Client --> CB: error
+                CB -> CB: record_failure()
+                CB --> Server: NetworkError
+                Server --> User: Error: Network/timeout error
+            end
+        end
+    end
+    deactivate Retry
+    
+    alt Paper found
+        Client -> Client: parse Paper
+        Client --> CB: Paper object
+        deactivate Client
+        
+        CB -> CB: record_success()
+        CB --> Server: Paper
+        deactivate CB
+        
+        Server -> Client: get_paper_citations(paper_id, limit=100)
+        activate Client
+        
+        Client -> HTTP: GET /paper/{paper_id}/citations
+        activate HTTP
+        HTTP -> API: GET /graph/v1/paper/{paper_id}/citations
+        activate API
+        API --> HTTP: Citations data
+        deactivate API
+        HTTP --> Client: response
+        deactivate HTTP
+        
+        Client -> Client: parse Citations
+        Client --> Server: List[Citation]
+        deactivate Client
+        
+        Server -> Server: combine_paper_and_citations()
+        Server -> Cache: set(cache_key, combined_result, ttl=3600)
+        activate Cache
+        Cache --> Server: cached
+        deactivate Cache
+        
+        Server --> User: Paper with Citations
+    else Paper not found (404)
+        Client --> CB: NotFoundError
+        CB --> Server: NotFoundError
+        Server --> User: Error: Paper not found
+    end
+end
+deactivate Server
+
+@enduml
+
+@startuml sequence_author_flow
+!theme plain
+skinparam backgroundColor #FEFEFE
+
+title Author Search and Papers Retrieval Flow
+
+actor User
+participant "MCP Server" as Server
+participant "SemanticScholarClient" as Client
+participant "Validator" as Validator
+participant "Cache" as Cache
+participant "HTTPClient" as HTTP
+participant "Semantic Scholar API" as API
+participant "MetricsCollector" as Metrics
+
+User -> Server: search_author(name)
+activate Server
+
+Server -> Validator: validate_author_name(name)
+activate Validator
+alt Invalid name
+    Validator --> Server: ValidationError
+    Server --> User: Error: Invalid author name
+else Valid name
+    Validator --> Server: validated
+end
+deactivate Validator
+
+Server -> Cache: get(f"author_search:{name}")
+activate Cache
+Cache --> Server: cache_miss
+deactivate Cache
+
+Server -> Metrics: increment("author.search.request")
+activate Metrics
+Metrics --> Server: recorded
+deactivate Metrics
+
+Server -> Client: search_authors(name)
+activate Client
+
+Client -> HTTP: GET /author/search
+activate HTTP
+HTTP -> API: GET /graph/v1/author/search?query={name}
+activate API
+API --> HTTP: Authors list
+deactivate API
+HTTP --> Client: response
+deactivate HTTP
+
+Client -> Client: parse authors
+Client --> Server: List[Author]
+deactivate Client
+
+Server -> Server: select_best_match(authors, name)
+alt No match found
+    Server --> User: Error: No author found
+else Author found
+    Server -> Cache: set(cache_key, author, ttl=7200)
+    activate Cache
+    Cache --> Server: cached
+    deactivate Cache
+    
+    Server -> User: Author basic info
+    
+    User -> Server: get_author_papers(author_id, limit=50)
+    activate Server
+    
+    Server -> Cache: get(f"author_papers:{author_id}")
+    activate Cache
+    Cache --> Server: cache_miss
+    deactivate Cache
+    
+    Server -> Client: get_author(author_id, papers_limit=50)
+    activate Client
+    
+    par Get Author Details
+        Client -> HTTP: GET /author/{author_id}
+        activate HTTP
+        HTTP -> API: GET /graph/v1/author/{author_id}
+        activate API
+        API --> HTTP: Author details
+        deactivate API
+        HTTP --> Client: response
+        deactivate HTTP
+    and Get Author Papers
+        Client -> HTTP: GET /author/{author_id}/papers
+        activate HTTP
+        HTTP -> API: GET /graph/v1/author/{author_id}/papers
+        activate API
+        API --> HTTP: Papers list
+        deactivate API
+        HTTP --> Client: response
+        deactivate HTTP
+    end
+    
+    Client -> Client: combine_author_data()
+    Client --> Server: AuthorDetails with papers
+    deactivate Client
+    
+    Server -> Server: sort_papers_by_citations()
+    Server -> Cache: set(cache_key, author_details, ttl=3600)
+    activate Cache
+    Cache --> Server: cached
+    deactivate Cache
+    
+    Server -> Metrics: histogram("author.papers.count", len(papers))
+    activate Metrics
+    Metrics --> Server: recorded
+    deactivate Metrics
+    
+    Server --> User: AuthorDetails with sorted papers
+end
+deactivate Server
+
+@enduml
+
+@startuml sequence_error_retry
+!theme plain
+skinparam backgroundColor #FEFEFE
+
+title Error Handling and Retry Flow
+
+actor User
+participant "MCP Server" as Server
+participant "SemanticScholarClient" as Client
+participant "RetryStrategy" as Retry
+participant "CircuitBreaker" as CB
+participant "Logger" as Logger
+participant "MetricsCollector" as Metrics
+participant "HTTPClient" as HTTP
+participant "Semantic Scholar API" as API
+
+User -> Server: get_paper(paper_id)
+activate Server
+
+Server -> CB: call(client.get_paper, paper_id)
+activate CB
+
+CB -> CB: check_state()
+note right: States: CLOSED, OPEN, HALF_OPEN
+
+alt Circuit OPEN
+    CB -> Logger: error("Circuit open for API calls")
+    CB -> Metrics: increment("circuit_breaker.open")
+    CB --> Server: ServiceUnavailableError("Service temporarily unavailable")
+    Server --> User: Error: Service unavailable, please retry later
+else Circuit CLOSED or HALF_OPEN
+    CB -> Client: get_paper(paper_id)
+    activate Client
+    
+    Client -> Retry: execute_with_retry(request)
+    activate Retry
+    
+    loop attempt = 1 to max_retries (3)
+        Retry -> Logger: info(f"Attempt {attempt} for paper {paper_id}")
+        
+        Retry -> Client: _make_request()
+        activate Client
+        
+        Client -> Client: _check_rate_limit()
+        alt Rate limit exceeded
+            Client -> Logger: warning("Rate limit exceeded")
+            Client -> Metrics: increment("rate_limit.exceeded")
+            Client --> Retry: RateLimitError
+            Retry -> Retry: should_retry(attempt, RateLimitError)
+            Retry -> Retry: get_delay(attempt)
+            note right: Exponential backoff: 4s, 8s, 16s
+            Retry -> Retry: sleep(delay)
+        else Rate limit OK
+            Client -> HTTP: GET request
+            activate HTTP
+            
+            HTTP -> API: GET /paper/{paper_id}
+            activate API
+            
+            alt Success (200)
+                API --> HTTP: Paper data
+                HTTP --> Client: response
+                deactivate API
+                deactivate HTTP
+                
+                Client -> Logger: info("Request successful")
+                Client -> Metrics: increment("api.request.success")
+                Client --> Retry: Paper object
+                Retry --> CB: Paper object
+                
+                CB -> CB: record_success()
+                CB -> Metrics: gauge("circuit_breaker.failure_count", 0)
+                CB --> Server: Paper object
+                Server --> User: Paper details
+                
+            else Network Error / Timeout
+                API -x HTTP: timeout/network error
+                deactivate API
+                HTTP --> Client: NetworkError
+                deactivate HTTP
+                
+                Client -> Logger: error("Network error", exception)
+                Client -> Metrics: increment("api.request.network_error")
+                Client --> Retry: NetworkError
+                
+                Retry -> Retry: should_retry(attempt, NetworkError)
+                alt Should retry (attempt < 3)
+                    Retry -> Logger: info(f"Retrying after network error, attempt {attempt}")
+                    Retry -> Retry: get_delay(attempt)
+                    Retry -> Retry: sleep(delay)
+                else Max retries exceeded
+                    Retry -> Logger: error("Max retries exceeded")
+                    Retry -> Metrics: increment("retry.max_attempts_exceeded")
+                    Retry --> CB: NetworkError
+                    
+                    CB -> CB: record_failure()
+                    CB -> CB: check_failure_threshold()
+                    alt Threshold exceeded
+                        CB -> CB: open_circuit()
+                        CB -> Logger: critical("Circuit breaker opened due to failures")
+                        CB -> Metrics: increment("circuit_breaker.opened")
+                    end
+                    
+                    CB --> Server: NetworkError
+                    Server --> User: Error: Network error after 3 retries
+                end
+                
+            else API Error (4xx/5xx)
+                API --> HTTP: Error response
+                HTTP --> Client: HTTPError(status_code)
+                deactivate API
+                deactivate HTTP
+                
+                Client -> Logger: error(f"API error: {status_code}")
+                Client -> Metrics: increment(f"api.request.error.{status_code}")
+                
+                alt status_code == 404
+                    Client --> Retry: NotFoundError
+                    Retry --> CB: NotFoundError
+                    CB --> Server: NotFoundError
+                    Server --> User: Error: Paper not found
+                else status_code == 429
+                    Client -> Client: parse_retry_after(headers)
+                    Client --> Retry: RateLimitError(retry_after)
+                    Retry -> Logger: warning(f"Rate limited, retry after {retry_after}s")
+                    Retry -> Retry: sleep(retry_after)
+                else status_code >= 500
+                    Client --> Retry: ServiceUnavailableError
+                    Retry -> Retry: should_retry(attempt, error)
+                    alt Should retry
+                        Retry -> Retry: get_delay(attempt)
+                        Retry -> Retry: sleep(delay)
+                    else No retry for this error
+                        Retry --> CB: ServiceUnavailableError
+                        CB -> CB: record_failure()
+                        CB --> Server: ServiceUnavailableError
+                        Server --> User: Error: API service error
+                    end
+                end
+            end
+        end
+        deactivate Client
+    end
+    deactivate Retry
+    deactivate Client
+end
+deactivate CB
+deactivate Server
+
+@enduml
+
+@startuml component_diagram
+!theme plain
+skinparam component {
+    BackgroundColor #FFFFFF
+    BorderColor #000000
+    ArrowColor #000000
+}
+
+title Semantic Scholar MCP Server - Component Architecture
+
+package "Client Layer" {
+    [User Application] as UserApp
+    [MCP Protocol Handler] as MCPHandler
+}
+
+package "Server Layer" {
+    [MCP Server] as MCPServer
+    [Request Router] as Router
+    [Request Validator] as Validator
+    [Response Formatter] as Formatter
+}
+
+package "Service Layer" {
+    [Paper Service] as PaperService
+    [Author Service] as AuthorService
+    [Search Service] as SearchService
+    [Citation Service] as CitationService
+}
+
+package "Infrastructure Layer" {
+    [API Client] as APIClient
+    [Cache Manager] as CacheManager
+    [Rate Limiter] as RateLimiter
+    [Circuit Breaker] as CircuitBreaker
+    [Retry Manager] as RetryManager
+    [Metrics Collector] as Metrics
+    [Logger] as Logger
+}
+
+package "Data Layer" {
+    [Model Mapper] as ModelMapper
+    [Data Validator] as DataValidator
+    [Serializer] as Serializer
+}
+
+package "External Systems" {
+    cloud "Semantic Scholar API" as SSAPI {
+        [Paper Endpoint] as PaperAPI
+        [Author Endpoint] as AuthorAPI
+        [Search Endpoint] as SearchAPI
+        [Citation Endpoint] as CitationAPI
+    }
+    
+    database "Cache Storage" as CacheStorage {
+        [In-Memory Cache] as MemCache
+        [Persistent Cache] as PersistCache
+    }
+}
+
+' Client to Server connections
+UserApp --> MCPHandler : requests
+MCPHandler --> MCPServer : MCP protocol
+
+' Server internal connections
+MCPServer --> Router : route request
+Router --> Validator : validate input
+Router --> PaperService : paper operations
+Router --> AuthorService : author operations
+Router --> SearchService : search operations
+Router --> CitationService : citation operations
+PaperService --> Formatter : format response
+AuthorService --> Formatter : format response
+SearchService --> Formatter : format response
+CitationService --> Formatter : format response
+Formatter --> MCPServer : formatted response
+
+' Service to Infrastructure connections
+PaperService --> APIClient : API calls
+AuthorService --> APIClient : API calls
+SearchService --> APIClient : API calls
+CitationService --> APIClient : API calls
+
+PaperService --> CacheManager : cache operations
+AuthorService --> CacheManager : cache operations
+SearchService --> CacheManager : cache operations
+CitationService --> CacheManager : cache operations
+
+' Infrastructure components connections
+APIClient --> RateLimiter : check limits
+APIClient --> CircuitBreaker : circuit control
+APIClient --> RetryManager : retry logic
+APIClient --> ModelMapper : map responses
+ModelMapper --> DataValidator : validate data
+ModelMapper --> Serializer : serialize/deserialize
+
+RateLimiter --> Metrics : record metrics
+CircuitBreaker --> Metrics : record metrics
+RetryManager --> Metrics : record metrics
+APIClient --> Logger : log requests
+
+CacheManager --> MemCache : fast access
+CacheManager --> PersistCache : long-term storage
+
+' External connections
+APIClient --> SSAPI : HTTP requests
+CacheManager --> CacheStorage : store/retrieve
+
+' Interface definitions
+interface "MCP Protocol" as IMCPProtocol
+interface "HTTP/REST" as IHTTP
+interface "Cache Interface" as ICache
+
+MCPHandler ..> IMCPProtocol : implements
+APIClient ..> IHTTP : uses
+CacheManager ..> ICache : implements
+
+@enduml
+
+@startuml activity_request_pipeline
+!theme plain
+skinparam activity {
+    BackgroundColor #FFFFFF
+    BorderColor #000000
+    DiamondBackgroundColor #FFFFCC
+}
+
+title Request Processing Pipeline
+
+start
+
+:Receive MCP Request;
+
+:Parse Request;
+
+if (Valid MCP Format?) then (yes)
+    :Extract Method and Parameters;
+    
+    if (Method Exists?) then (yes)
+        :Validate Parameters;
+        
+        if (Parameters Valid?) then (yes)
+            :Check Authentication;
+            note right: Optional API key validation
+            
+            if (Authenticated?) then (yes)
+                :Log Request;
+                :Record Metrics;
+                
+                fork
+                    :Check Rate Limit;
+                    if (Rate Limit OK?) then (yes)
+                        :Proceed;
+                    else (no)
+                        :Return Rate Limit Error;
+                        stop
+                    endif
+                fork again
+                    :Check Circuit Breaker;
+                    if (Circuit Closed?) then (yes)
+                        :Proceed;
+                    else (no)
+                        :Return Service Unavailable;
+                        stop
+                    endif
+                end fork
+                
+                :Route to Service Handler;
+                
+                partition "Service Processing" {
+                    :Execute Business Logic;
+                    :Make API Calls if needed;
+                    :Process Results;
+                }
+                
+                :Format Response;
+                :Log Response;
+                :Update Metrics;
+                :Return Success Response;
+                
+            else (no)
+                :Return Authentication Error;
+            endif
+        else (no)
+            :Return Validation Error;
+        endif
+    else (no)
+        :Return Method Not Found Error;
+    endif
+else (no)
+    :Return Invalid Format Error;
+endif
+
+stop
+
+@enduml
+
+@startuml activity_caching
+!theme plain
+
+title Caching Strategy
+
+start
+
+:Receive Request;
+
+:Generate Cache Key;
+note right: Based on method + parameters
+
+:Check Cache;
+
+if (Cache Hit?) then (yes)
+    :Get Cached Data;
+    
+    if (Data Expired?) then (yes)
+        :Mark as Stale;
+        
+        fork
+            :Return Stale Data;
+            note right: Serve stale while revalidating
+        fork again
+            :Fetch Fresh Data;
+            :Update Cache;
+            :Set TTL;
+        end fork
+        
+    else (no)
+        :Update Hit Metrics;
+        :Return Cached Data;
+    endif
+else (no)
+    :Update Miss Metrics;
+    
+    :Fetch from API;
+    
+    if (API Success?) then (yes)
+        :Process Response;
+        
+        if (Response Cacheable?) then (yes)
+            :Determine TTL;
+            note right
+                Paper details: 1 hour
+                Author info: 2 hours
+                Search results: 30 minutes
+            end note
+            
+            :Store in Cache;
+            
+            partition "Cache Storage" {
+                if (Data Size < Threshold?) then (yes)
+                    :Store in Memory Cache;
+                else (no)
+                    :Store in Persistent Cache;
+                endif
+            }
+            
+            :Set Expiration;
+        else (no)
+            :Skip Caching;
+            note right: Errors not cached
+        endif
+        
+        :Return Data;
+    else (no)
+        :Check Fallback Cache;
+        
+        if (Stale Data Available?) then (yes)
+            :Return Stale Data;
+            note right: Better than nothing
+        else (no)
+            :Return Error;
+        endif
+    endif
+endif
+
+stop
+
+@enduml
+
+@startuml activity_rate_limiting
+!theme plain
+
+title Rate Limiting Logic
+
+start
+
+:Receive Request;
+
+:Extract Client Identifier;
+note right: API key or IP address
+
+:Get Current Time;
+
+:Load Rate Limit State;
+
+if (State Exists?) then (yes)
+    :Get Request Count;
+    :Get Window Start Time;
+    
+    if (Window Expired?) then (yes)
+        :Reset Counter;
+        :Update Window Start;
+    else (no)
+        :Keep Current State;
+    endif
+else (no)
+    :Initialize State;
+    :Set Counter = 0;
+    :Set Window Start = Now;
+endif
+
+:Check API Key;
+
+if (Has API Key?) then (yes)
+    :Set Limit = 1000/min;
+else (no)
+    :Set Limit = 100/min;
+endif
+
+if (Counter < Limit?) then (yes)
+    :Increment Counter;
+    :Update State;
+    :Allow Request;
+    
+    :Set Response Headers;
+    note right
+        X-RateLimit-Limit: {limit}
+        X-RateLimit-Remaining: {remaining}
+        X-RateLimit-Reset: {reset_time}
+    end note
+    
+else (no)
+    :Calculate Wait Time;
+    :Log Rate Limit Event;
+    :Update Metrics;
+    
+    :Reject Request;
+    :Return 429 Error;
+    note right
+        Retry-After: {wait_time}
+    end note
+endif
+
+partition "Sliding Window" {
+    :Track Request Timestamp;
+    :Remove Old Timestamps;
+    note right: Remove timestamps older than window
+    
+    if (Burst Detected?) then (yes)
+        :Apply Burst Protection;
+        :Temporary Throttle;
+    else (no)
+        :Normal Processing;
+    endif
+}
+
+stop
+
+@enduml
+
+@startuml deployment_diagram
+!theme plain
+
+title Deployment Architecture
+
+node "Client Environment" {
+    component "User Application" as UserApp {
+        [Application Code]
+        [MCP Client Library]
+    }
+}
+
+node "MCP Server Host" {
+    component "Python Runtime" as PyRuntime {
+        [Python 3.9+]
+        [AsyncIO Runtime]
+    }
+    
+    component "MCP Server Process" as MCPProcess {
+        [Main Server]
+        [Request Handler]
+        [Service Layer]
+    }
+    
+    component "Infrastructure Services" as InfraServices {
+        [Cache Manager]
+        [Rate Limiter]
+        [Circuit Breaker]
+        [Metrics Collector]
+    }
+    
+    database "Local Cache" as LocalCache {
+        [In-Memory Store]
+        [LRU Eviction]
+    }
+    
+    artifact "Configuration" as Config {
+        file "config.yaml"
+        file ".env"
+    }
+    
+    artifact "Logs" as Logs {
+        file "server.log"
+        file "error.log"
+        file "metrics.log"
+    }
+}
+
+cloud "External Services" {
+    node "Semantic Scholar API" as SSAPI {
+        [REST API v1]
+        [GraphQL API]
+        [Rate Limiting]
+    }
+    
+    node "Monitoring Service" as Monitoring {
+        [Prometheus]
+        [Grafana]
+    }
+}
+
+' Communication paths
+UserApp ..> MCPProcess : "stdio/TCP"
+MCPProcess --> LocalCache : "In-process"
+MCPProcess --> SSAPI : "HTTPS"
+InfraServices --> Monitoring : "Metrics export"
+MCPProcess --> Config : "Read config"
+MCPProcess --> Logs : "Write logs"
+
+' Deployment specifications
+note right of MCPProcess
+    **Resource Requirements:**
+    - CPU: 2 cores minimum
+    - Memory: 512MB - 2GB
+    - Disk: 100MB for cache
+    - Network: Low latency preferred
+end note
+
+note left of SSAPI
+    **API Endpoints:**
+    - Base: api.semanticscholar.org
+    - Version: v1 / graph/v1
+    - Protocol: HTTPS only
+    - Auth: Optional API key
+end note
+
+note bottom of UserApp
+    **Communication Protocols:**
+    - Primary: stdio (pipes)
+    - Alternative: TCP socket
+    - Format: JSON-RPC 2.0
+end note
+
+@enduml

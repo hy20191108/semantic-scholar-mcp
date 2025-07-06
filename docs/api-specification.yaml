@@ -1,0 +1,733 @@
+openapi: 3.0.3
+info:
+  title: Semantic Scholar MCP Server API
+  version: 0.1.0
+  description: |
+    Model Context Protocol (MCP) server for Semantic Scholar API integration.
+    This specification describes the MCP tools, resources, and prompts available
+    for interacting with academic papers and author information.
+  contact:
+    name: API Support
+    email: support@example.com
+    url: https://github.com/yourusername/semantic-scholar-mcp
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: mcp://semantic-scholar
+    description: MCP protocol endpoint
+
+tags:
+  - name: Papers
+    description: Operations related to academic papers
+  - name: Authors
+    description: Operations related to paper authors
+  - name: Citations
+    description: Citation and reference operations
+  - name: Search
+    description: Search functionality
+
+components:
+  schemas:
+    Paper:
+      type: object
+      required:
+        - paperId
+        - title
+      properties:
+        paperId:
+          type: string
+          description: Unique identifier for the paper
+          example: "649def34f8be52c8b66281af98ae884c09aef38b"
+        title:
+          type: string
+          description: Paper title
+          example: "Attention Is All You Need"
+        abstract:
+          type: string
+          nullable: true
+          description: Paper abstract
+        year:
+          type: integer
+          nullable: true
+          description: Publication year
+          example: 2017
+        venue:
+          type: string
+          nullable: true
+          description: Publication venue
+          example: "NIPS"
+        publicationTypes:
+          type: array
+          items:
+            type: string
+            enum:
+              - JournalArticle
+              - Conference
+              - Review
+              - Dataset
+              - Book
+              - BookChapter
+              - Thesis
+              - Editorial
+              - News
+              - Study
+              - Letter
+              - Unknown
+          description: Types of publication
+        publicationDate:
+          type: string
+          format: date
+          nullable: true
+          description: Publication date
+        authors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Author'
+          description: List of authors
+        citationCount:
+          type: integer
+          description: Number of citations
+          example: 45832
+        referenceCount:
+          type: integer
+          description: Number of references
+          example: 41
+        influentialCitationCount:
+          type: integer
+          description: Number of influential citations
+          example: 4281
+        fieldsOfStudy:
+          type: array
+          items:
+            type: string
+          description: Research fields
+          example: ["Computer Science", "Mathematics"]
+        externalIds:
+          type: object
+          additionalProperties:
+            type: string
+          description: External identifiers (DOI, ArXiv, etc.)
+          example:
+            DOI: "10.5555/3295222.3295349"
+            ArXiv: "1706.03762"
+        url:
+          type: string
+          format: uri
+          nullable: true
+          description: Paper URL
+        s2Url:
+          type: string
+          format: uri
+          nullable: true
+          description: Semantic Scholar URL
+        isOpenAccess:
+          type: boolean
+          description: Whether paper is open access
+        openAccessPdf:
+          type: string
+          format: uri
+          nullable: true
+          description: URL to open access PDF
+        tldr:
+          $ref: '#/components/schemas/TLDR'
+        publicationVenue:
+          $ref: '#/components/schemas/PublicationVenue'
+
+    Author:
+      type: object
+      required:
+        - name
+      properties:
+        authorId:
+          type: string
+          nullable: true
+          description: Unique author identifier
+          example: "1741101"
+        name:
+          type: string
+          description: Author name
+          example: "Ashish Vaswani"
+        aliases:
+          type: array
+          items:
+            type: string
+          description: Alternative names
+        affiliations:
+          type: array
+          items:
+            type: string
+          description: Author affiliations
+          example: ["Google Brain"]
+        homepage:
+          type: string
+          format: uri
+          nullable: true
+          description: Author's homepage
+        paperCount:
+          type: integer
+          description: Number of papers
+          example: 23
+        citationCount:
+          type: integer
+          description: Total citations
+          example: 58392
+        hIndex:
+          type: integer
+          nullable: true
+          description: H-index
+          example: 12
+
+    TLDR:
+      type: object
+      required:
+        - model
+        - text
+      properties:
+        model:
+          type: string
+          description: Model used to generate summary
+          example: "tldr@v2.0"
+        text:
+          type: string
+          description: Generated summary
+          example: "A new simple network architecture, the Transformer..."
+
+    PublicationVenue:
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        type:
+          type: string
+          nullable: true
+        alternateNames:
+          type: array
+          items:
+            type: string
+        issn:
+          type: string
+          nullable: true
+        url:
+          type: string
+          format: uri
+          nullable: true
+
+    SearchResult:
+      type: object
+      required:
+        - total
+        - offset
+        - data
+      properties:
+        total:
+          type: integer
+          description: Total number of results
+          example: 15823
+        offset:
+          type: integer
+          description: Current offset
+          example: 0
+        next:
+          type: integer
+          nullable: true
+          description: Next offset for pagination
+          example: 10
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Paper'
+          description: List of papers
+
+    Citation:
+      type: object
+      required:
+        - paperId
+        - title
+      properties:
+        paperId:
+          type: string
+        title:
+          type: string
+        year:
+          type: integer
+          nullable: true
+        authors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Author'
+        venue:
+          type: string
+          nullable: true
+        citationCount:
+          type: integer
+        isInfluential:
+          type: boolean
+          description: Whether citation is influential
+        contexts:
+          type: array
+          items:
+            type: string
+          description: Citation contexts
+        intents:
+          type: array
+          items:
+            type: string
+          description: Citation intents
+
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Error code
+          example: "RATE_LIMIT_EXCEEDED"
+        message:
+          type: string
+          description: Error message
+          example: "Rate limit exceeded. Retry after 60 seconds."
+        details:
+          type: object
+          additionalProperties: true
+          description: Additional error details
+
+    MCPError:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: integer
+              description: MCP error code
+            message:
+              type: string
+              description: Error message
+            data:
+              type: object
+              additionalProperties: true
+
+  parameters:
+    paperId:
+      name: paper_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Paper identifier (S2 ID, DOI, or ArXiv ID)
+      example: "649def34f8be52c8b66281af98ae884c09aef38b"
+
+    authorId:
+      name: author_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Author identifier
+      example: "1741101"
+
+    fields:
+      name: fields
+      in: query
+      schema:
+        type: array
+        items:
+          type: string
+      description: Fields to include in response
+      example: ["title", "abstract", "year", "authors"]
+
+    limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 10
+      description: Maximum number of results
+
+    offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      description: Offset for pagination
+
+paths:
+  /tools/search_papers:
+    post:
+      tags:
+        - Papers
+        - Search
+      summary: Search for academic papers
+      description: |
+        Search the Semantic Scholar database for papers matching the query.
+        Supports advanced filtering by year, venue, fields of study, and more.
+      operationId: searchPapers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - query
+              properties:
+                query:
+                  type: string
+                  description: Search query
+                  example: "machine learning transformers"
+                limit:
+                  type: integer
+                  minimum: 1
+                  maximum: 100
+                  default: 10
+                  description: Number of results
+                offset:
+                  type: integer
+                  minimum: 0
+                  default: 0
+                  description: Pagination offset
+                fields:
+                  type: array
+                  items:
+                    type: string
+                  description: Fields to include
+                year:
+                  type: integer
+                  description: Filter by publication year
+                venue:
+                  type: string
+                  description: Filter by venue
+                fieldsOfStudy:
+                  type: array
+                  items:
+                    type: string
+                  description: Filter by fields
+                openAccess:
+                  type: boolean
+                  description: Filter for open access only
+      responses:
+        '200':
+          description: Successful search
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResult'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MCPError'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MCPError'
+
+  /tools/get_paper:
+    post:
+      tags:
+        - Papers
+      summary: Get paper details
+      description: Retrieve detailed information about a specific paper
+      operationId: getPaper
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - paper_id
+              properties:
+                paper_id:
+                  type: string
+                  description: Paper ID (S2 ID, DOI, or ArXiv ID)
+                  example: "10.18653/v1/2020.acl-main.703"
+                fields:
+                  type: array
+                  items:
+                    type: string
+                  description: Fields to include
+      responses:
+        '200':
+          description: Paper details retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Paper'
+        '404':
+          description: Paper not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MCPError'
+
+  /tools/get_author:
+    post:
+      tags:
+        - Authors
+      summary: Get author information
+      description: Retrieve author profile and publications
+      operationId: getAuthor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - author_id
+              properties:
+                author_id:
+                  type: string
+                  description: Author ID
+                  example: "1741101"
+                papers_limit:
+                  type: integer
+                  minimum: 1
+                  maximum: 100
+                  default: 10
+                  description: Number of papers to include
+                fields:
+                  type: array
+                  items:
+                    type: string
+                  description: Fields to include
+      responses:
+        '200':
+          description: Author information retrieved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Author'
+                  - type: object
+                    properties:
+                      papers:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Paper'
+
+  /tools/get_paper_citations:
+    post:
+      tags:
+        - Citations
+      summary: Get paper citations
+      description: Retrieve papers that cite the given paper
+      operationId: getPaperCitations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - paper_id
+              properties:
+                paper_id:
+                  type: string
+                  description: Paper ID
+                limit:
+                  type: integer
+                  minimum: 1
+                  maximum: 1000
+                  default: 100
+                offset:
+                  type: integer
+                  minimum: 0
+                  default: 0
+                fields:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Citations retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  offset:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Citation'
+
+  /tools/get_paper_references:
+    post:
+      tags:
+        - Citations
+      summary: Get paper references
+      description: Retrieve papers referenced by the given paper
+      operationId: getPaperReferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - paper_id
+              properties:
+                paper_id:
+                  type: string
+                  description: Paper ID
+                limit:
+                  type: integer
+                  minimum: 1
+                  maximum: 1000
+                  default: 100
+                offset:
+                  type: integer
+                  minimum: 0
+                  default: 0
+                fields:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: References retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  offset:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Paper'
+
+  /resources/papers/{paper_id}:
+    get:
+      tags:
+        - Papers
+      summary: Access paper as resource
+      description: MCP resource endpoint for paper information
+      operationId: getPaperResource
+      parameters:
+        - $ref: '#/components/parameters/paperId'
+      responses:
+        '200':
+          description: Paper resource
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uri:
+                    type: string
+                    example: "papers/649def34f8be52c8b66281af98ae884c09aef38b"
+                  name:
+                    type: string
+                    example: "Attention Is All You Need"
+                  mimeType:
+                    type: string
+                    example: "application/json"
+                  content:
+                    $ref: '#/components/schemas/Paper'
+
+  /resources/authors/{author_id}:
+    get:
+      tags:
+        - Authors
+      summary: Access author as resource
+      description: MCP resource endpoint for author information
+      operationId: getAuthorResource
+      parameters:
+        - $ref: '#/components/parameters/authorId'
+      responses:
+        '200':
+          description: Author resource
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uri:
+                    type: string
+                    example: "authors/1741101"
+                  name:
+                    type: string
+                    example: "Ashish Vaswani"
+                  mimeType:
+                    type: string
+                    example: "application/json"
+                  content:
+                    $ref: '#/components/schemas/Author'
+
+  /prompts/research_assistant:
+    post:
+      tags:
+        - Search
+      summary: Research assistant prompt
+      description: Specialized prompt for research tasks
+      operationId: researchAssistantPrompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - topic
+              properties:
+                topic:
+                  type: string
+                  description: Research topic
+                  example: "transformer architectures"
+                depth:
+                  type: string
+                  enum: [surface, moderate, deep]
+                  default: moderate
+                  description: Research depth level
+      responses:
+        '200':
+          description: Research prompt generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prompt:
+                    type: string
+                    description: Generated research prompt
+                  suggestedQueries:
+                    type: array
+                    items:
+                      type: string
+                    description: Suggested search queries
+
+security:
+  - ApiKey: []
+
+externalDocs:
+  description: Semantic Scholar API Documentation
+  url: https://api.semanticscholar.org/api-docs/

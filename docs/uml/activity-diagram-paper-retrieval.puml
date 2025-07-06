@@ -1,0 +1,111 @@
+@startuml semantic-scholar-mcp-activity-paper-retrieval
+!theme plain
+
+title Get Paper with Citations and References - Activity Diagram
+
+start
+
+:Receive get_paper request;
+note right: paper_id, include_citations,\ninclude_references
+
+:Create RequestContext;
+note right: Generate correlation ID\nfor request tracking
+
+:Validate paper_id;
+
+if (paper_id is empty?) then (yes)
+  :Return validation error;
+  stop
+else (no)
+endif
+
+partition "Check Cache" {
+  if (citations or references requested?) then (yes)
+    :Skip cache check;
+    note right: Cache only used for\nbasic paper data
+  else (no)
+    :Check cache for paper_id;
+    if (cache hit?) then (yes)
+      :Return cached paper;
+      stop
+    else (no)
+    endif
+  endif
+}
+
+partition "API Request with Resilience" {
+  :Acquire rate limit token;
+  
+  while (retry_count < max_retries?) is (yes)
+    :Check circuit breaker state;
+    
+    switch (circuit breaker state?)
+    case (OPEN)
+      :Throw ServiceUnavailableError;
+      :Calculate retry delay;
+      :Wait with exponential backoff;
+    case (CLOSED or HALF_OPEN)
+      :Make HTTP request to API;
+      
+      switch (response status?)
+      case (200 OK)
+        :Parse response;
+        :Create Paper object;
+        :Update circuit breaker success;
+        break
+      case (404 Not Found)
+        :Throw NotFoundError;
+        stop
+      case (429 Rate Limited)
+        :Extract Retry-After header;
+        :Throw RateLimitError;
+        :Update circuit breaker failure;
+      case (5xx Server Error)
+        :Throw ServiceUnavailableError;
+        :Update circuit breaker failure;
+      endswitch
+    endswitch
+    
+    :Increment retry_count;
+  endwhile (no)
+  
+  if (all retries exhausted?) then (yes)
+    :Return error response;
+    stop
+  else (no)
+  endif
+}
+
+partition "Fetch Additional Data" {
+  if (include_citations?) then (yes)
+    fork
+      :Fetch citations;
+      :Create Citation objects;
+      :Add to Paper.citations;
+    fork again
+  endif
+  
+  if (include_references?) then (yes)
+    :Fetch references;
+    :Create Reference objects;
+    :Add to Paper.references;
+  endif
+  
+  end fork
+}
+
+partition "Cache and Return" {
+  if (basic request without citations/references?) then (yes)
+    :Store in cache with TTL;
+  else (no)
+    :Skip caching;
+    note right: Don't cache papers with\nadditional data to avoid\nmemory bloat
+  endif
+  
+  :Log successful completion;
+  :Return Paper object as dict;
+}
+
+stop
+
+@enduml

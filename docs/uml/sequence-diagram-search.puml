@@ -1,0 +1,126 @@
+@startuml semantic-scholar-mcp-sequence-search
+!theme plain
+
+title Search Papers Sequence Diagram
+
+actor User
+participant "MCP Client" as Client
+participant "FastMCP Server" as Server
+participant "search_papers()" as SearchTool
+participant "RequestContext" as Context
+participant "SemanticScholarClient" as APIClient
+participant "TokenBucketRateLimiter" as RateLimiter
+participant "CircuitBreaker" as CB
+participant "InMemoryCache" as Cache
+participant "Semantic Scholar API" as API
+participant "ContextLogger" as Logger
+
+User -> Client: search papers "machine learning"
+activate Client
+
+Client -> Server: invoke tool\n"search_papers"
+activate Server
+
+Server -> SearchTool: search_papers(\n  query="machine learning",\n  limit=10)
+activate SearchTool
+
+SearchTool -> Context: __enter__()
+activate Context
+note right: Creates request context\nwith correlation ID
+
+SearchTool -> SearchTool: Build SearchQuery
+note right: Validates query parameters
+
+SearchTool -> APIClient: search_papers(search_query)
+activate APIClient
+
+APIClient -> Cache: get("search:machine learning:0:10")
+activate Cache
+Cache --> APIClient: None (cache miss)
+deactivate Cache
+
+APIClient -> RateLimiter: wait_if_needed(1)
+activate RateLimiter
+note right: Checks rate limit\nWaits if necessary
+RateLimiter --> APIClient: OK
+deactivate RateLimiter
+
+APIClient -> CB: call(_execute_request)
+activate CB
+
+alt Circuit Breaker CLOSED
+  CB -> APIClient: _execute_request()
+  
+  APIClient -> Logger: debug("Making request to /paper/search")
+  activate Logger
+  Logger --> APIClient: logged
+  deactivate Logger
+  
+  APIClient -> API: GET /paper/search\n?query=machine learning\n&limit=10
+  activate API
+  
+  alt Success Response
+    API --> APIClient: 200 OK\n{data: [...], total: 1000}
+    deactivate API
+    
+    CB -> CB: _on_success()
+    note right: Reset failure count
+    
+    APIClient -> APIClient: Parse response\nCreate Paper objects
+    
+    APIClient -> Cache: set("search:machine learning:0:10",\n     response, ttl=300)
+    activate Cache
+    Cache --> APIClient: stored
+    deactivate Cache
+    
+    APIClient -> Logger: info("Completed search_papers")
+    activate Logger
+    Logger --> APIClient: logged
+    deactivate Logger
+    
+  else Rate Limited
+    API --> APIClient: 429 Too Many Requests\nRetry-After: 60
+    
+    APIClient -> APIClient: raise RateLimitError
+    
+    CB -> CB: _on_failure()
+    note right: Increment failure count
+    
+    APIClient -> APIClient: Retry with\nexponential backoff
+    
+  else Server Error
+    API --> APIClient: 503 Service Unavailable
+    
+    APIClient -> APIClient: raise ServiceUnavailableError
+    
+    CB -> CB: _on_failure()
+    note right: Check if threshold reached\nMay open circuit
+    
+  end
+  
+else Circuit Breaker OPEN
+  CB -> APIClient: raise ServiceUnavailableError
+  note right: Fast fail without\ncalling API
+end
+
+deactivate CB
+
+APIClient --> SearchTool: PaginatedResponse[Paper]
+deactivate APIClient
+
+SearchTool -> SearchTool: Format response
+note right: Convert to dict\nwith success flag
+
+SearchTool -> Context: __exit__()
+deactivate Context
+
+SearchTool --> Server: {\n  "success": true,\n  "data": {\n    "papers": [...],\n    "total": 1000,\n    "has_more": true\n  }\n}
+deactivate SearchTool
+
+Server --> Client: Tool result
+deactivate Server
+
+Client --> User: Display results
+deactivate Client
+
+@enduml

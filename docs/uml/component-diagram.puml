@@ -1,0 +1,108 @@
+@startuml semantic-scholar-mcp-component-diagram
+!theme plain
+skinparam componentStyle rectangle
+
+title Semantic Scholar MCP Server - Component Architecture
+
+' External Systems
+cloud "External Systems" {
+  [Semantic Scholar API] as SSAPI
+  [MCP Client] as MCPClient
+}
+
+' Main Application Package
+package "Semantic Scholar MCP Server" {
+  
+  ' MCP Layer
+  package "MCP Layer" {
+    [FastMCP Server] as MCPServer
+    [Tool Handlers] as Tools
+    [Resource Handlers] as Resources
+    [Prompt Handlers] as Prompts
+    
+    MCPServer --> Tools
+    MCPServer --> Resources
+    MCPServer --> Prompts
+  }
+  
+  ' Business Logic Layer
+  package "Business Logic Layer" {
+    [SemanticScholarClient] as Client
+    [Domain Models] as Models
+    [Search Query Builder] as QueryBuilder
+    
+    Client --> Models
+    Client --> QueryBuilder
+  }
+  
+  ' Resilience Layer
+  package "Resilience Patterns" {
+    [Circuit Breaker] as CB
+    [Rate Limiter] as RL
+    [Retry Strategy] as Retry
+    [Cache Manager] as Cache
+    
+    Client --> CB
+    Client --> RL
+    Client --> Retry
+    Client --> Cache
+  }
+  
+  ' Infrastructure Layer
+  package "Infrastructure" {
+    [Configuration Manager] as Config
+    [Logging System] as Logging
+    [Metrics Collector] as Metrics
+    [DI Container] as DIContainer
+    
+    Config --> DIContainer
+    Logging --> DIContainer
+    Metrics --> DIContainer
+  }
+  
+  ' Core Layer
+  package "Core" {
+    [Protocols/Interfaces] as Protocols
+    [Exception Hierarchy] as Exceptions
+    [Type Definitions] as Types
+    [Base Models] as BaseModels
+    
+    Protocols --> Types
+    BaseModels --> Types
+  }
+}
+
+' Dependencies between layers
+Tools --> Client : uses
+Resources --> Client : uses
+Prompts --> QueryBuilder : uses
+
+Client --> SSAPI : HTTP/REST
+MCPClient --> MCPServer : stdio/SSE
+
+CB --> Logging : logs
+RL --> Metrics : reports
+Cache --> Metrics : reports
+
+Models --> BaseModels : extends
+Client --> Protocols : implements
+Cache --> Protocols : implements
+Logging --> Protocols : implements
+
+' Notes
+note right of MCPServer
+  Entry point for all
+  MCP communication
+end note
+
+note right of Client
+  Core business logic
+  with resilience patterns
+end note
+
+note bottom of Protocols
+  Clean architecture:
+  Dependencies point inward
+end note
+
+@enduml
