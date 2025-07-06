@@ -1,0 +1,192 @@
+@startuml Semantic Scholar MCP - Paper Search Activity
+!theme plain
+skinparam activityFontSize 12
+skinparam activityBackgroundColor #FFFFCC
+skinparam activityBorderColor #000000
+skinparam activityStartColor #90EE90
+skinparam activityEndColor #FF6B6B
+
+title Paper Search Process - Activity Diagram
+
+start
+
+:Receive search_papers request;
+note right
+    Input parameters:
+    - query: string
+    - limit: int (1-100)
+    - offset: int
+    - year_filter: Optional
+    - venue_filter: Optional
+    - fields_of_study: Optional
+    - sort: Optional
+end note
+
+:Extract correlation ID;
+:Initialize request context;
+
+partition "Parameter Validation" {
+    :Validate query string;
+    if (Query empty or too short?) then (yes)
+        :Return ValidationError;
+        stop
+    else (no)
+    endif
+    
+    :Validate numeric parameters;
+    if (Limit out of range?) then (yes)
+        :Set limit to default (10);
+    else (no)
+    endif
+    
+    :Build SearchQuery object;
+}
+
+partition "Service Resolution" {
+    :Get ServiceProvider;
+    :Resolve ILogger;
+    :Resolve ICache;
+    :Resolve SemanticScholarClient;
+    
+    if (Service resolution failed?) then (yes)
+        :Log error;
+        :Return ConfigurationError;
+        stop
+    else (no)
+    endif
+}
+
+:Log search request;
+
+partition "Cache Check" {
+    :Generate cache key;
+    note right
+        Cache key = hash of:
+        - query
+        - filters
+        - fields
+        - sort
+        - offset/limit
+    end note
+    
+    :Check cache;
+    if (Cache hit?) then (yes)
+        :Log cache hit;
+        :Update metrics;
+        :Return cached results;
+        stop
+    else (no)
+        :Continue to API call;
+    endif
+}
+
+partition "Rate Limiting" {
+    :Check rate limit;
+    if (Tokens available?) then (yes)
+        :Consume token;
+    else (no)
+        :Calculate wait time;
+        :Log rate limit delay;
+        :Wait for token;
+        :Consume token;
+    endif
+}
+
+partition "Circuit Breaker Check" {
+    :Check circuit state;
+    switch (Circuit State)
+        case (Open)
+            :Log circuit open;
+            :Return ServiceUnavailableError;
+            stop
+        case (Half-Open)
+            :Allow single request;
+        case (Closed)
+            :Proceed normally;
+    endswitch
+}
+
+partition "API Request" {
+    :Prepare HTTP request;
+    :Add authentication header;
+    :Set request timeout;
+    
+    :Send request to Semantic Scholar API;
+    
+    fork
+        :Start timeout timer;
+    fork again
+        :Execute HTTP POST;
+        :Wait for response;
+    end fork
+    
+    if (Request successful?) then (yes)
+        :Parse response JSON;
+        :Update circuit breaker (success);
+    else (no)
+        if (Timeout?) then (yes)
+            :Cancel request;
+            :Update circuit breaker (failure);
+            :Return TimeoutError;
+            stop
+        elseif (Rate limit (429)?) then (yes)
+            :Extract retry-after;
+            :Update circuit breaker (success);
+            :Return RateLimitError;
+            stop
+        elseif (Server error (5xx)?) then (yes)
+            :Update circuit breaker (failure);
+            :Check retry policy;
+            if (Retries available?) then (yes)
+                :Wait with backoff;
+                :Increment retry count;
+                :Retry request;
+            else (no)
+                :Return APIError;
+                stop
+            endif
+        else (Client error 4xx)
+            :Log client error;
+            :Return APIError;
+            stop
+        endif
+    endif
+}
+
+partition "Response Processing" {
+    :Validate response schema;
+    if (Schema valid?) then (yes)
+        :Map JSON to Paper objects;
+        :Enrich with computed fields;
+        :Validate business rules;
+    else (no)
+        :Log schema error;
+        :Return DataError;
+        stop
+    endif
+    
+    :Create PaginatedResponse;
+}
+
+partition "Cache Storage" {
+    :Store in cache;
+    note right
+        TTL based on:
+        - Data volatility
+        - Query type
+        - Current load
+    end note
+    :Set expiration time;
+}
+
+partition "Metrics & Logging" {
+    :Record API latency;
+    :Update success counter;
+    :Log response summary;
+}
+
+:Return search results;
+
+stop
+
+@enduml

@@ -206,7 +206,7 @@ def log_performance(
             start_time = time.time()
             context = {
                 "function": func.__name__,
-                "module": func.__module__,
+                "function_module": func.__module__,
             }
             
             if log_args:
@@ -247,7 +247,7 @@ def log_performance(
             start_time = time.time()
             context = {
                 "function": func.__name__,
-                "module": func.__module__,
+                "function_module": func.__module__,
             }
             
             if log_args:

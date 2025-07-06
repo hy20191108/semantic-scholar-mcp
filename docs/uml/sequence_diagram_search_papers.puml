@@ -1,0 +1,188 @@
+@startuml Semantic Scholar MCP - Search Papers Sequence
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title Search Papers Tool Execution Flow
+
+actor "Claude Desktop\nor MCP Client" as Client
+participant "MCP Server\n(FastMCP)" as MCP
+participant "Tool Handler\n@mcp.tool()" as Handler
+participant "ServiceProvider" as DI
+participant "SemanticScholarClient" as API
+participant "CircuitBreaker" as CB
+participant "RateLimiter" as RL
+participant "Cache\n(ICache)" as Cache
+participant "HTTPClient\n(httpx)" as HTTP
+participant "Logger\n(ILogger)" as Logger
+participant "Metrics\n(IMetricsCollector)" as Metrics
+database "Semantic Scholar\nAPI" as SSAPI
+
+== Initialization Phase ==
+Client -> MCP : Initialize MCP Server
+activate MCP
+MCP -> DI : Create ServiceProvider
+activate DI
+DI -> DI : Register Services\n(Logger, Cache, Metrics, API Client)
+DI --> MCP : ServiceProvider Ready
+deactivate DI
+MCP -> API : Initialize SemanticScholarClient
+activate API
+API -> CB : Initialize CircuitBreaker
+API -> RL : Initialize RateLimiter
+API -> HTTP : Create AsyncClient
+API --> MCP : Client Ready
+deactivate API
+MCP --> Client : Server Ready
+deactivate MCP
+
+== Search Papers Request ==
+Client -> MCP : Call search_papers(query="machine learning", limit=10)
+activate MCP
+MCP -> Handler : Route to Tool Handler
+activate Handler
+
+Handler -> Handler : Validate Parameters\n(query length, limit range)
+Handler -> DI : Get Required Services
+activate DI
+DI --> Handler : Return API Client, Logger
+deactivate DI
+
+Handler -> Logger : Log Request\n(correlation_id, query, params)
+activate Logger
+Logger --> Handler : 
+deactivate Logger
+
+Handler -> API : search_papers(SearchQuery)
+activate API
+
+== Cache Check ==
+API -> Cache : Check Cache\nkey = hash(query, filters, fields)
+activate Cache
+Cache -> Cache : Lookup in Memory
+alt Cache Hit
+    Cache --> API : Return Cached Results
+    API -> Metrics : Record Cache Hit
+    API --> Handler : Return Papers
+else Cache Miss
+    Cache --> API : None
+    deactivate Cache
+    
+    == Rate Limiting ==
+    API -> RL : Acquire Token
+    activate RL
+    RL -> RL : Check Token Bucket
+    alt Tokens Available
+        RL --> API : Token Acquired
+    else Rate Limited
+        RL -> RL : Calculate Wait Time
+        RL --> API : Wait Required (delay)
+        API -> API : await asyncio.sleep(delay)
+        RL -> RL : Retry Token Acquisition
+        RL --> API : Token Acquired
+    end
+    deactivate RL
+    
+    == Circuit Breaker ==
+    API -> CB : Check Circuit State
+    activate CB
+    alt Circuit Open
+        CB --> API : CircuitOpenError
+        API -> Logger : Log Circuit Open
+        API --> Handler : Return Error
+    else Circuit Closed/Half-Open
+        CB --> API : Proceed
+        deactivate CB
+        
+        == API Request ==
+        API -> HTTP : POST /graph/v1/paper/search/bulk
+        activate HTTP
+        HTTP -> SSAPI : HTTPS Request\nHeaders: x-api-key\nBody: {query, fields, offset, limit}
+        activate SSAPI
+        
+        alt Success Response
+            SSAPI --> HTTP : 200 OK\n{data: [...papers], total: n}
+            deactivate SSAPI
+            HTTP --> API : Response Data
+            deactivate HTTP
+            
+            API -> CB : Record Success
+            activate CB
+            CB -> CB : Reset Failure Count
+            CB --> API : 
+            deactivate CB
+            
+            == Response Processing ==
+            API -> API : Parse Response\nCreate Paper Objects
+            API -> API : Validate Data\n(required fields, types)
+            
+            == Cache Storage ==
+            API -> Cache : Store Results\nTTL = 3600s
+            activate Cache
+            Cache -> Cache : Add to Memory Cache\nwith Expiration
+            Cache --> API : Stored
+            deactivate Cache
+            
+            == Metrics Recording ==
+            API -> Metrics : Record API Call\n(latency, status, endpoint)
+            activate Metrics
+            Metrics -> Metrics : Update Histograms
+            Metrics --> API : 
+            deactivate Metrics
+            
+            API --> Handler : PaginatedResponse[Paper]
+            
+        else API Error
+            SSAPI --> HTTP : Error Response\n(4xx/5xx)
+            HTTP --> API : Error Details
+            
+            API -> CB : Record Failure
+            activate CB
+            CB -> CB : Increment Failure Count
+            alt Threshold Exceeded
+                CB -> CB : Open Circuit
+                CB --> API : State Changed
+            else Below Threshold
+                CB --> API : Continue
+            end
+            deactivate CB
+            
+            API -> Logger : Log API Error\n(status, message, request_id)
+            
+            alt Rate Limit Error (429)
+                API -> API : Extract Retry-After Header
+                API --> Handler : RateLimitError\n(retry_after, details)
+            else Other Error
+                API --> Handler : APIError\n(status_code, message)
+            end
+        end
+    end
+end
+
+deactivate API
+
+== Response to Client ==
+Handler -> Logger : Log Response\n(status, item_count, duration)
+activate Logger
+Logger --> Handler : 
+deactivate Logger
+
+alt Success
+    Handler -> Handler : Format Response\n(extract relevant fields)
+    Handler --> MCP : Tool Result\n{papers: [...], total: n}
+else Error
+    Handler -> Handler : Format Error\n(user-friendly message)
+    Handler --> MCP : Tool Error\n{error: message, code: error_code}
+end
+
+deactivate Handler
+
+MCP --> Client : Return Result
+deactivate MCP
+
+== Async Cleanup (Background) ==
+API -> HTTP : Close Connections\n(on shutdown)
+API -> Cache : Persist Cache\n(if configured)
+API -> Metrics : Flush Metrics
+
+@enduml

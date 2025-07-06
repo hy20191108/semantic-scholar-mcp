@@ -1,0 +1,176 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+  UV_VERSION: "0.4.18"
+
+jobs:
+  lint:
+    name: Lint and Type Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: ${{ env.UV_VERSION }}
+        enable-cache: true
+    
+    - name: Set up Python
+      run: uv python install ${{ env.PYTHON_VERSION }}
+    
+    - name: Install dependencies
+      run: |
+        uv sync --dev
+    
+    - name: Run ruff
+      run: |
+        uv run ruff check src tests
+    
+    - name: Run black
+      run: |
+        uv run black --check src tests
+    
+    - name: Run isort
+      run: |
+        uv run isort --check-only src tests
+    
+    - name: Run mypy
+      run: |
+        uv run mypy src
+
+  test:
+    name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.10", "3.11", "3.12"]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: ${{ env.UV_VERSION }}
+        enable-cache: true
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      run: uv python install ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        uv sync --dev
+    
+    - name: Run unit tests
+      run: |
+        uv run pytest tests/unit -v --cov=semantic_scholar_mcp --cov-report=xml
+    
+    - name: Upload coverage to Codecov
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+      uses: codecov/codecov-action@v4
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        file: ./coverage.xml
+        fail_ci_if_error: false
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: ${{ env.UV_VERSION }}
+        enable-cache: true
+    
+    - name: Set up Python
+      run: uv python install ${{ env.PYTHON_VERSION }}
+    
+    - name: Install dependencies
+      run: |
+        uv sync --dev
+    
+    - name: Run integration tests
+      env:
+        SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
+      run: |
+        uv run pytest tests/integration -v -m integration
+      continue-on-error: true  # Don't fail if API is unavailable
+
+  build:
+    name: Build Package
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: ${{ env.UV_VERSION }}
+        enable-cache: true
+    
+    - name: Set up Python
+      run: uv python install ${{ env.PYTHON_VERSION }}
+    
+    - name: Build package
+      run: |
+        uv build
+    
+    - name: Check package
+      run: |
+        uv run twine check dist/*
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist
+        path: dist/
+
+  docs:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: ${{ env.UV_VERSION }}
+        enable-cache: true
+    
+    - name: Set up Python
+      run: uv python install ${{ env.PYTHON_VERSION }}
+    
+    - name: Install dependencies
+      run: |
+        uv sync --dev
+        uv add mkdocs mkdocs-material mkdocstrings[python]
+    
+    - name: Build docs
+      run: |
+        uv run mkdocs build
+    
+    - name: Upload docs
+      uses: actions/upload-artifact@v4
+      with:
+        name: docs
+        path: site/

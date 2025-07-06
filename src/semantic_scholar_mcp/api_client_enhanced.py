@@ -226,6 +226,7 @@ class SemanticScholarClient:
         )
         
         self._client: Optional[httpx.AsyncClient] = None
+        self._start_time = datetime.utcnow()
     
     async def __aenter__(self):
         """Enter async context."""
@@ -398,7 +399,14 @@ class SemanticScholarClient:
             cached = await self.cache.get(cache_key)
             if cached:
                 self.logger.debug("Cache hit for search", query=query.query)
-                return cached
+                # Reconstruct PaginatedResponse from cached data
+                papers = [Paper(**paper_data) for paper_data in cached.get("items", [])]
+                return PaginatedResponse[Paper](
+                    items=papers,
+                    total=cached.get("total", 0),
+                    offset=cached.get("offset", 0),
+                    limit=cached.get("limit", 10)
+                )
         
         # Prepare request
         fields = fields or self.config.default_fields
@@ -433,7 +441,14 @@ class SemanticScholarClient:
         
         # Cache result
         if self.cache:
-            await self.cache.set(cache_key, response, ttl=300)  # 5 minutes
+            # Serialize with aliases for proper reconstruction
+            cache_data = {
+                "items": [paper.model_dump(by_alias=True) for paper in response.items],
+                "total": response.total,
+                "offset": response.offset,
+                "limit": response.limit
+            }
+            await self.cache.set(cache_key, cache_data, ttl=300)  # 5 minutes
         
         return response
     
@@ -683,6 +698,9 @@ class SemanticScholarClient:
     
     async def health_check(self) -> Dict[str, Any]:
         """Perform health check."""
+        start_time = getattr(self, '_start_time', datetime.utcnow())
+        uptime = (datetime.utcnow() - start_time).total_seconds()
+        
         try:
             # Try a simple search
             await self.search_papers(
@@ -691,6 +709,9 @@ class SemanticScholarClient:
             
             return {
                 "status": "healthy",
+                "api_accessible": True,
+                "version": "1.0.0",
+                "uptime_seconds": uptime,
                 "circuit_breaker": self.get_circuit_breaker_state(),
                 "rate_limiter": self.get_rate_limiter_status(),
                 "timestamp": datetime.utcnow().isoformat()
@@ -698,8 +719,16 @@ class SemanticScholarClient:
         except Exception as e:
             return {
                 "status": "unhealthy",
+                "api_accessible": False,
+                "version": "1.0.0",
+                "uptime_seconds": uptime,
                 "error": str(e),
                 "circuit_breaker": self.get_circuit_breaker_state(),
                 "rate_limiter": self.get_rate_limiter_status(),
                 "timestamp": datetime.utcnow().isoformat()
             }
+    
+    async def close(self) -> None:
+        """Close the client and cleanup resources."""
+        if hasattr(self, '_client'):
+            await self._client.aclose()

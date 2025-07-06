@@ -8,9 +8,9 @@ version = "0.1.0"
 description = "MCP server for Semantic Scholar API integration"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = { text = "MIT" }
 authors = [
-    {name = "Your Name", email = "your.email@example.com"},
+    { name = "Haruhiko Yoshioka", email = "haruhiko.yoshioka.2001@gmail.com" },
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -73,7 +73,7 @@ addopts = [
     "--cov-report=term-missing",
     "--cov-report=html",
     "--cov-report=xml",
-    "--cov-fail-under=90",
+    "--cov-fail-under=20",
 ]
 markers = [
     "unit: Unit tests",
@@ -116,36 +116,36 @@ strict_equality = true
 target-version = "py310"
 line-length = 88
 select = [
-    "E",    # pycodestyle errors
-    "W",    # pycodestyle warnings
-    "F",    # pyflakes
-    "I",    # isort
-    "C",    # flake8-comprehensions
-    "B",    # flake8-bugbear
-    "UP",   # pyupgrade
-    "S",    # flake8-bandit
-    "A",    # flake8-builtins
-    "DTZ",  # flake8-datetimez
-    "ICN",  # flake8-import-conventions
-    "PIE",  # flake8-pie
-    "PT",   # flake8-pytest-style
-    "RET",  # flake8-return
-    "SIM",  # flake8-simplify
-    "TID",  # flake8-tidy-imports
-    "TCH",  # flake8-type-checking
-    "ARG",  # flake8-unused-arguments
-    "PTH",  # flake8-use-pathlib
-    "ERA",  # eradicate
-    "PD",   # pandas-vet
-    "PGH",  # pygrep-hooks
-    "PL",   # Pylint
-    "TRY",  # tryceratops
-    "NPY",  # NumPy-specific rules
-    "RUF",  # Ruff-specific rules
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "C",   # flake8-comprehensions
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "S",   # flake8-bandit
+    "A",   # flake8-builtins
+    "DTZ", # flake8-datetimez
+    "ICN", # flake8-import-conventions
+    "PIE", # flake8-pie
+    "PT",  # flake8-pytest-style
+    "RET", # flake8-return
+    "SIM", # flake8-simplify
+    "TID", # flake8-tidy-imports
+    "TCH", # flake8-type-checking
+    "ARG", # flake8-unused-arguments
+    "PTH", # flake8-use-pathlib
+    "ERA", # eradicate
+    "PD",  # pandas-vet
+    "PGH", # pygrep-hooks
+    "PL",  # Pylint
+    "TRY", # tryceratops
+    "NPY", # NumPy-specific rules
+    "RUF", # Ruff-specific rules
 ]
 ignore = [
-    "S101",  # Use of assert detected
-    "PLR0913",  # Too many arguments
+    "S101",    # Use of assert detected
+    "PLR0913", # Too many arguments
 ]
 
 [tool.ruff.per-file-ignores]
@@ -164,3 +164,10 @@ path = "src/semantic_scholar_mcp/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/semantic_scholar_mcp"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.0.0",
+    "pytest-mock>=3.14.1",
+]

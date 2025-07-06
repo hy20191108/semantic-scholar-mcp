@@ -1,0 +1,63 @@
+@startuml Circuit Breaker State Machine
+!theme plain
+skinparam stateFontSize 14
+skinparam stateBackgroundColor #FFFFCC
+skinparam stateBorderColor #000000
+skinparam stateStartColor #90EE90
+skinparam stateEndColor #FF6B6B
+
+title Circuit Breaker State Transitions
+
+[*] --> Closed : Initial State
+
+state Closed {
+    Closed : Requests pass through normally
+    Closed : Failure count tracked
+    Closed : Success resets failure count
+}
+
+state Open {
+    Open : All requests fail immediately
+    Open : No requests sent to service
+    Open : Returns CircuitOpenError
+}
+
+state HalfOpen {
+    HalfOpen : Limited requests allowed
+    HalfOpen : Testing service recovery
+    HalfOpen : Single failure returns to Open
+}
+
+' Transitions
+Closed --> Open : Failure threshold exceeded\n(e.g., 5 failures in window)
+Open --> HalfOpen : Recovery timeout elapsed\n(e.g., after 60 seconds)
+HalfOpen --> Closed : Request succeeds\n(service recovered)
+HalfOpen --> Open : Request fails\n(service still down)
+Closed --> Closed : Request succeeds\n(reset failure count)
+Closed --> Closed : Request fails\n(increment failure count)
+
+' Notes
+note right of Open
+    Protects downstream service
+    from overload during outages
+end note
+
+note bottom of HalfOpen
+    Allows gradual recovery
+    without overwhelming service
+end note
+
+note left of Closed
+    Normal operation mode
+    with failure tracking
+end note
+
+' Entry/Exit actions
+Closed : entry / reset_failure_count()
+Closed : do / track_requests()
+Open : entry / log_circuit_open()
+Open : entry / schedule_recovery_timer()
+HalfOpen : entry / log_circuit_half_open()
+HalfOpen : do / allow_single_request()
+
+@enduml

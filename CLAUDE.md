@@ -156,3 +156,172 @@
      ☐ 包括的なドキュメント作成（README、API仕様、使用例）
      ☐ UMLダイアグラムの生成（クラス図、シーケンス図）
      ☐ CI/CD設定とGitHub Actionsワークフロー
+
+図はmermaidで作成してください．
+ただし，UMLはplantumlで作成してください．
+
+## Semantic Scholar API 使用ガイド (2024年版)
+
+### 認証とレート制限
+
+#### 非認証アクセス
+- レート制限: 5分間に5,000リクエスト（共有プール）
+- ほとんどのエンドポイントは認証なしで利用可能
+- すべての非認証ユーザー間で共有されるため、混雑時は制限に達しやすい
+
+#### 認証アクセス
+- APIキーを使用した認証を推奨
+- 初期レート制限: 
+  - `/paper/batch`, `/paper/search`, `/recommendations`: 1 RPS
+  - その他のエンドポイント: 10 RPS
+- APIキーはメールで受け取り、他者と共有しないこと
+
+#### ベストプラクティス
+- すべてのリクエストにAPIキーを含める
+- エクスポネンシャルバックオフ戦略を使用する
+- 必要なフィールドのみを指定してレスポンスを最適化
+- 2024年以降、認証済みリクエストの使用を強く推奨
+
+### Python実装例
+
+```python
+# 公式のSemantic Scholar Python クライアント（非公式ライブラリ）
+from semanticscholar import SemanticScholar
+
+# クライアントのインスタンス化
+sch = SemanticScholar(api_key="YOUR_API_KEY")
+
+# 論文の取得
+paper = sch.get_paper('10.1093/mind/lix.236.433')
+print(paper.title)
+
+# バルク検索の使用（効率的）
+results = sch.search_paper('machine learning', limit=100)
+```
+
+### 重要な注意事項
+- レート制限に達した場合は、エクスポネンシャルバックオフで再試行
+- 大量のデータが必要な場合は、Datasets APIを使用してローカルで処理
+- fieldsパラメータで必要なデータのみを取得し、パフォーマンスを向上
+
+## Python MCP サーバー実装ガイド (FastMCP 2024年版)
+
+### MCPとは
+
+Model Context Protocol (MCP)は、2024年11月にAnthropicによって導入された、LLMに外部ツールやリソースを提供する標準化された方法です。「AIのUSB-Cポート」とも呼ばれ、LLMとリソースを統一的に接続します。
+
+### FastMCPフレームワーク
+
+FastMCP 1.0は2024年に公式MCP Python SDKに統合されました。現在はFastMCP 2.0が活発にメンテナンスされており、MCPエコシステムで作業するための完全なツールキットを提供しています。
+
+#### 主要機能
+- **Resources**: データの公開（GETエンドポイントのような役割）
+- **Tools**: 機能の提供（POSTエンドポイントのような役割）
+- **Prompts**: LLMインタラクションの再利用可能なテンプレート
+
+### 実装例
+
+```python
+from mcp.server.fastmcp import FastMCP
+
+# サーバーの作成
+server = FastMCP("My Calculator Server")
+
+# ツールの定義（デコレータを使用）
+@server.tool(
+    name="evaluate_expression",
+    description="数式を評価して結果を返す"
+)
+def evaluate_expression(expression: str) -> float:
+    """数式を評価して結果を返します。"""
+    return eval(expression)  # 実際の実装ではより安全な方法を使用
+
+# リソースの定義
+@server.resource("config://settings")
+async def get_settings():
+    return {"version": "1.0", "features": ["math", "eval"]}
+
+# プロンプトの定義
+@server.prompt("calculation_help")
+def calculation_prompt():
+    return "I can help you with mathematical calculations."
+```
+
+### 高度な機能
+
+#### Contextオブジェクト
+MCP機能へのアクセスを提供し、以下が可能：
+- 進捗報告
+- デバッグ情報の送信
+- サーバー機能へのアクセス
+
+#### 構造化出力
+Pydanticモデルを使用した複雑なデータ構造のサポート：
+
+```python
+from pydantic import BaseModel
+
+class CalculationResult(BaseModel):
+    expression: str
+    result: float
+    steps: List[str]
+
+@server.tool()
+def complex_calculation(expression: str) -> CalculationResult:
+    # 実装
+    pass
+```
+
+### セットアップと環境
+
+#### 要件
+- Python 3.10以上
+- uvパッケージマネージャー（推奨）
+
+#### インストール
+```bash
+# uvを使用したインストール
+uv add "mcp[cli]"
+
+# プロジェクトの初期化
+uv init my-mcp-server
+cd my-mcp-server
+uv add "mcp[cli]" httpx pydantic
+```
+
+### デプロイメントとテスト
+
+#### MCPインスペクターでのテスト
+```bash
+uv run mcp dev src/my_server.py
+```
+
+#### Claude Desktopへの統合
+```json
+{
+  "mcpServers": {
+    "my-server": {
+      "command": "uvx",
+      "args": ["my-mcp-server"],
+      "env": {
+        "API_KEY": "your-key"
+      }
+    }
+  }
+}
+```
+
+### ベストプラクティス
+
+1. **型ヒントとドキュメント**: FastMCPは型ヒントとdocstringを活用して自動的にツール定義を強化
+2. **エラーハンドリング**: 適切な例外処理とユーザーフレンドリーなエラーメッセージ
+3. **非同期処理**: I/O操作には async/await を使用
+4. **テスト**: 組み込みのテストツールを活用
+5. **認証**: 本番環境では適切な認証システムを実装
+
+### 2024年の重要な変更点
+
+- FastMCP 1.0が公式SDKに統合
+- FastMCP 2.0は完全なエコシステムを提供（クライアントライブラリ、認証システム、デプロイツール等）
+- 主要AIプラットフォームとの統合が強化
+- プロダクション対応のインフラストラクチャパターンが確立

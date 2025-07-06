@@ -1,0 +1,109 @@
+@startuml Semantic Scholar MCP Deployment
+!theme plain
+skinparam nodeBackgroundColor #E6F3FF
+skinparam artifactBackgroundColor #FFFFCC
+skinparam componentBackgroundColor #FFE6E6
+
+title Semantic Scholar MCP - Deployment Architecture
+
+' Developer Machine
+node "Developer Machine" {
+    artifact "Claude Desktop" as claude {
+        component "MCP Client" as mcpclient
+    }
+    
+    artifact "Python Environment" as pyenv {
+        component "uv" as uv
+        component "Python 3.10+" as python
+    }
+    
+    artifact "semantic-scholar-mcp" as mcp {
+        component "MCP Server Process" as server
+        component "FastMCP Runtime" as fastmcp
+        component "HTTP Client" as httpclient
+    }
+    
+    database "Local Cache" as cache {
+        component "In-Memory Store" as memstore
+    }
+}
+
+' Cloud Services
+cloud "Internet" {
+    node "Semantic Scholar" {
+        component "API Gateway" as gateway
+        component "Search Service" as search
+        component "Paper Database" as paperdb
+        component "Author Database" as authordb
+    }
+    
+    node "PyPI" {
+        component "Package Repository" as pypi
+    }
+    
+    node "GitHub" {
+        component "Source Repository" as github
+        component "CI/CD Pipeline" as cicd
+    }
+}
+
+' Connections
+mcpclient --> server : "stdio/subprocess"
+server --> fastmcp : "uses"
+fastmcp --> httpclient : "delegates"
+httpclient --> gateway : "HTTPS/REST"
+gateway --> search : "routes"
+search --> paperdb : "queries"
+search --> authordb : "queries"
+
+server --> memstore : "caches"
+
+uv --> pypi : "pip install"
+uv --> mcp : "manages"
+python --> mcp : "runs"
+
+github --> cicd : "triggers"
+cicd --> pypi : "publishes"
+
+' Notes
+note right of server
+    Launched by Claude Desktop
+    as subprocess with stdio
+    communication
+end note
+
+note bottom of gateway
+    Rate limiting: 100 req/5min
+    API key optional but recommended
+    for higher limits
+end note
+
+note left of cache
+    LRU eviction policy
+    TTL-based expiration
+    No persistence
+end note
+
+note top of cicd
+    Automated testing
+    Package building
+    PyPI deployment
+end note
+
+' Deployment Specifications
+node "System Requirements" {
+    rectangle "Minimum" {
+        component "OS: Windows/macOS/Linux" as os
+        component "Python: 3.10+" as pyreq
+        component "Memory: 512MB" as mem
+        component "Network: Internet access" as net
+    }
+    
+    rectangle "Recommended" {
+        component "CPU: 2+ cores" as cpu
+        component "Memory: 1GB+" as recmem
+        component "SSD storage" as ssd
+    }
+}
+
+@enduml

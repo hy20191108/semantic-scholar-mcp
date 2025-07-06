@@ -1,0 +1,112 @@
+{
+  "search_response": {
+    "data": [
+      {
+        "paperId": "204e3073870fae3d05bcbc2f6a8e263d9b72e776",
+        "title": "Attention Is All You Need",
+        "abstract": "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks...",
+        "year": 2017,
+        "venue": "NeurIPS",
+        "authors": [
+          {
+            "authorId": "40348417",
+            "name": "Ashish Vaswani"
+          },
+          {
+            "authorId": "2696176",
+            "name": "Noam Shazeer"
+          }
+        ],
+        "citationCount": 98451,
+        "referenceCount": 41,
+        "influentialCitationCount": 12456,
+        "externalIds": {
+          "DOI": "10.48550/arXiv.1706.03762",
+          "ArXiv": "1706.03762"
+        },
+        "url": "https://www.semanticscholar.org/paper/204e3073870fae3d05bcbc2f6a8e263d9b72e776",
+        "fieldsOfStudy": ["Computer Science"],
+        "isOpenAccess": true
+      }
+    ],
+    "total": 10000,
+    "offset": 0,
+    "next": 10
+  },
+  "paper_response": {
+    "paperId": "204e3073870fae3d05bcbc2f6a8e263d9b72e776",
+    "title": "Attention Is All You Need",
+    "abstract": "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks...",
+    "year": 2017,
+    "venue": "NeurIPS",
+    "authors": [
+      {
+        "authorId": "40348417",
+        "name": "Ashish Vaswani"
+      },
+      {
+        "authorId": "2696176",
+        "name": "Noam Shazeer"
+      }
+    ],
+    "citationCount": 98451,
+    "referenceCount": 41,
+    "influentialCitationCount": 12456,
+    "externalIds": {
+      "DOI": "10.48550/arXiv.1706.03762",
+      "ArXiv": "1706.03762"
+    },
+    "url": "https://www.semanticscholar.org/paper/204e3073870fae3d05bcbc2f6a8e263d9b72e776",
+    "fieldsOfStudy": ["Computer Science"],
+    "isOpenAccess": true
+  },
+  "author_response": {
+    "authorId": "161269817",
+    "name": "Yoshua Bengio",
+    "aliases": ["Y. Bengio", "Yoshua Bengio"],
+    "affiliations": ["University of Montreal", "Mila"],
+    "homepage": "https://yoshuabengio.org",
+    "citationCount": 500000,
+    "hIndex": 185,
+    "paperCount": 700
+  },
+  "citations_response": {
+    "data": [
+      {
+        "paperId": "df2b0e26d0599ce3e70df8a9da02e51594e0e992",
+        "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+        "year": 2018,
+        "authors": [
+          {
+            "authorId": "2545396",
+            "name": "Jacob Devlin"
+          }
+        ],
+        "venue": "NAACL",
+        "citationCount": 76234,
+        "isInfluentialCitation": true,
+        "contexts": [
+          "We use the transformer architecture from Vaswani et al. (2017)..."
+        ],
+        "intents": ["methodology"]
+      }
+    ]
+  },
+  "error_responses": {
+    "not_found": {
+      "error": "Paper not found",
+      "message": "The requested paper ID does not exist",
+      "code": "NOT_FOUND"
+    },
+    "rate_limit": {
+      "error": "Rate limit exceeded",
+      "message": "Too many requests. Please try again later.",
+      "code": "RATE_LIMIT_EXCEEDED"
+    },
+    "invalid_request": {
+      "error": "Bad Request",
+      "message": "Invalid search query",
+      "code": "INVALID_QUERY"
+    }
+  }
+}

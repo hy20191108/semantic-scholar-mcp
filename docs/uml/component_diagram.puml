@@ -1,0 +1,139 @@
+@startuml Semantic Scholar MCP - Component Architecture
+!theme plain
+skinparam componentStyle uml2
+skinparam packageStyle rectangle
+skinparam shadowing false
+
+title Semantic Scholar MCP Server - Component Architecture
+
+' External Systems
+cloud "External Systems" {
+    [Claude Desktop] as claude #LightBlue
+    [MCP Client] as mcpclient #LightBlue
+    [Semantic Scholar API] as ssapi #LightGreen
+    database "PyPI Registry" as pypi #LightYellow
+}
+
+' Main Application Package
+package "semantic-scholar-mcp" {
+    ' MCP Server Layer
+    package "MCP Server Layer" #FFE6E6 {
+        [FastMCP Server] as mcp
+        [Tool Handlers] as tools
+        [Resource Handlers] as resources
+        [Prompt Templates] as prompts
+        
+        mcp --> tools : registers
+        mcp --> resources : registers
+        mcp --> prompts : registers
+    }
+    
+    ' Business Logic Layer
+    package "Business Logic Layer" #E6F3FF {
+        [Service Provider] as di
+        [API Client Manager] as apimgr
+        [Search Service] as search
+        [Author Service] as author
+        [Paper Service] as paper
+        [Recommendation Service] as recommend
+        
+        di --> apimgr : provides
+        di --> search : provides
+        di --> author : provides
+        di --> paper : provides
+        di --> recommend : provides
+    }
+    
+    ' Infrastructure Layer
+    package "Infrastructure Layer" #E6FFE6 {
+        ' Core Services
+        package "Core Services" {
+            [Logger Service] as logger
+            [Cache Service] as cache
+            [Metrics Service] as metrics
+            [Configuration] as config
+        }
+        
+        ' Resilience Components
+        package "Resilience" {
+            [Circuit Breaker] as cb
+            [Rate Limiter] as rl
+            [Retry Strategy] as retry
+        }
+        
+        ' HTTP Client
+        [Async HTTP Client] as http
+    }
+    
+    ' Data Layer
+    package "Data Layer" #FFFFE6 {
+        [Domain Models] as models
+        [DTOs] as dtos
+        [Mappers] as mappers
+        
+        models --> dtos : transforms
+        mappers --> models : creates
+        mappers --> dtos : converts
+    }
+}
+
+' Internal Dependencies
+tools --> search : uses
+tools --> author : uses
+tools --> paper : uses
+tools --> recommend : uses
+
+resources --> paper : reads
+resources --> author : reads
+
+search --> apimgr : delegates
+author --> apimgr : delegates
+paper --> apimgr : delegates
+recommend --> apimgr : delegates
+
+apimgr --> http : sends requests
+apimgr --> cb : protected by
+apimgr --> rl : limited by
+apimgr --> retry : uses
+apimgr --> cache : caches with
+apimgr --> logger : logs with
+apimgr --> metrics : records to
+
+http --> mappers : passes responses
+
+config --> di : configures
+config --> apimgr : configures
+config --> logger : configures
+config --> cache : configures
+
+' External Connections
+claude --> mcp : MCP Protocol
+mcpclient --> mcp : MCP Protocol
+http --> ssapi : HTTPS/REST
+pypi --> semantic-scholar-mcp : pip/uv install
+
+' Notes
+note right of mcp
+    Entry point for all
+    MCP client connections
+end note
+
+note bottom of di
+    Dependency injection
+    manages service lifetimes
+    and dependencies
+end note
+
+note right of cb
+    Prevents cascade failures
+    by temporarily blocking
+    requests to failing services
+end note
+
+note bottom of cache
+    In-memory LRU cache
+    with TTL support for
+    API response caching
+end note
+
+@enduml

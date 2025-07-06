@@ -13,8 +13,8 @@ from core.logging import get_logger, initialize_logging, RequestContext
 from core.container import ServiceCollection, ServiceProvider
 from core.exceptions import ValidationError, APIError
 from core.cache import InMemoryCache
-from .api_client_enhanced import SemanticScholarClient
-from .domain_models import Paper, Author, Citation, Reference, SearchQuery, SearchFilters
+from semantic_scholar_mcp.api_client_enhanced import SemanticScholarClient
+from semantic_scholar_mcp.domain_models import Paper, Author, Citation, Reference, SearchQuery, SearchFilters
 
 
 # Initialize FastMCP server
@@ -64,11 +64,11 @@ async def initialize_server():
 @mcp.tool()
 async def search_papers(
     query: str,
-    limit: int = Field(default=10, ge=1, le=100, description="Number of results to return"),
-    offset: int = Field(default=0, ge=0, description="Offset for pagination"),
-    year: Optional[int] = Field(default=None, description="Filter by publication year"),
-    fields_of_study: Optional[List[str]] = Field(default=None, description="Filter by fields of study"),
-    sort: Optional[str] = Field(default=None, description="Sort order (relevance, citationCount, year)")
+    limit: int = 10,
+    offset: int = 0,
+    year: Optional[int] = None,
+    fields_of_study: Optional[List[str]] = None,
+    sort: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Search for academic papers in Semantic Scholar.
@@ -84,7 +84,7 @@ async def search_papers(
     Returns:
         Dictionary containing search results with papers and metadata
     """
-    async with RequestContext():
+    with RequestContext():
         try:
             # Build search query
             search_query = SearchQuery(
@@ -102,8 +102,9 @@ async def search_papers(
                 )
             
             # Execute search
-            async with api_client:
-                result = await api_client.search_papers(search_query)
+            if not api_client:
+                raise RuntimeError("API client not initialized")
+            result = await api_client.search_papers(search_query)
             
             # Format response
             return {
@@ -141,8 +142,8 @@ async def search_papers(
 @mcp.tool()
 async def get_paper(
     paper_id: str,
-    include_citations: bool = Field(default=False, description="Include citation details"),
-    include_references: bool = Field(default=False, description="Include reference details")
+    include_citations: bool = False,
+    include_references: bool = False
 ) -> Dict[str, Any]:
     """
     Get detailed information about a specific paper.
@@ -155,7 +156,7 @@ async def get_paper(
     Returns:
         Dictionary containing paper details
     """
-    async with RequestContext():
+    with RequestContext():
         try:
             async with api_client:
                 paper = await api_client.get_paper(
@@ -207,7 +208,7 @@ async def get_paper_citations(
     Returns:
         Dictionary containing citation list
     """
-    async with RequestContext():
+    with RequestContext():
         try:
             async with api_client:
                 citations = await api_client.get_paper_citations(
@@ -252,7 +253,7 @@ async def get_paper_references(
     Returns:
         Dictionary containing reference list
     """
-    async with RequestContext():
+    with RequestContext():
         try:
             async with api_client:
                 references = await api_client.get_paper_references(
@@ -293,7 +294,7 @@ async def get_author(
     Returns:
         Dictionary containing author details
     """
-    async with RequestContext():
+    with RequestContext():
         try:
             async with api_client:
                 author = await api_client.get_author(author_id=author_id)
@@ -331,7 +332,7 @@ async def get_author_papers(
     Returns:
         Dictionary containing author's papers
     """
-    async with RequestContext():
+    with RequestContext():
         try:
             async with api_client:
                 result = await api_client.get_author_papers(
@@ -379,7 +380,7 @@ async def search_authors(
     Returns:
         Dictionary containing search results
     """
-    async with RequestContext():
+    with RequestContext():
         try:
             async with api_client:
                 result = await api_client.search_authors(
@@ -425,7 +426,7 @@ async def get_recommendations(
     Returns:
         Dictionary containing recommended papers
     """
-    async with RequestContext():
+    with RequestContext():
         try:
             async with api_client:
                 papers = await api_client.get_recommendations(
@@ -467,7 +468,7 @@ async def batch_get_papers(
     Returns:
         Dictionary containing paper details
     """
-    async with RequestContext():
+    with RequestContext():
         try:
             if len(paper_ids) > 500:
                 raise ValidationError(
@@ -741,7 +742,7 @@ def main():
     try:
         mcp.run(transport="stdio")
     finally:
-        asyncio.run(on_shutdown())
+        pass # シャットダウン処理は手動で行うか、別の方法で制御する # シャットダウン処理は手動で行うか、別の方法で制御する
 
 
 if __name__ == "__main__":
