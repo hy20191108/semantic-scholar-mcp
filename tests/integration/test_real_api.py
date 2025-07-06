@@ -233,3 +233,50 @@ class TestRealAPIIntegration:
         assert isinstance(health["rate_limit_remaining"], int)
         assert health["rate_limit_remaining"] >= 0
         assert "version" in health
+    
+    @pytest.mark.asyncio
+    async def test_mcp_server_tools_real(self, real_api_client):
+        """Test MCP server tools with real API."""
+        # Import server tools
+        from semantic_scholar_mcp.server import (
+            search_papers, get_paper, health_check,
+            get_recommendations, batch_get_papers
+        )
+        
+        # Test search_papers tool
+        search_result = await search_papers(
+            query="transformer neural network",
+            limit=3
+        )
+        assert search_result["success"] is True
+        assert len(search_result["data"]["papers"]) <= 3
+        
+        # Test get_paper tool
+        paper_result = await get_paper(
+            paper_id="204e3073870fae3d05bcbc2f6a8e263d9b72e776"
+        )
+        assert paper_result["success"] is True
+        assert "title" in paper_result["data"]
+        
+        # Test health_check tool
+        health_result = await health_check()
+        assert health_result["success"] is True
+        assert "status" in health_result["data"]
+        
+        # Test get_recommendations tool
+        rec_result = await get_recommendations(
+            paper_id="204e3073870fae3d05bcbc2f6a8e263d9b72e776",
+            limit=3
+        )
+        assert rec_result["success"] is True
+        assert len(rec_result["data"]["recommendations"]) <= 3
+        
+        # Test batch_get_papers tool
+        batch_result = await batch_get_papers(
+            paper_ids=[
+                "204e3073870fae3d05bcbc2f6a8e263d9b72e776",
+                "df2b0e26d0599ce3e70df8a9da02e51594e0e992"
+            ]
+        )
+        assert batch_result["success"] is True
+        assert len(batch_result["data"]["papers"]) == 2

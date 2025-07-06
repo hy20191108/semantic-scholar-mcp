@@ -74,6 +74,7 @@ addopts = [
     "--cov-report=html",
     "--cov-report=xml",
     "--cov-fail-under=20",
+    "--no-cov-on-fail",
 ]
 markers = [
     "unit: Unit tests",
@@ -132,7 +133,7 @@ select = [
     "RET", # flake8-return
     "SIM", # flake8-simplify
     "TID", # flake8-tidy-imports
-    "TCH", # flake8-type-checking
+    "TC",  # flake8-type-checking
     "ARG", # flake8-unused-arguments
     "PTH", # flake8-use-pathlib
     "ERA", # eradicate
@@ -166,8 +167,4 @@ path = "src/semantic_scholar_mcp/__init__.py"
 packages = ["src/semantic_scholar_mcp"]
 
 [dependency-groups]
-dev = [
-    "pytest>=8.4.1",
-    "pytest-asyncio>=1.0.0",
-    "pytest-mock>=3.14.1",
-]
+dev = ["pytest>=8.4.1", "pytest-asyncio>=1.0.0", "pytest-mock>=3.14.1"]

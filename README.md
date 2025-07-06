@@ -208,6 +208,15 @@ Get paper recommendations based on a given paper.
 - `paper_id` (str, required): Paper ID for recommendations
 - `limit` (int, optional): Number of recommendations (1-100, default: 10)
 
+#### `health_check`
+Check the health status of the Semantic Scholar MCP server.
+
+**Parameters:**
+- None
+
+**Returns:**
+- Server health status, API connectivity, cache status, and system information
+
 #### `batch_get_papers`
 Get multiple papers in a single request.
 
@@ -246,6 +255,13 @@ Generate a research trend analysis prompt.
 **Parameters:**
 - `field` (str, required): Research field to analyze
 - `years` (int, optional): Years to analyze (1-20, default: 5)
+
+#### `paper_summary`
+Generate a paper summary prompt for a specific paper.
+
+**Parameters:**
+- `paper_id` (str, required): Paper ID to summarize
+- `include_context` (bool, optional): Include citation context (default: true)
 
 ## 🏗️ Architecture
 

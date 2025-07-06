@@ -512,6 +512,44 @@ async def batch_get_papers(
             }
 
 
+@mcp.tool()
+async def health_check() -> Dict[str, Any]:
+    """
+    Check the health status of the Semantic Scholar MCP server.
+    
+    Returns:
+        Dictionary containing health status and system information
+    """
+    with RequestContext():
+        try:
+            if not api_client:
+                return {
+                    "success": False,
+                    "error": {
+                        "type": "initialization_error",
+                        "message": "API client not initialized"
+                    }
+                }
+            
+            # Perform health check
+            health_status = await api_client.health_check()
+            
+            return {
+                "success": True,
+                "data": health_status
+            }
+            
+        except Exception as e:
+            logger.error("Error in health check", exception=e)
+            return {
+                "success": False,
+                "error": {
+                    "type": "error",
+                    "message": str(e)
+                }
+            }
+
+
 # Resource implementations
 
 @mcp.resource("papers/{paper_id}")
@@ -716,6 +754,63 @@ Please provide:
 - Detailed year-by-year analysis
 - Future research predictions
 - Recommendations for researchers entering the field"""
+
+
+@mcp.prompt()
+def paper_summary(
+    paper_id: str,
+    include_context: bool = Field(default=True, description="Include citation context")
+) -> str:
+    """
+    Generate a paper summary prompt for a specific paper.
+    
+    Args:
+        paper_id: Paper ID to summarize
+        include_context: Whether to include citation context
+        
+    Returns:
+        Prompt text for paper summary
+    """
+    context_instruction = (
+        "4. Analyze how this paper is cited by others:\n"
+        "   - Key citing papers and their contexts\n"
+        "   - How the work has been built upon\n"
+        "   - Common criticisms or limitations noted\n"
+        "   - Impact on subsequent research\n\n"
+        if include_context else ""
+    )
+    
+    return f"""Please provide a comprehensive summary of paper ID: {paper_id}
+
+Instructions:
+1. Retrieve the paper details and analyze:
+   - Title, authors, and publication venue
+   - Abstract and key contributions
+   - Methodology and approach
+   - Main findings and results
+   - Limitations and future work
+
+2. Provide technical context:
+   - Background and motivation
+   - Related work and positioning
+   - Technical novelty and significance
+   - Experimental setup and validation
+
+3. Assess impact and relevance:
+   - Citation count and influence
+   - Practical applications
+   - Theoretical contributions
+   - Reproducibility considerations
+
+{context_instruction}Please structure the summary as:
+- Executive Summary (2-3 sentences)
+- Technical Overview
+- Key Contributions
+- Methodology
+- Results and Findings
+- Impact and Significance
+- Limitations and Future Work
+- Recommended Follow-up Papers"""
 
 
 # Server lifecycle
