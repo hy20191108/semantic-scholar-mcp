@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "semantic-scholar-dev": {
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "server_standalone.py"
+      ]
+    }
+  }
+}
