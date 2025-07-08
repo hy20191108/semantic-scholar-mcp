@@ -9,41 +9,37 @@ from __future__ import annotations
 import hashlib
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Type, TypeVar, Union, ClassVar
-from uuid import uuid4
+from typing import Any, Callable, TypeVar
 
-from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ..core.exceptions import ValidationError
 from ..core.abstractions import IValidator
+from ..core.exceptions import ValidationError
 from .base_models import BaseEntity, CacheableModel
-from .domain_models import (
-    PublicationType, ExternalIdType, Author as BaseAuthor,
-    Paper as BasePaper, Citation as BaseCitation
-)
-
+from .domain_models import Author as BaseAuthor
+from .domain_models import Citation as BaseCitation
+from .domain_models import ExternalIdType, PublicationType
+from .domain_models import Paper as BasePaper
 
 T = TypeVar("T", bound=BaseModel)
 
 
 class ValueObject(BaseModel, ABC):
     """Base class for value objects with immutability."""
-    
+
     model_config = ConfigDict(
         frozen=True,
         validate_assignment=True,
         str_strip_whitespace=True
     )
-    
+
     @abstractmethod
     def __hash__(self) -> int:
         """Value objects must be hashable."""
-        pass
-    
+
     @abstractmethod
     def __eq__(self, other: object) -> bool:
         """Value objects must be comparable."""
-        pass
 
 
 class PaperId(ValueObject):
@@ -65,41 +61,41 @@ class PaperId(ValueObject):
         >>> len(paper_set)
         2
     """
-    
+
     value: str
     id_type: ExternalIdType = Field(default=ExternalIdType.CORPUS_ID)
-    
+
     @field_validator("value")
     @classmethod
     def validate_value(cls, v: str) -> str:
         """Validate paper ID format."""
         if not v or not v.strip():
             raise ValueError("Paper ID cannot be empty")
-        
+
         # Remove common prefixes
         v = v.strip()
         for prefix in ["S2:", "DOI:", "ArXiv:", "MAG:", "ACM:", "PMID:", "PMC:"]:
             if v.upper().startswith(prefix.upper()):
                 v = v[len(prefix):]
-        
+
         return v
-    
+
     def __hash__(self) -> int:
         """Hash based on normalized value and type."""
         return hash((self.value.lower(), self.id_type))
-    
+
     def __eq__(self, other: object) -> bool:
         """Compare paper IDs."""
         if not isinstance(other, PaperId):
             return False
         return self.value.lower() == other.value.lower() and self.id_type == other.id_type
-    
+
     def format(self) -> str:
         """Format paper ID with type prefix."""
         if self.id_type == ExternalIdType.CORPUS_ID:
             return f"S2:{self.value}"
         return f"{self.id_type.value}:{self.value}"
-    
+
     @classmethod
     def from_string(cls, paper_id: str) -> PaperId:
         """Create from string with optional prefix."""
@@ -129,12 +125,12 @@ class AuthorName(ValueObject):
         >>> name1 == name2
         True
     """
-    
+
     first: str
-    middle: Optional[str] = None
+    middle: str | None = None
     last: str
-    suffix: Optional[str] = None
-    
+    suffix: str | None = None
+
     @field_validator("first", "last")
     @classmethod
     def validate_required(cls, v: str) -> str:
@@ -142,7 +138,7 @@ class AuthorName(ValueObject):
         if not v or not v.strip():
             raise ValueError("Name part cannot be empty")
         return v.strip()
-    
+
     @property
     def full_name(self) -> str:
         """Get full name."""
@@ -153,7 +149,7 @@ class AuthorName(ValueObject):
         if self.suffix:
             parts.append(self.suffix)
         return " ".join(parts)
-    
+
     @property
     def normalized(self) -> str:
         """Get normalized name for comparison."""
@@ -162,7 +158,7 @@ class AuthorName(ValueObject):
         if self.middle:
             parts.append(self.middle.lower())
         return ", ".join(parts)
-    
+
     @property
     def initials(self) -> str:
         """Get initials."""
@@ -171,17 +167,17 @@ class AuthorName(ValueObject):
             initials.append(self.middle[0].upper())
         initials.append(self.last[0].upper())
         return "".join(initials)
-    
+
     def __hash__(self) -> int:
         """Hash based on normalized name."""
         return hash(self.normalized)
-    
+
     def __eq__(self, other: object) -> bool:
         """Compare names."""
         if not isinstance(other, AuthorName):
             return False
         return self.normalized == other.normalized
-    
+
     @classmethod
     def from_string(cls, name: str) -> AuthorName:
         """Parse name from string."""
@@ -204,7 +200,7 @@ class AuthorName(ValueObject):
                 first = parts[0]
                 last = parts[-1]
                 middle = " ".join(parts[1:-1])
-        
+
         return cls(first=first, middle=middle, last=last)
 
 
@@ -220,12 +216,12 @@ class CitationContext(ValueObject):
         >>> print(context.summary)
         'Cited in Methods section for methodology'
     """
-    
+
     text: str
-    section: Optional[str] = None
-    intent: Optional[str] = None
-    sentiment: Optional[str] = None
-    
+    section: str | None = None
+    intent: str | None = None
+    sentiment: str | None = None
+
     @field_validator("text")
     @classmethod
     def validate_text(cls, v: str) -> str:
@@ -233,7 +229,7 @@ class CitationContext(ValueObject):
         if not v or not v.strip():
             raise ValueError("Citation context cannot be empty")
         return v.strip()
-    
+
     @property
     def summary(self) -> str:
         """Get context summary."""
@@ -245,11 +241,11 @@ class CitationContext(ValueObject):
         if self.sentiment:
             parts.append(f"({self.sentiment})")
         return " ".join(parts) if parts else "Citation context available"
-    
+
     def __hash__(self) -> int:
         """Hash based on text."""
         return hash(self.text.lower()[:100])  # Use first 100 chars
-    
+
     def __eq__(self, other: object) -> bool:
         """Compare contexts."""
         if not isinstance(other, CitationContext):
@@ -259,15 +255,14 @@ class CitationContext(ValueObject):
 
 class ModelBuilder(ABC, BaseModel):
     """Abstract builder pattern for complex models."""
-    
+
     model_config = ConfigDict(validate_assignment=True, extra="forbid")
-    
+
     @abstractmethod
     def build(self) -> BaseModel:
         """Build the final model."""
-        pass
-    
-    def validate(self) -> "ModelBuilder":
+
+    def validate(self) -> ModelBuilder:
         """Validate the builder state."""
         # Trigger Pydantic validation
         self.model_validate(self.model_dump())
@@ -287,62 +282,62 @@ class AuthorBuilder(ModelBuilder):
         >>> print(author.name)
         'John Doe'
     """
-    
-    author_id: Optional[str] = None
-    name: Optional[AuthorName] = None
-    aliases: List[str] = Field(default_factory=list)
-    affiliations: List[str] = Field(default_factory=list)
-    homepage: Optional[str] = None
-    citation_count: Optional[int] = None
-    h_index: Optional[int] = None
-    paper_count: Optional[int] = None
-    
-    def with_id(self, author_id: str) -> "AuthorBuilder":
+
+    author_id: str | None = None
+    name: AuthorName | None = None
+    aliases: list[str] = Field(default_factory=list)
+    affiliations: list[str] = Field(default_factory=list)
+    homepage: str | None = None
+    citation_count: int | None = None
+    h_index: int | None = None
+    paper_count: int | None = None
+
+    def with_id(self, author_id: str) -> AuthorBuilder:
         """Set author ID."""
         self.author_id = author_id
         return self
-    
-    def with_name(self, first: str, last: str, middle: Optional[str] = None) -> "AuthorBuilder":
+
+    def with_name(self, first: str, last: str, middle: str | None = None) -> AuthorBuilder:
         """Set author name."""
         self.name = AuthorName(first=first, middle=middle, last=last)
         return self
-    
-    def with_name_string(self, name: str) -> "AuthorBuilder":
+
+    def with_name_string(self, name: str) -> AuthorBuilder:
         """Set author name from string."""
         self.name = AuthorName.from_string(name)
         return self
-    
-    def with_aliases(self, aliases: List[str]) -> "AuthorBuilder":
+
+    def with_aliases(self, aliases: list[str]) -> AuthorBuilder:
         """Set author aliases."""
         self.aliases = aliases
         return self
-    
-    def add_alias(self, alias: str) -> "AuthorBuilder":
+
+    def add_alias(self, alias: str) -> AuthorBuilder:
         """Add an alias."""
         self.aliases.append(alias)
         return self
-    
-    def with_affiliations(self, affiliations: List[str]) -> "AuthorBuilder":
+
+    def with_affiliations(self, affiliations: list[str]) -> AuthorBuilder:
         """Set affiliations."""
         self.affiliations = affiliations
         return self
-    
-    def add_affiliation(self, affiliation: str) -> "AuthorBuilder":
+
+    def add_affiliation(self, affiliation: str) -> AuthorBuilder:
         """Add an affiliation."""
         self.affiliations.append(affiliation)
         return self
-    
-    def with_homepage(self, homepage: str) -> "AuthorBuilder":
+
+    def with_homepage(self, homepage: str) -> AuthorBuilder:
         """Set homepage URL."""
         self.homepage = homepage
         return self
-    
+
     def with_metrics(
         self,
-        citation_count: Optional[int] = None,
-        h_index: Optional[int] = None,
-        paper_count: Optional[int] = None
-    ) -> "AuthorBuilder":
+        citation_count: int | None = None,
+        h_index: int | None = None,
+        paper_count: int | None = None
+    ) -> AuthorBuilder:
         """Set author metrics."""
         if citation_count is not None:
             self.citation_count = citation_count
@@ -351,12 +346,12 @@ class AuthorBuilder(ModelBuilder):
         if paper_count is not None:
             self.paper_count = paper_count
         return self
-    
-    def build(self) -> "EnhancedAuthor":
+
+    def build(self) -> EnhancedAuthor:
         """Build the author."""
         if not self.name:
             raise ValidationError("Author name is required", field="name")
-        
+
         return EnhancedAuthor(
             author_id=self.author_id,
             name=self.name.full_name,
@@ -386,65 +381,65 @@ class PaperBuilder(ModelBuilder):
         >>> print(paper.title)
         'Deep Learning for NLP'
     """
-    
-    paper_id: Optional[PaperId] = None
-    title: Optional[str] = None
-    abstract: Optional[str] = None
-    year: Optional[int] = None
-    venue: Optional[str] = None
-    publication_types: List[PublicationType] = Field(default_factory=list)
-    publication_date: Optional[datetime] = None
-    authors: List[AuthorName] = Field(default_factory=list)
+
+    paper_id: PaperId | None = None
+    title: str | None = None
+    abstract: str | None = None
+    year: int | None = None
+    venue: str | None = None
+    publication_types: list[PublicationType] = Field(default_factory=list)
+    publication_date: datetime | None = None
+    authors: list[AuthorName] = Field(default_factory=list)
     citation_count: int = 0
     reference_count: int = 0
     influential_citation_count: int = 0
-    external_ids: Dict[str, str] = Field(default_factory=dict)
-    fields_of_study: List[str] = Field(default_factory=list)
-    url: Optional[str] = None
-    doi: Optional[str] = None
-    arxiv_id: Optional[str] = None
-    
-    def with_id(self, paper_id: str, id_type: ExternalIdType = ExternalIdType.CORPUS_ID) -> "PaperBuilder":
+    external_ids: dict[str, str] = Field(default_factory=dict)
+    fields_of_study: list[str] = Field(default_factory=list)
+    url: str | None = None
+    doi: str | None = None
+    arxiv_id: str | None = None
+
+    def with_id(self, paper_id: str, id_type: ExternalIdType = ExternalIdType.CORPUS_ID) -> PaperBuilder:
         """Set paper ID."""
         self.paper_id = PaperId(value=paper_id, id_type=id_type)
         return self
-    
-    def with_title(self, title: str) -> "PaperBuilder":
+
+    def with_title(self, title: str) -> PaperBuilder:
         """Set paper title."""
         self.title = title
         return self
-    
-    def with_abstract(self, abstract: str) -> "PaperBuilder":
+
+    def with_abstract(self, abstract: str) -> PaperBuilder:
         """Set abstract."""
         self.abstract = abstract
         return self
-    
-    def with_year(self, year: int) -> "PaperBuilder":
+
+    def with_year(self, year: int) -> PaperBuilder:
         """Set publication year."""
         self.year = year
         return self
-    
-    def with_venue(self, venue: str) -> "PaperBuilder":
+
+    def with_venue(self, venue: str) -> PaperBuilder:
         """Set venue."""
         self.venue = venue
         return self
-    
-    def with_publication_date(self, date: datetime) -> "PaperBuilder":
+
+    def with_publication_date(self, date: datetime) -> PaperBuilder:
         """Set publication date."""
         self.publication_date = date
         return self
-    
-    def with_publication_types(self, types: List[PublicationType]) -> "PaperBuilder":
+
+    def with_publication_types(self, types: list[PublicationType]) -> PaperBuilder:
         """Set publication types."""
         self.publication_types = types
         return self
-    
-    def add_publication_type(self, pub_type: PublicationType) -> "PaperBuilder":
+
+    def add_publication_type(self, pub_type: PublicationType) -> PaperBuilder:
         """Add a publication type."""
         self.publication_types.append(pub_type)
         return self
-    
-    def with_authors(self, authors: List[Union[tuple, AuthorName]]) -> "PaperBuilder":
+
+    def with_authors(self, authors: list[tuple | AuthorName]) -> PaperBuilder:
         """Set authors from tuples or AuthorName objects."""
         self.authors = []
         for author in authors:
@@ -458,18 +453,18 @@ class PaperBuilder(ModelBuilder):
             elif isinstance(author, AuthorName):
                 self.authors.append(author)
         return self
-    
-    def add_author(self, first: str, last: str, middle: Optional[str] = None) -> "PaperBuilder":
+
+    def add_author(self, first: str, last: str, middle: str | None = None) -> PaperBuilder:
         """Add an author."""
         self.authors.append(AuthorName(first=first, middle=middle, last=last))
         return self
-    
+
     def with_metrics(
         self,
-        citations: Optional[int] = None,
-        references: Optional[int] = None,
-        influential_citations: Optional[int] = None
-    ) -> "PaperBuilder":
+        citations: int | None = None,
+        references: int | None = None,
+        influential_citations: int | None = None
+    ) -> PaperBuilder:
         """Set paper metrics."""
         if citations is not None:
             self.citation_count = citations
@@ -478,51 +473,51 @@ class PaperBuilder(ModelBuilder):
         if influential_citations is not None:
             self.influential_citation_count = influential_citations
         return self
-    
-    def with_external_ids(self, ids: Dict[str, str]) -> "PaperBuilder":
+
+    def with_external_ids(self, ids: dict[str, str]) -> PaperBuilder:
         """Set external IDs."""
         self.external_ids = ids
         return self
-    
-    def add_external_id(self, id_type: str, value: str) -> "PaperBuilder":
+
+    def add_external_id(self, id_type: str, value: str) -> PaperBuilder:
         """Add an external ID."""
         self.external_ids[id_type] = value
         return self
-    
-    def with_fields_of_study(self, fields: List[str]) -> "PaperBuilder":
+
+    def with_fields_of_study(self, fields: list[str]) -> PaperBuilder:
         """Set fields of study."""
         self.fields_of_study = fields
         return self
-    
-    def add_field_of_study(self, field: str) -> "PaperBuilder":
+
+    def add_field_of_study(self, field: str) -> PaperBuilder:
         """Add a field of study."""
         self.fields_of_study.append(field)
         return self
-    
-    def with_doi(self, doi: str) -> "PaperBuilder":
+
+    def with_doi(self, doi: str) -> PaperBuilder:
         """Set DOI."""
         self.doi = doi
         self.external_ids["DOI"] = doi
         return self
-    
-    def with_arxiv_id(self, arxiv_id: str) -> "PaperBuilder":
+
+    def with_arxiv_id(self, arxiv_id: str) -> PaperBuilder:
         """Set ArXiv ID."""
         self.arxiv_id = arxiv_id
         self.external_ids["ArXiv"] = arxiv_id
         return self
-    
-    def with_url(self, url: str) -> "PaperBuilder":
+
+    def with_url(self, url: str) -> PaperBuilder:
         """Set URL."""
         self.url = url
         return self
-    
-    def build(self) -> "EnhancedPaper":
+
+    def build(self) -> EnhancedPaper:
         """Build the paper."""
         if not self.paper_id:
             raise ValidationError("Paper ID is required", field="paper_id")
         if not self.title:
             raise ValidationError("Paper title is required", field="title")
-        
+
         return EnhancedPaper(
             paper_id=self.paper_id.value,
             paper_id_object=self.paper_id,
@@ -557,16 +552,16 @@ class EnhancedAuthor(BaseAuthor, CacheableModel, BaseEntity):
         >>> print(author.name_parts.initials)
         'JD'
     """
-    
-    name_parts: Optional[AuthorName] = None
-    
+
+    name_parts: AuthorName | None = None
+
     @classmethod
     def create(
         cls,
-        author_id: Optional[str] = None,
+        author_id: str | None = None,
         name: str = "",
         **kwargs: Any
-    ) -> "EnhancedAuthor":
+    ) -> EnhancedAuthor:
         """Factory method to create author."""
         name_parts = AuthorName.from_string(name) if name else None
         return cls(
@@ -575,18 +570,18 @@ class EnhancedAuthor(BaseAuthor, CacheableModel, BaseEntity):
             name_parts=name_parts,
             **kwargs
         )
-    
+
     @classmethod
     def builder(cls) -> AuthorBuilder:
         """Get author builder."""
         return AuthorBuilder()
-    
+
     def generate_cache_key(self) -> str:
         """Generate cache key based on author ID."""
         if self.author_id:
             return f"author:{self.author_id}"
         return f"author:{hashlib.md5(self.name.encode()).hexdigest()}"
-    
+
     def validate_invariants(self) -> None:
         """Validate business invariants."""
         if self.h_index and self.citation_count:
@@ -596,7 +591,7 @@ class EnhancedAuthor(BaseAuthor, CacheableModel, BaseEntity):
                     field="h_index",
                     value=self.h_index
                 )
-        
+
         if self.paper_count and self.h_index:
             if self.h_index > self.paper_count:
                 raise ValidationError(
@@ -619,25 +614,25 @@ class EnhancedPaper(BasePaper):
         >>> print(paper.citation_rate)
         0.0
     """
-    
-    paper_id_object: Optional[PaperId] = None
-    author_names: List[AuthorName] = Field(default_factory=list)
-    
+
+    paper_id_object: PaperId | None = None
+    author_names: list[AuthorName] = Field(default_factory=list)
+
     @classmethod
     def create(
         cls,
         paper_id: str,
         title: str,
-        authors: Optional[List[Union[str, BaseAuthor]]] = None,
+        authors: list[str | BaseAuthor] | None = None,
         **kwargs: Any
-    ) -> "EnhancedPaper":
+    ) -> EnhancedPaper:
         """Factory method to create paper."""
         paper_id_obj = PaperId.from_string(paper_id)
-        
+
         # Process authors
         author_objects = []
         author_names = []
-        
+
         if authors:
             for author in authors:
                 if isinstance(author, str):
@@ -648,7 +643,7 @@ class EnhancedPaper(BasePaper):
                     author_objects.append(author)
                     if author.name:
                         author_names.append(AuthorName.from_string(author.name))
-        
+
         return cls(
             paper_id=paper_id_obj.value,
             paper_id_object=paper_id_obj,
@@ -657,36 +652,36 @@ class EnhancedPaper(BasePaper):
             author_names=author_names,
             **kwargs
         )
-    
+
     @classmethod
     def builder(cls) -> PaperBuilder:
         """Get paper builder."""
         return PaperBuilder()
-    
+
     @property
     def citation_rate(self) -> float:
         """Calculate average citations per year."""
         if not self.year:
             return 0.0
-        
+
         years_since_publication = datetime.now().year - self.year
         if years_since_publication <= 0:
             return float(self.citation_count)
-        
+
         return self.citation_count / years_since_publication
-    
+
     @property
     def influence_ratio(self) -> float:
         """Calculate ratio of influential to total citations."""
         if self.citation_count == 0:
             return 0.0
         return self.influential_citation_count / self.citation_count
-    
+
     def validate_invariants(self) -> None:
         """Validate business invariants."""
         # Call parent validation
         super().validate_metrics()
-        
+
         # Additional validations
         if self.publication_date and self.year:
             if self.publication_date.year != self.year:
@@ -695,7 +690,7 @@ class EnhancedPaper(BasePaper):
                     field="publication_date",
                     value=self.publication_date
                 )
-        
+
         # Validate external IDs match
         if self.doi and self.external_ids.get("DOI") != self.doi:
             raise ValidationError(
@@ -703,7 +698,7 @@ class EnhancedPaper(BasePaper):
                 field="doi",
                 value=self.doi
             )
-        
+
         if self.arxiv_id and self.external_ids.get("ArXiv") != self.arxiv_id:
             raise ValidationError(
                 "ArXiv ID mismatch in external IDs",
@@ -725,21 +720,21 @@ class EnhancedCitation(BaseCitation):
         >>> print(citation.has_context)
         True
     """
-    
-    citation_contexts: List[CitationContext] = Field(default_factory=list)
-    
+
+    citation_contexts: list[CitationContext] = Field(default_factory=list)
+
     @classmethod
     def create(
         cls,
         paper_id: str,
         title: str,
-        contexts: Optional[List[Union[str, CitationContext]]] = None,
+        contexts: list[str | CitationContext] | None = None,
         **kwargs: Any
-    ) -> "EnhancedCitation":
+    ) -> EnhancedCitation:
         """Factory method to create citation."""
         citation_contexts = []
         context_strings = []
-        
+
         if contexts:
             for context in contexts:
                 if isinstance(context, str):
@@ -748,7 +743,7 @@ class EnhancedCitation(BaseCitation):
                 elif isinstance(context, CitationContext):
                     citation_contexts.append(context)
                     context_strings.append(context.text)
-        
+
         return cls(
             paper_id=paper_id,
             title=title,
@@ -756,22 +751,22 @@ class EnhancedCitation(BaseCitation):
             citation_contexts=citation_contexts,
             **kwargs
         )
-    
+
     @property
     def has_context(self) -> bool:
         """Check if citation has context."""
         return len(self.citation_contexts) > 0
-    
+
     @property
     def context_summary(self) -> str:
         """Get summary of all contexts."""
         if not self.citation_contexts:
             return "No context available"
-        
+
         summaries = [ctx.summary for ctx in self.citation_contexts[:3]]
         if len(self.citation_contexts) > 3:
             summaries.append(f"and {len(self.citation_contexts) - 3} more...")
-        
+
         return "; ".join(summaries)
 
 
@@ -787,17 +782,17 @@ class ModelFactory:
         ... )
         >>> author = factory.create_author_from_string("John Doe")
     """
-    
+
     @staticmethod
     def create_paper(paper_id: str, title: str, **kwargs: Any) -> EnhancedPaper:
         """Create enhanced paper."""
         return EnhancedPaper.create(paper_id=paper_id, title=title, **kwargs)
-    
+
     @staticmethod
-    def create_author(author_id: Optional[str], name: str, **kwargs: Any) -> EnhancedAuthor:
+    def create_author(author_id: str | None, name: str, **kwargs: Any) -> EnhancedAuthor:
         """Create enhanced author."""
         return EnhancedAuthor.create(author_id=author_id, name=name, **kwargs)
-    
+
     @staticmethod
     def create_author_from_string(name: str) -> EnhancedAuthor:
         """Create author from name string."""
@@ -806,14 +801,14 @@ class ModelFactory:
             name=name_parts.full_name,
             name_parts=name_parts
         )
-    
+
     @staticmethod
     def create_citation(paper_id: str, title: str, **kwargs: Any) -> EnhancedCitation:
         """Create enhanced citation."""
         return EnhancedCitation.create(paper_id=paper_id, title=title, **kwargs)
-    
+
     @staticmethod
-    def create_paper_id(value: str, id_type: Optional[str] = None) -> PaperId:
+    def create_paper_id(value: str, id_type: str | None = None) -> PaperId:
         """Create paper ID value object."""
         if id_type:
             return PaperId(value=value, id_type=ExternalIdType(id_type))
@@ -822,35 +817,35 @@ class ModelFactory:
 
 class DomainValidator(IValidator[BaseModel]):
     """Validator for domain models."""
-    
+
     def __init__(self) -> None:
         """Initialize validator."""
-        self._rules: List[Callable[[BaseModel], Optional[str]]] = []
-    
-    def add_rule(self, rule: Callable[[BaseModel], Optional[str]]) -> None:
+        self._rules: list[Callable[[BaseModel], str | None]] = []
+
+    def add_rule(self, rule: Callable[[BaseModel], str | None]) -> None:
         """Add validation rule."""
         self._rules.append(rule)
-    
+
     def validate(self, data: BaseModel) -> bool:
         """Validate model."""
         errors = self.get_errors(data)
         return len(errors) == 0
-    
-    def get_errors(self, data: BaseModel) -> List[str]:
+
+    def get_errors(self, data: BaseModel) -> list[str]:
         """Get validation errors."""
         errors = []
-        
+
         # Run custom rules
         for rule in self._rules:
             error = rule(data)
             if error:
                 errors.append(error)
-        
+
         # Run model's own validation if available
         if hasattr(data, "validate_invariants"):
             try:
                 data.validate_invariants()
             except ValidationError as e:
                 errors.append(str(e))
-        
+
         return errors

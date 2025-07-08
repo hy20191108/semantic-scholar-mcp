@@ -817,7 +817,7 @@ A: Check Semantic Scholar's terms of service. The MCP server itself is open sour
 The Semantic Scholar MCP Server provides powerful academic search capabilities directly within Claude and other MCP-compatible applications. Whether you're conducting literature reviews, tracking research trends, or exploring citation networks, this tool streamlines your academic research workflow.
 
 For more information:
-- [GitHub Repository](https://github.com/yourusername/semantic-scholar-mcp)
+- [GitHub Repository](https://github.com/hy20191108/semantic-scholar-mcp)
 - [API Documentation](./api-specification.yaml)
 - [Developer Guide](./DEVELOPER_GUIDE.md)
-- [Report Issues](https://github.com/yourusername/semantic-scholar-mcp/issues)
+- [Report Issues](https://github.com/hy20191108/semantic-scholar-mcp/issues)

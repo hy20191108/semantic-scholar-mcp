@@ -26,7 +26,7 @@
 
 1. **Clone the repository:**
 ```bash
-git clone https://github.com/yourusername/semantic-scholar-mcp.git
+git clone https://github.com/hy20191108/semantic-scholar-mcp.git
 cd semantic-scholar-mcp
 ```
 

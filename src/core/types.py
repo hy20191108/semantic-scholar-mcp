@@ -1,29 +1,31 @@
 """Type definitions and aliases for the Semantic Scholar MCP server."""
 
-from typing import TypeVar, TypeAlias, Any, Dict, List, Optional, Union
-from datetime import datetime
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, TypeAlias, TypeVar
+
+if TYPE_CHECKING:
+    from pydantic import BaseModel
 
 # Generic type variables
 T = TypeVar("T")
 TModel = TypeVar("TModel", bound="BaseModel")
 
 # Type aliases for common structures
-JSON: TypeAlias = Dict[str, Any]
-JSONList: TypeAlias = List[JSON]
+JSON: TypeAlias = dict[str, Any]
+JSONList: TypeAlias = list[JSON]
 PaperId: TypeAlias = str
 AuthorId: TypeAlias = str
-FieldsOfStudy: TypeAlias = List[str]
+FieldsOfStudy: TypeAlias = list[str]
 
 # Semantic Scholar specific types
 CitationCount: TypeAlias = int
 Year: TypeAlias = int
-Venue: TypeAlias = Optional[str]
-Abstract: TypeAlias = Optional[str]
+Venue: TypeAlias = str | None
+Abstract: TypeAlias = str | None
 Url: TypeAlias = str
 
 # API response types
-SearchResult: TypeAlias = Dict[str, Union[int, List[JSON]]]
+SearchResult: TypeAlias = dict[str, int | list[JSON]]
 PaperDetails: TypeAlias = JSON
 AuthorDetails: TypeAlias = JSON
 CitationsList: TypeAlias = JSONList
@@ -33,10 +35,10 @@ RecommendationsList: TypeAlias = JSONList
 # Error types
 ErrorCode: TypeAlias = str
 ErrorMessage: TypeAlias = str
-ErrorDetails: TypeAlias = Optional[JSON]
+ErrorDetails: TypeAlias = JSON | None
 
 # Configuration types
-ApiKey: TypeAlias = Optional[str]
+ApiKey: TypeAlias = str | None
 Timeout: TypeAlias = float
 RetryCount: TypeAlias = int
 RateLimit: TypeAlias = int
@@ -52,9 +54,9 @@ Limit: TypeAlias = int
 Total: TypeAlias = int
 
 # Field selection types
-Fields: TypeAlias = List[str]
-IncludeFields: TypeAlias = Optional[Fields]
-ExcludeFields: TypeAlias = Optional[Fields]
+Fields: TypeAlias = list[str]
+IncludeFields: TypeAlias = Fields | None
+ExcludeFields: TypeAlias = Fields | None
 
 # Sort options
 SortBy: TypeAlias = str
@@ -67,8 +69,8 @@ class PaginationParams:
     """Pagination parameters."""
     page: int = 1
     page_size: int = 10
-    offset: Optional[int] = None
-    limit: Optional[int] = None
+    offset: int | None = None
+    limit: int | None = None
 
 
 @dataclass
@@ -82,15 +84,15 @@ class SortOrder:
 class SearchQuery:
     """Search query specification."""
     query: str
-    filters: Optional[Dict[str, Any]] = None
-    fields: Optional[List[str]] = None
+    filters: dict[str, Any] | None = None
+    fields: list[str] | None = None
 
 
 # Metric names
 MetricName: TypeAlias = str
 
 # Common field sets for API requests
-BASIC_PAPER_FIELDS: List[str] = [
+BASIC_PAPER_FIELDS: list[str] = [
     "paperId",
     "title",
     "abstract",
@@ -102,30 +104,22 @@ BASIC_PAPER_FIELDS: List[str] = [
     "influentialCitationCount",
 ]
 
-DETAILED_PAPER_FIELDS: List[str] = BASIC_PAPER_FIELDS + [
+DETAILED_PAPER_FIELDS: list[str] = BASIC_PAPER_FIELDS + [
     "externalIds",
     "url",
-    "s2Url",
     "publicationDate",
-    "journal",
     "referenceCount",
     "fieldsOfStudy",
-    "publicationVenue",
-    "tldr",
 ]
 
-AUTHOR_FIELDS: List[str] = [
+AUTHOR_FIELDS: list[str] = [
     "authorId",
     "name",
-    "aliases",
     "affiliations",
-    "homepage",
-    "citationCount",
-    "hIndex",
     "paperCount",
 ]
 
-CITATION_FIELDS: List[str] = [
+CITATION_FIELDS: list[str] = [
     "paperId",
     "title",
     "year",

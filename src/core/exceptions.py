@@ -4,9 +4,9 @@ This module defines a comprehensive exception hierarchy that provides
 structured error handling throughout the application.
 """
 
-from typing import Any, Dict, Optional, List
-from enum import Enum
 from datetime import datetime
+from enum import Enum
+from typing import Any
 
 
 class ErrorCode(str, Enum):
@@ -16,44 +16,44 @@ class ErrorCode(str, Enum):
     UNKNOWN_ERROR = "E1000"
     INTERNAL_ERROR = "E1001"
     NOT_IMPLEMENTED = "E1002"
-    
+
     # Validation errors (2000-2999)
     VALIDATION_ERROR = "E2000"
     INVALID_INPUT = "E2001"
     MISSING_REQUIRED_FIELD = "E2002"
     INVALID_FORMAT = "E2003"
     VALUE_OUT_OF_RANGE = "E2004"
-    
+
     # API errors (3000-3999)
     API_ERROR = "E3000"
     RATE_LIMIT_EXCEEDED = "E3001"
     NETWORK_ERROR = "E3002"
     TIMEOUT_ERROR = "E3003"
     SERVICE_UNAVAILABLE = "E3004"
-    
+
     # Authentication/Authorization errors (4000-4999)
     UNAUTHORIZED = "E4000"
     FORBIDDEN = "E4001"
     TOKEN_EXPIRED = "E4002"
     INVALID_CREDENTIALS = "E4003"
-    
+
     # Resource errors (5000-5999)
     NOT_FOUND = "E5000"
     ALREADY_EXISTS = "E5001"
     RESOURCE_LOCKED = "E5002"
     RESOURCE_DELETED = "E5003"
-    
+
     # Configuration errors (6000-6999)
     CONFIGURATION_ERROR = "E6000"
     MISSING_CONFIGURATION = "E6001"
     INVALID_CONFIGURATION = "E6002"
-    
+
     # Cache errors (7000-7999)
     CACHE_ERROR = "E7000"
     CACHE_MISS = "E7001"
     CACHE_EXPIRED = "E7002"
     CACHE_FULL = "E7003"
-    
+
     # Database errors (8000-8999)
     DATABASE_ERROR = "E8000"
     CONNECTION_ERROR = "E8001"
@@ -68,8 +68,8 @@ class SemanticScholarMCPError(Exception):
         self,
         message: str,
         error_code: ErrorCode = ErrorCode.UNKNOWN_ERROR,
-        details: Optional[Dict[str, Any]] = None,
-        inner_exception: Optional[Exception] = None,
+        details: dict[str, Any] | None = None,
+        inner_exception: Exception | None = None,
     ) -> None:
         """Initialize the base exception.
 
@@ -86,7 +86,7 @@ class SemanticScholarMCPError(Exception):
         self.inner_exception = inner_exception
         self.timestamp = datetime.utcnow()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert exception to dictionary for serialization."""
         result = {
             "error": {
@@ -96,28 +96,28 @@ class SemanticScholarMCPError(Exception):
                 "type": self.__class__.__name__,
             }
         }
-        
+
         if self.details:
             result["error"]["details"] = self.details
-            
+
         if self.inner_exception:
             result["error"]["inner_error"] = {
                 "type": type(self.inner_exception).__name__,
                 "message": str(self.inner_exception),
             }
-            
+
         return result
 
     def __str__(self) -> str:
         """String representation of the exception."""
         parts = [f"[{self.error_code.value}] {self.message}"]
-        
+
         if self.details:
             parts.append(f"Details: {self.details}")
-            
+
         if self.inner_exception:
             parts.append(f"Caused by: {type(self.inner_exception).__name__}: {self.inner_exception}")
-            
+
         return " | ".join(parts)
 
 
@@ -127,9 +127,9 @@ class ValidationError(SemanticScholarMCPError):
     def __init__(
         self,
         message: str,
-        field: Optional[str] = None,
-        value: Optional[Any] = None,
-        validation_errors: Optional[List[Dict[str, Any]]] = None,
+        field: str | None = None,
+        value: Any | None = None,
+        validation_errors: list[dict[str, Any]] | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize validation error.
@@ -142,14 +142,14 @@ class ValidationError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
-        
+
         if field:
             details["field"] = field
         if value is not None:
             details["value"] = value
         if validation_errors:
             details["validation_errors"] = validation_errors
-            
+
         super().__init__(
             message=message,
             error_code=ErrorCode.VALIDATION_ERROR,
@@ -164,9 +164,9 @@ class APIError(SemanticScholarMCPError):
     def __init__(
         self,
         message: str,
-        status_code: Optional[int] = None,
-        response_body: Optional[str] = None,
-        request_id: Optional[str] = None,
+        status_code: int | None = None,
+        response_body: str | None = None,
+        request_id: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize API error.
@@ -179,14 +179,14 @@ class APIError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
-        
+
         if status_code:
             details["status_code"] = status_code
         if response_body:
             details["response_body"] = response_body
         if request_id:
             details["request_id"] = request_id
-            
+
         super().__init__(
             message=message,
             error_code=ErrorCode.API_ERROR,
@@ -195,16 +195,16 @@ class APIError(SemanticScholarMCPError):
         )
 
 
-class RateLimitError(APIError):
+class RateLimitError(SemanticScholarMCPError):
     """Raised when rate limits are exceeded."""
 
     def __init__(
         self,
         message: str,
-        retry_after: Optional[int] = None,
-        limit: Optional[int] = None,
-        remaining: Optional[int] = None,
-        reset_time: Optional[datetime] = None,
+        retry_after: int | None = None,
+        limit: int | None = None,
+        remaining: int | None = None,
+        reset_time: datetime | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize rate limit error.
@@ -218,7 +218,8 @@ class RateLimitError(APIError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
-        
+        kwargs.pop("error_code", None)  # Remove any existing error_code
+
         if retry_after is not None:
             details["retry_after"] = retry_after
         if limit is not None:
@@ -227,9 +228,13 @@ class RateLimitError(APIError):
             details["remaining"] = remaining
         if reset_time:
             details["reset_time"] = reset_time.isoformat()
-            
-        kwargs["error_code"] = ErrorCode.RATE_LIMIT_EXCEEDED
-        super().__init__(message=message, details=details, **kwargs)
+
+        super().__init__(
+            message=message,
+            details=details,
+            error_code=ErrorCode.RATE_LIMIT_EXCEEDED,
+            **kwargs
+        )
 
 
 class NetworkError(APIError):
@@ -238,8 +243,8 @@ class NetworkError(APIError):
     def __init__(
         self,
         message: str,
-        url: Optional[str] = None,
-        timeout: Optional[float] = None,
+        url: str | None = None,
+        timeout: float | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize network error.
@@ -251,12 +256,12 @@ class NetworkError(APIError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
-        
+
         if url:
             details["url"] = url
         if timeout is not None:
             details["timeout"] = timeout
-            
+
         kwargs["error_code"] = ErrorCode.NETWORK_ERROR
         super().__init__(message=message, details=details, **kwargs)
 
@@ -267,8 +272,8 @@ class ConfigurationError(SemanticScholarMCPError):
     def __init__(
         self,
         message: str,
-        config_key: Optional[str] = None,
-        config_file: Optional[str] = None,
+        config_key: str | None = None,
+        config_file: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize configuration error.
@@ -280,12 +285,12 @@ class ConfigurationError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
-        
+
         if config_key:
             details["config_key"] = config_key
         if config_file:
             details["config_file"] = config_file
-            
+
         super().__init__(
             message=message,
             error_code=ErrorCode.CONFIGURATION_ERROR,
@@ -300,8 +305,8 @@ class CacheError(SemanticScholarMCPError):
     def __init__(
         self,
         message: str,
-        cache_key: Optional[str] = None,
-        operation: Optional[str] = None,
+        cache_key: str | None = None,
+        operation: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize cache error.
@@ -313,12 +318,12 @@ class CacheError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
-        
+
         if cache_key:
             details["cache_key"] = cache_key
         if operation:
             details["operation"] = operation
-            
+
         super().__init__(
             message=message,
             error_code=ErrorCode.CACHE_ERROR,
@@ -333,8 +338,8 @@ class NotFoundError(SemanticScholarMCPError):
     def __init__(
         self,
         message: str,
-        resource_type: Optional[str] = None,
-        resource_id: Optional[str] = None,
+        resource_type: str | None = None,
+        resource_id: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize not found error.
@@ -346,12 +351,12 @@ class NotFoundError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
-        
+
         if resource_type:
             details["resource_type"] = resource_type
         if resource_id:
             details["resource_id"] = resource_id
-            
+
         super().__init__(
             message=message,
             error_code=ErrorCode.NOT_FOUND,
@@ -366,7 +371,7 @@ class UnauthorizedError(SemanticScholarMCPError):
     def __init__(
         self,
         message: str = "Unauthorized access",
-        realm: Optional[str] = None,
+        realm: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize unauthorized error.
@@ -377,10 +382,10 @@ class UnauthorizedError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
-        
+
         if realm:
             details["realm"] = realm
-            
+
         super().__init__(
             message=message,
             error_code=ErrorCode.UNAUTHORIZED,
@@ -395,8 +400,8 @@ class ForbiddenError(SemanticScholarMCPError):
     def __init__(
         self,
         message: str = "Access forbidden",
-        resource: Optional[str] = None,
-        action: Optional[str] = None,
+        resource: str | None = None,
+        action: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize forbidden error.
@@ -408,12 +413,12 @@ class ForbiddenError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
-        
+
         if resource:
             details["resource"] = resource
         if action:
             details["action"] = action
-            
+
         super().__init__(
             message=message,
             error_code=ErrorCode.FORBIDDEN,
@@ -428,8 +433,8 @@ class DatabaseError(SemanticScholarMCPError):
     def __init__(
         self,
         message: str,
-        query: Optional[str] = None,
-        table: Optional[str] = None,
+        query: str | None = None,
+        table: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize database error.
@@ -441,12 +446,12 @@ class DatabaseError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
-        
+
         if query:
             details["query"] = query
         if table:
             details["table"] = table
-            
+
         super().__init__(
             message=message,
             error_code=ErrorCode.DATABASE_ERROR,
@@ -461,8 +466,8 @@ class ServiceUnavailableError(APIError):
     def __init__(
         self,
         message: str = "Service temporarily unavailable",
-        service_name: Optional[str] = None,
-        retry_after: Optional[int] = None,
+        service_name: str | None = None,
+        retry_after: int | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize service unavailable error.
@@ -474,11 +479,11 @@ class ServiceUnavailableError(APIError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
-        
+
         if service_name:
             details["service_name"] = service_name
         if retry_after is not None:
             details["retry_after"] = retry_after
-            
+
         kwargs["error_code"] = ErrorCode.SERVICE_UNAVAILABLE
         super().__init__(message=message, details=details, **kwargs)

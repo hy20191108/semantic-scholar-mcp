@@ -1,0 +1,43 @@
+{
+  "hooks": {
+    "before_file_edit": "echo '📝 Editing: {{file_path}}'",
+    "after_file_edit": "echo '✅ Edit completed: {{file_path}}'",
+    
+    "before_file_write": "echo '📄 Creating: {{file_path}}'",
+    "after_file_write": "echo '✅ Created: {{file_path}}'",
+    
+    "before_bash": "echo '🚀 Running: {{command}}'",
+    "after_bash": "echo '✅ Command completed'",
+    
+    "after_edit_python": "cd /mnt/ext-hdd1/yoshioka/github/semantic-scholar-mcp && uv run ruff check {{file_path}} --fix",
+    
+    "before_test": "echo '🧪 Starting tests...'",
+    "after_test": "echo '✅ Tests completed'",
+    
+    "before_git_commit": "cd /mnt/ext-hdd1/yoshioka/github/semantic-scholar-mcp && uv run ruff check . --fix",
+    
+    "after_pyproject_edit": "cd /mnt/ext-hdd1/yoshioka/github/semantic-scholar-mcp && uv sync"
+  },
+  
+  "project": {
+    "name": "Semantic Scholar MCP",
+    "type": "python-mcp",
+    "root": "/mnt/ext-hdd1/yoshioka/github/semantic-scholar-mcp",
+    "python_version": "3.10",
+    "package_manager": "uv"
+  },
+  
+  "development": {
+    "auto_format": true,
+    "lint_on_save": true,
+    "test_command": "uv run pytest",
+    "build_command": "uv build",
+    "run_command": "uv run python -m semantic_scholar_mcp"
+  },
+  
+  "mcp": {
+    "server_file": "server_standalone.py",
+    "inspector_command": "uv run mcp dev server_standalone.py",
+    "test_file": "test_simple_search.py"
+  }
+}

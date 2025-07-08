@@ -1,24 +1,22 @@
 """Semantic Scholar API client."""
 
-import asyncio
-from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
+from typing import Any
 
 import httpx
 from tenacity import (
     retry,
+    retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
 )
 
-from .models import Paper, SearchResult, AuthorDetails
+from .models import AuthorDetails, Paper, SearchResult
 
 
 class RateLimitError(Exception):
     """Raised when API rate limit is exceeded."""
 
-    pass
 
 
 class SemanticScholarClient:
@@ -29,7 +27,7 @@ class SemanticScholarClient:
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         timeout: float = 30.0,
         max_retries: int = 3,
     ):
@@ -43,8 +41,8 @@ class SemanticScholarClient:
         self.api_key = api_key
         self.timeout = timeout
         self.max_retries = max_retries
-        self._client: Optional[httpx.AsyncClient] = None
-        self._rate_limit_reset: Optional[datetime] = None
+        self._client: httpx.AsyncClient | None = None
+        self._rate_limit_reset: datetime | None = None
         self._request_count = 0
         self._request_window_start = datetime.now()
 
@@ -61,7 +59,7 @@ class SemanticScholarClient:
         if self._client:
             await self._client.aclose()
 
-    def _get_headers(self) -> Dict[str, str]:
+    def _get_headers(self) -> dict[str, str]:
         """Get request headers."""
         headers = {
             "User-Agent": "semantic-scholar-mcp/0.1.0",
@@ -95,9 +93,9 @@ class SemanticScholarClient:
         self,
         method: str,
         url: str,
-        params: Optional[Dict[str, Any]] = None,
-        json: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Make an HTTP request with retry logic."""
         await self._check_rate_limit()
 
@@ -121,7 +119,7 @@ class SemanticScholarClient:
     async def search_papers(
         self,
         query: str,
-        fields: Optional[List[str]] = None,
+        fields: list[str] | None = None,
         limit: int = 10,
         offset: int = 0,
     ) -> SearchResult:
@@ -170,7 +168,7 @@ class SemanticScholarClient:
     async def get_paper(
         self,
         paper_id: str,
-        fields: Optional[List[str]] = None,
+        fields: list[str] | None = None,
     ) -> Paper:
         """Get paper details by ID.
 
@@ -210,7 +208,7 @@ class SemanticScholarClient:
     async def get_author(
         self,
         author_id: str,
-        fields: Optional[List[str]] = None,
+        fields: list[str] | None = None,
         papers_limit: int = 10,
     ) -> AuthorDetails:
         """Get author details by ID.

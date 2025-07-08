@@ -1,20 +1,28 @@
 """Domain models for Semantic Scholar entities."""
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field, field_validator, model_validator
 from enum import Enum
+from typing import Any
+
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from core.types import (
+    Abstract,
+    AuthorId,
+    CitationCount,
+    FieldsOfStudy,
+    PaperId,
+    Url,
+    Venue,
+    Year,
+)
 
 from .base_models import BaseEntity, CacheableModel
-from core.types import (
-    PaperId, AuthorId, CitationCount, Year, Venue, Abstract, Url,
-    FieldsOfStudy
-)
 
 
 class PublicationType(str, Enum):
     """Publication type enumeration."""
-    
+
     JOURNAL_ARTICLE = "JournalArticle"
     CONFERENCE = "Conference"
     REVIEW = "Review"
@@ -31,7 +39,7 @@ class PublicationType(str, Enum):
 
 class ExternalIdType(str, Enum):
     """External ID type enumeration."""
-    
+
     DOI = "DOI"
     ARXIV = "ArXiv"
     MAG = "MAG"
@@ -44,16 +52,16 @@ class ExternalIdType(str, Enum):
 
 class Author(BaseModel):
     """Author model."""
-    
-    author_id: Optional[AuthorId] = Field(None, alias="authorId")
+
+    author_id: AuthorId | None = Field(None, alias="authorId")
     name: str
-    aliases: List[str] = Field(default_factory=list)
-    affiliations: List[str] = Field(default_factory=list)
-    homepage: Optional[Url] = None
-    citation_count: Optional[CitationCount] = Field(None, alias="citationCount")
-    h_index: Optional[int] = Field(None, alias="hIndex")
-    paper_count: Optional[int] = Field(None, alias="paperCount")
-    
+    aliases: list[str] = Field(default_factory=list)
+    affiliations: list[str] = Field(default_factory=list)
+    homepage: Url | None = None
+    citation_count: CitationCount | None = Field(None, alias="citationCount")
+    h_index: int | None = Field(None, alias="hIndex")
+    paper_count: int | None = Field(None, alias="paperCount")
+
     @field_validator("name")
     @classmethod
     def validate_name(cls, v: str) -> str:
@@ -65,21 +73,21 @@ class Author(BaseModel):
 
 class PublicationVenue(BaseModel):
     """Publication venue model."""
-    
-    id: Optional[str] = None
-    name: Optional[str] = None
-    type: Optional[str] = None
-    alternate_names: List[str] = Field(default_factory=list, alias="alternateNames")
-    issn: Optional[str] = None
-    url: Optional[Url] = None
+
+    id: str | None = None
+    name: str | None = None
+    type: str | None = None
+    alternate_names: list[str] = Field(default_factory=list, alias="alternateNames")
+    issn: str | None = None
+    url: Url | None = None
 
 
 class TLDR(BaseModel):
     """TL;DR (Too Long; Didn't Read) summary model."""
-    
+
     model: str = Field(description="Model used to generate the summary")
     text: str = Field(description="Generated summary text")
-    
+
     @field_validator("text")
     @classmethod
     def validate_text(cls, v: str) -> str:
@@ -89,43 +97,50 @@ class TLDR(BaseModel):
         return v.strip()
 
 
+class OpenAccessPdf(BaseModel):
+    """Open access PDF information model."""
+
+    url: str | None = None
+    status: str | None = None
+
+
 class Paper(CacheableModel, BaseEntity):
     """Paper model with all fields."""
-    
+
     paper_id: PaperId = Field(alias="paperId")
     title: str
     abstract: Abstract = None
-    year: Optional[Year] = None
+    year: Year | None = None
     venue: Venue = None
-    publication_types: List[PublicationType] = Field(
+    publication_types: list[PublicationType] = Field(
         default_factory=list,
         alias="publicationTypes"
     )
-    publication_date: Optional[datetime] = Field(None, alias="publicationDate")
-    journal: Optional[Dict[str, Any]] = None
-    
+    publication_date: datetime | None = Field(None, alias="publicationDate")
+    journal: dict[str, Any] | None = None
+
     # Authors
-    authors: List[Author] = Field(default_factory=list)
-    
+    authors: list[Author] = Field(default_factory=list)
+
     # Metrics
     citation_count: CitationCount = Field(0, alias="citationCount")
     reference_count: int = Field(0, alias="referenceCount")
     influential_citation_count: int = Field(0, alias="influentialCitationCount")
-    
+
     # External IDs
-    external_ids: Dict[str, str] = Field(default_factory=dict, alias="externalIds")
-    
+    external_ids: dict[str, str] = Field(default_factory=dict, alias="externalIds")
+
     # URLs
-    url: Optional[Url] = None
-    s2_url: Optional[Url] = Field(None, alias="s2Url")
-    
+    url: Url | None = None
+    s2_url: Url | None = Field(None, alias="s2Url")
+
     # Additional fields
     fields_of_study: FieldsOfStudy = Field(default_factory=list, alias="fieldsOfStudy")
-    publication_venue: Optional[PublicationVenue] = Field(None, alias="publicationVenue")
-    tldr: Optional[TLDR] = None
+    publication_venue: PublicationVenue | None = Field(None, alias="publicationVenue")
+    tldr: TLDR | None = None
     is_open_access: bool = Field(False, alias="isOpenAccess")
-    open_access_pdf: Optional[Url] = Field(None, alias="openAccessPdf")
-    
+    open_access_pdf: OpenAccessPdf | None = Field(None, alias="openAccessPdf")
+
     @field_validator("title")
     @classmethod
     def validate_title(cls, v: str) -> str:
@@ -133,17 +148,17 @@ class Paper(CacheableModel, BaseEntity):
         if not v or not v.strip():
             raise ValueError("Paper title cannot be empty")
         return v.strip()
-    
+
     @field_validator("year")
     @classmethod
-    def validate_year(cls, v: Optional[int]) -> Optional[int]:
+    def validate_year(cls, v: int | None) -> int | None:
         """Validate publication year is reasonable."""
         if v is not None:
             current_year = datetime.now().year
             if v < 1900 or v > current_year + 1:
                 raise ValueError(f"Invalid publication year: {v}")
         return v
-    
+
     @model_validator(mode="after")
     def validate_metrics(self) -> "Paper":
         """Validate citation metrics are consistent."""
@@ -152,7 +167,7 @@ class Paper(CacheableModel, BaseEntity):
                 "Influential citation count cannot exceed total citation count"
             )
         return self
-    
+
     def generate_cache_key(self) -> str:
         """Generate cache key based on paper ID."""
         return f"paper:{self.paper_id}"
@@ -160,43 +175,43 @@ class Paper(CacheableModel, BaseEntity):
 
 class Citation(BaseModel):
     """Citation model."""
-    
+
     paper_id: PaperId = Field(alias="paperId")
     title: str
-    year: Optional[Year] = None
-    authors: List[Author] = Field(default_factory=list)
+    year: Year | None = None
+    authors: list[Author] = Field(default_factory=list)
     venue: Venue = None
     citation_count: CitationCount = Field(0, alias="citationCount")
     is_influential: bool = Field(False, alias="isInfluential")
-    contexts: List[str] = Field(default_factory=list)
-    intents: List[str] = Field(default_factory=list)
+    contexts: list[str] = Field(default_factory=list)
+    intents: list[str] = Field(default_factory=list)
 
 
 class Reference(BaseModel):
     """Reference model."""
-    
-    paper_id: Optional[PaperId] = Field(None, alias="paperId")
+
+    paper_id: PaperId | None = Field(None, alias="paperId")
     title: str
-    year: Optional[Year] = None
-    authors: List[Author] = Field(default_factory=list)
+    year: Year | None = None
+    authors: list[Author] = Field(default_factory=list)
     venue: Venue = None
-    citation_count: Optional[CitationCount] = Field(None, alias="citationCount")
+    citation_count: CitationCount | None = Field(None, alias="citationCount")
 
 
 class SearchFilters(BaseModel):
     """Search filters model."""
-    
-    year: Optional[Year] = None
-    year_range: Optional[tuple[Year, Year]] = Field(None, alias="yearRange")
-    publication_types: Optional[List[PublicationType]] = Field(
+
+    year: Year | None = None
+    year_range: tuple[Year, Year] | None = Field(None, alias="yearRange")
+    publication_types: list[PublicationType] | None = Field(
         None,
         alias="publicationTypes"
     )
-    fields_of_study: Optional[FieldsOfStudy] = Field(None, alias="fieldsOfStudy")
-    venues: Optional[List[str]] = None
+    fields_of_study: FieldsOfStudy | None = Field(None, alias="fieldsOfStudy")
+    venues: list[str] | None = None
     open_access_only: bool = Field(False, alias="openAccessOnly")
-    min_citation_count: Optional[CitationCount] = Field(None, alias="minCitationCount")
-    
+    min_citation_count: CitationCount | None = Field(None, alias="minCitationCount")
+
     @model_validator(mode="after")
     def validate_year_range(self) -> "SearchFilters":
         """Validate year range is valid."""
@@ -212,14 +227,14 @@ class SearchFilters(BaseModel):
 
 class SearchQuery(BaseModel):
     """Search query model."""
-    
+
     query: str
-    fields: Optional[List[str]] = None
-    filters: Optional[SearchFilters] = None
+    fields: list[str] | None = None
+    filters: SearchFilters | None = None
     offset: int = Field(0, ge=0)
     limit: int = Field(10, ge=1, le=100)
-    sort: Optional[str] = None
-    
+    sort: str | None = None
+
     @field_validator("query")
     @classmethod
     def validate_query(cls, v: str) -> str:
@@ -227,3 +242,12 @@ class SearchQuery(BaseModel):
         if not v or not v.strip():
             raise ValueError("Search query cannot be empty")
         return v.strip()
+
+
+class SearchResult(BaseModel):
+    """Search result model."""
+
+    items: list[Paper] = Field(default_factory=list)
+    total: int = Field(0, ge=0)
+    offset: int = Field(0, ge=0)
+    has_more: bool = Field(False)
