@@ -149,15 +149,20 @@ mv tests/test_real_api.py.disabled tests/test_real_api.py
 - 9つのツール実装
 - エラーハンドリング
 
-### フェーズ2: 品質向上
+### フェーズ2: 品質向上（2025-07-08）
 - 企業グレード設計パターン導入
 - 包括的なテストスイート
 - CI/CD パイプライン構築
 
-### フェーズ3: 最適化
+### フェーズ3: 最適化（2025-07-08）
 - 不要な依存関係の削除
 - パフォーマンスチューニング
 - ドキュメント整備
+
+### フェーズ4: リリース（2025-07-08）
+- TestPyPIへの公開テスト完了
+- PyPIへの正式公開完了
+- GitHub Actionsによる自動リリースパイプライン構築
 
 ## 技術的決定事項
 
@@ -179,7 +184,7 @@ mv tests/test_real_api.py.disabled tests/test_real_api.py
 ## 今後の展望
 
 ### 短期計画
-- [ ] PyPI公開
+- [x] PyPI公開
 - [ ] ドキュメントサイト構築
 - [ ] 追加のMCPツール
 
@@ -196,6 +201,30 @@ mv tests/test_real_api.py.disabled tests/test_real_api.py
 2. **テスト**: 新機能には必ずテストを追加
 3. **ドキュメント**: README.mdの更新を忘れずに
 4. **コミット**: Conventional Commits形式を使用
+
+---
+
+## プロジェクト情報
+
+### 作者
+- **名前**: hy20191108
+- **GitHub**: https://github.com/hy20191108
+- **メール**: zwwp9976@gmail.com
+
+### パッケージ公開情報
+- **PyPI**: https://pypi.org/project/semantic-scholar-mcp/
+- **TestPyPI**: https://test.pypi.org/project/semantic-scholar-mcp/
+- **インストール**: `pip install semantic-scholar-mcp`
+
+### GitHub Actions ワークフロー
+- **test-pypi.yml**: TestPyPIへの公開（すべてのプッシュで実行）
+- **release.yml**: PyPIへの公開（GitHubリリース作成時または手動実行）
+- **CI/CD**: プルリクエスト時の自動テスト
+
+### トラステッドパブリッシャー設定
+- **TestPyPI**: 設定済み（Workflow: test-pypi.yml）
+- **PyPI**: 設定済み（Workflow: release.yml）
+- **認証方式**: OIDC（APIトークン不要）
 
 ---
 
