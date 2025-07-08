@@ -8,10 +8,6 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
-# Add src directory to Python path
-src_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(src_dir))
-
 from core.cache import InMemoryCache
 from core.config import ApplicationConfig, get_config
 from core.exceptions import ValidationError
