@@ -10,8 +10,9 @@ from typing import (
 
 T = TypeVar("T")
 TModel = TypeVar("TModel")
-TKey = TypeVar("TKey")
+TKey = TypeVar("TKey", contravariant=True)
 TValue = TypeVar("TValue")
+TValidate = TypeVar("TValidate", contravariant=True)
 
 
 @runtime_checkable
@@ -232,14 +233,14 @@ class IEventPublisher(Protocol):
 
 
 @runtime_checkable
-class IValidator(Protocol, Generic[T]):
+class IValidator(Protocol, Generic[TValidate]):
     """Protocol for validation services."""
 
-    def validate(self, value: T) -> list[str]:
+    def validate(self, value: TValidate) -> list[str]:
         """Validate value and return errors."""
         ...
 
-    def is_valid(self, value: T) -> bool:
+    def is_valid(self, value: TValidate) -> bool:
         """Check if value is valid."""
         ...
 

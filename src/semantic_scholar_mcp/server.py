@@ -41,20 +41,20 @@ async def initialize_server():
 
     # Initialize logging with MCP-safe settings
     import os
-    
+
     # Handle MCP mode logging configuration
     if os.getenv("MCP_MODE", "false").lower() == "true":
         # Standard MCP compatibility mode
         if not config.logging.debug_mcp_mode:
             config.logging.level = "ERROR"
-    
+
     # Override log level for debug mode
     if config.logging.debug_mcp_mode and config.logging.debug_level_override:
         config.logging.level = config.logging.debug_level_override
     elif config.logging.debug_mcp_mode:
         # Enable debug logging when MCP debug mode is active
         config.logging.level = "DEBUG"
-    
+
     initialize_logging(config.logging)
 
     # Create cache
@@ -79,7 +79,7 @@ async def initialize_server():
         log_level=config.logging.level.value if hasattr(config.logging.level, 'value') else str(config.logging.level),
         performance_metrics_enabled=config.logging.log_performance_metrics
     )
-    
+
     # Log MCP tools and resources if debug mode is enabled
     if config.logging.debug_mcp_mode:
         logger.debug_mcp(
@@ -143,7 +143,7 @@ async def search_papers(
                 fields_of_study=fields_of_study,
                 sort=sort
             )
-            
+
             # Extract actual values from Field objects
             actual_limit = extract_field_value(limit)
             actual_offset = extract_field_value(offset)
@@ -842,7 +842,7 @@ async def on_shutdown():
 def main():
     """Main entry point for the server."""
     import os
-    
+
     # Log environment information if debug mode is enabled
     if os.getenv("DEBUG_MCP_MODE", "false").lower() == "true":
         temp_config = get_config()
@@ -860,7 +860,7 @@ def main():
             python_version=sys.version,
             working_directory=str(Path.cwd())
         )
-    
+
     # Initialize server on startup
     asyncio.run(on_startup())
 

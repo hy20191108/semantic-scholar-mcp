@@ -118,7 +118,7 @@ class LoggingConfig(BaseModel):
     file_path: Path | None = None
     max_file_size: int = Field(default=10 * 1024 * 1024, ge=1)  # 10MB
     backup_count: int = Field(default=5, ge=0)
-    
+
     # MCP-specific debug configuration
     debug_mcp_mode: bool = Field(default=False, env="DEBUG_MCP_MODE")
     log_mcp_messages: bool = Field(default=False, env="LOG_MCP_MESSAGES")

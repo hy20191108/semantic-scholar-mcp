@@ -1,22 +1,20 @@
-name: Test PyPI Release
+name: Test Release
 
 on:
-  push:
-    branches: [ "**" ]  # All branches
-  pull_request:
-    branches: [ "**" ]  # All pull requests
-  workflow_dispatch:    # Manual trigger
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly on Sunday
 
 jobs:
-  build-and-test:
-    name: Build and Test
+  test-build:
+    name: Test Build and Publish
     runs-on: ubuntu-latest
     permissions:
       id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Required for hatch-vcs
+          fetch-depth: 0
       
       - name: Install uv
         uses: astral-sh/setup-uv@v6
@@ -27,29 +25,16 @@ jobs:
       - name: Set up Python
         run: uv python install 3.10
       
-      - name: Install dependencies
-        run: uv sync --all-extras
-      
-      - name: Run linting
-        run: uv run ruff check .
-        continue-on-error: true
-      
-      - name: Run tests
-        run: uv run pytest tests/ -v --tb=short
-        continue-on-error: true
-      
       - name: Build package
         run: uv build
       
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
+      - name: Check build
+        run: |
+          ls -la dist/
+          uv run twine check dist/*
       
       - name: Publish to Test PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-        if: github.event_name != 'pull_request'  # Skip publishing for PRs
         with:
           repository-url: https://test.pypi.org/legacy/
           verbose: true

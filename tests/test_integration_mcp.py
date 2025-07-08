@@ -34,7 +34,7 @@ class TestMCPIntegration:
         with patch('semantic_scholar_mcp.server.get_config') as mock_config:
             mock_config.return_value = MagicMock(
                 logging=MagicMock(
-                    level="INFO", 
+                    level="INFO",
                     format="json",
                     file_path=None,
                     max_file_size=1024,
@@ -202,7 +202,7 @@ class TestMCPIntegration:
         mock_author1.name = "Author 1"
         mock_author2 = MagicMock()
         mock_author2.name = "Author 2"
-        
+
         mock_paper = MagicMock(
             title="Test Paper",
             abstract="Test abstract",
@@ -281,7 +281,7 @@ class TestMCPIntegration:
         with patch('semantic_scholar_mcp.server.get_config') as mock_config:
             mock_config.return_value = MagicMock(
                 logging=MagicMock(
-                    level="INFO", 
+                    level="INFO",
                     format="json",
                     file_path=None,
                     max_file_size=1024,

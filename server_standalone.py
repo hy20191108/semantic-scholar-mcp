@@ -15,11 +15,12 @@ server = mcp
 
 if __name__ == "__main__":
     import asyncio
-    from semantic_scholar_mcp.server import on_startup, on_shutdown
-    
+
+    from semantic_scholar_mcp.server import on_shutdown, on_startup
+
     # Initialize server
     asyncio.run(on_startup())
-    
+
     try:
         # Run MCP server (this will handle stdio communication)
         mcp.run(transport="stdio")

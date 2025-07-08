@@ -314,7 +314,7 @@ class SemanticScholarClient:
         async def _execute_request():
             """Execute the actual request."""
             start_time = time.time()
-            
+
             with RequestContext(request_id=request_id):
                 # Log request details
                 self.logger.log_api_request(
@@ -332,9 +332,9 @@ class SemanticScholarClient:
                         params=params,
                         json=json
                     )
-                    
+
                     response_time = time.time() - start_time
-                    
+
                     # Log response details
                     self.logger.log_api_response(
                         status_code=response.status_code,
@@ -729,7 +729,7 @@ class SemanticScholarClient:
                 f"/recommendations/v1/papers/forpaper/{paper_id}",
                 params=params
             )
-            
+
             # Handle different response formats
             papers_data = data.get("recommendedPapers", data.get("papers", data.get("data", [])))
             return [Paper(**paper_data) for paper_data in papers_data]

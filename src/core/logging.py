@@ -152,13 +152,13 @@ class ContextLogger(ILogger):
         new_context = self._context.copy()
         new_context.update(context)
         return ContextLogger(self._logger, new_context)
-    
+
     def debug_mcp(self, message: str, **kwargs: Any) -> None:
         """Log MCP-specific debug message (only when DEBUG_MCP_MODE is enabled)."""
         if os.getenv("DEBUG_MCP_MODE", "false").lower() == "true":
             kwargs["mcp_debug"] = True
             self.debug(message, **kwargs)
-    
+
     def trace_tool_execution(self, tool_name: str, operation: str, **kwargs: Any) -> None:
         """Log tool execution trace."""
         kwargs.update({
@@ -167,7 +167,7 @@ class ContextLogger(ILogger):
             "execution_trace": True
         })
         self.debug_mcp(f"Tool execution: {tool_name}.{operation}", **kwargs)
-    
+
     def log_api_request(self, method: str, url: str, **kwargs: Any) -> None:
         """Log API request details (when API payload logging is enabled)."""
         if os.getenv("LOG_API_PAYLOADS", "false").lower() == "true":
@@ -177,7 +177,7 @@ class ContextLogger(ILogger):
                 "url": url
             })
             self.debug_mcp(f"API Request: {method} {url}", **kwargs)
-    
+
     def log_api_response(self, status_code: int, response_time: float, **kwargs: Any) -> None:
         """Log API response details (when API payload logging is enabled)."""
         if os.getenv("LOG_API_PAYLOADS", "false").lower() == "true":
@@ -187,7 +187,7 @@ class ContextLogger(ILogger):
                 "response_time_ms": response_time * 1000
             })
             self.debug_mcp(f"API Response: {status_code} ({response_time:.2f}s)", **kwargs)
-    
+
     def log_circuit_breaker_state(self, state: str, **kwargs: Any) -> None:
         """Log circuit breaker state changes."""
         kwargs.update({
@@ -195,7 +195,7 @@ class ContextLogger(ILogger):
             "state": state
         })
         self.info(f"Circuit breaker state: {state}", **kwargs)
-    
+
     def log_with_stack_trace(self, level: int, message: str, **kwargs: Any) -> None:
         """Log message with stack trace for debugging."""
         if os.getenv("DEBUG_MCP_MODE", "false").lower() == "true":
@@ -418,7 +418,7 @@ class MCPToolContext:
         self._tokens.append(tool_name_var.set(self.tool_name))
         self._tokens.append(mcp_operation_var.set(self.operation))
         self._tokens.append(correlation_id_var.set(self.correlation_id))
-        
+
         # Log tool start if MCP debugging is enabled
         if os.getenv("DEBUG_MCP_MODE", "false").lower() == "true":
             logger = get_logger(f"mcp.tool.{self.tool_name}")
@@ -427,7 +427,7 @@ class MCPToolContext:
                 tool_operation=self.operation,
                 start_time=self._start_time
             )
-        
+
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -435,7 +435,7 @@ class MCPToolContext:
         if os.getenv("DEBUG_MCP_MODE", "false").lower() == "true" and self._start_time:
             elapsed = time.time() - self._start_time
             logger = get_logger(f"mcp.tool.{self.tool_name}")
-            
+
             if exc_type is None:
                 logger.debug_mcp(
                     f"Tool {self.tool_name} completed successfully",
@@ -450,7 +450,7 @@ class MCPToolContext:
                     exception_type=exc_type.__name__ if exc_type else None,
                     exception_message=str(exc_val) if exc_val else None
                 )
-        
+
         for token in reversed(self._tokens):
             if token:
                 token.var.reset(token)

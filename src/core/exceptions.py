@@ -88,7 +88,7 @@ class SemanticScholarMCPError(Exception):
         self.details = details or {}
         self.inner_exception = inner_exception
         self.timestamp = datetime.now(timezone.utc)
-        
+
         # Add stack trace if requested
         if include_stack_trace:
             self.details["stack_trace"] = "".join(traceback.format_stack())

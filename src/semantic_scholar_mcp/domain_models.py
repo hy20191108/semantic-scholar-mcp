@@ -140,7 +140,7 @@ class Paper(CacheableModel, BaseEntity):
     tldr: TLDR | None = None
     is_open_access: bool = Field(False, alias="isOpenAccess")
     open_access_pdf: OpenAccessPdf | None = Field(None, alias="openAccessPdf")
-    
+
     # Citations and references (optional for enhanced get_paper functionality)
     citations: list["Citation"] = Field(default_factory=list)
     references: list["Reference"] = Field(default_factory=list)
@@ -169,7 +169,7 @@ class Paper(CacheableModel, BaseEntity):
         """Validate and convert external IDs to strings."""
         if not isinstance(v, dict):
             return {}
-        
+
         # Convert all values to strings, handling integers
         result = {}
         for key, value in v.items():
@@ -185,7 +185,7 @@ class Paper(CacheableModel, BaseEntity):
             return []
         if not isinstance(v, list):
             return []
-        
+
         # Convert strings to PublicationType enum values
         result = []
         for item in v:
@@ -203,7 +203,7 @@ class Paper(CacheableModel, BaseEntity):
                     result.append(PublicationType.UNKNOWN)
             elif isinstance(item, PublicationType):
                 result.append(item)
-        
+
         return result
 
     @model_validator(mode="after")

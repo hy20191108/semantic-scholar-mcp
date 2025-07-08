@@ -2,7 +2,6 @@
 
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -21,7 +20,7 @@ class TestServerLogic:
         # Create real Paper objects (not mocks)
         author1 = Author(name="John Doe", authorId="123")
         author2 = Author(name="Jane Smith", authorId="456")
-        
+
         paper = Paper(
             paperId="test-123",
             title="Test Paper",
@@ -31,7 +30,7 @@ class TestServerLogic:
             citationCount=42,
             authors=[author1, author2]
         )
-        
+
         # Test formatting using local helper function
         formatted = format_paper_response([paper])
         assert len(formatted) == 1
@@ -39,7 +38,7 @@ class TestServerLogic:
         assert formatted[0]["title"] == "Test Paper"
         assert formatted[0]["citationCount"] == 42
         assert len(formatted[0]["authors"]) == 2
-        
+
         # Test validation function
         assert validate_search_params("test", 10, 0) is True
         assert validate_search_params("", 10, 0) is False
@@ -51,15 +50,15 @@ class TestServerLogic:
             title="Serialization Test",
             year=2023
         )
-        
+
         # Test model_dump functionality with alias
         data = paper.model_dump(by_alias=True)
-        
+
         assert data["paperId"] == "test-456"
         assert data["title"] == "Serialization Test"
         assert data["year"] == 2023
         assert "authors" in data  # Should have default empty list
-        
+
         # Test model_dump without alias (internal field names)
         internal_data = paper.model_dump(by_alias=False)
         assert internal_data["paper_id"] == "test-456"
@@ -69,7 +68,7 @@ class TestServerLogic:
         # Valid author
         author = Author(name="Valid Author")
         assert author.name == "Valid Author"
-        
+
         # Invalid author (empty name should be caught by validation)
         with pytest.raises(ValueError):
             Author(name="")
@@ -79,15 +78,15 @@ class TestServerLogic:
         # Valid paper
         paper = Paper(paperId="123", title="Valid Title")
         assert paper.title == "Valid Title"
-        
+
         # Invalid paper (empty title)
         with pytest.raises(ValueError):
             Paper(paperId="123", title="")
-        
+
         # Invalid year (too old)
         with pytest.raises(ValueError):
             Paper(paperId="123", title="Old Paper", year=1800)
-        
+
         # Invalid year (future)
         with pytest.raises(ValueError):
             Paper(paperId="123", title="Future Paper", year=2030)
@@ -103,7 +102,7 @@ class TestServerLogic:
         )
         assert paper.citation_count == 100
         assert paper.influential_citation_count == 50
-        
+
         # Invalid metrics (influential > total)
         with pytest.raises(ValueError):
             Paper(
