@@ -1,8 +1,8 @@
 """Additional type definitions for completeness."""
 
 from dataclasses import dataclass
-from typing import Optional, List, Dict, Any
 from enum import Enum
+from typing import Any
 
 
 @dataclass
@@ -10,7 +10,7 @@ class PaginationParams:
     """Pagination parameters."""
     offset: int = 0
     limit: int = 10
-    
+
 
 class SortOrder(str, Enum):
     """Sort order enumeration."""
@@ -28,9 +28,9 @@ class MetricName(str, Enum):
     RATE_LIMIT_EXCEEDED = "rate_limit.exceeded"
 
 
-@dataclass  
+@dataclass
 class SearchQuery:
     """Search query parameters."""
     query: str
-    filters: Optional[Dict[str, Any]] = None
-    fields: Optional[List[str]] = None
+    filters: dict[str, Any] | None = None
+    fields: list[str] | None = None

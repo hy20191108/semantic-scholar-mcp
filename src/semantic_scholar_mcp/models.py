@@ -1,7 +1,5 @@
 """Data models for Semantic Scholar API responses."""
 
-from datetime import datetime
-from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -9,7 +7,7 @@ from pydantic import BaseModel, Field
 class Author(BaseModel):
     """Author information."""
 
-    author_id: Optional[str] = Field(None, alias="authorId")
+    author_id: str | None = Field(None, alias="authorId")
     name: str
 
 
@@ -18,16 +16,16 @@ class Paper(BaseModel):
 
     paper_id: str = Field(alias="paperId")
     title: str
-    abstract: Optional[str] = None
-    year: Optional[int] = None
-    authors: List[Author] = []
-    venue: Optional[str] = None
+    abstract: str | None = None
+    year: int | None = None
+    authors: list[Author] = []
+    venue: str | None = None
     citation_count: int = Field(0, alias="citationCount")
     reference_count: int = Field(0, alias="referenceCount")
-    url: Optional[str] = None
-    arxiv_id: Optional[str] = Field(None, alias="arxivId")
-    doi: Optional[str] = None
-    fields_of_study: List[str] = Field(default_factory=list, alias="fieldsOfStudy")
+    url: str | None = None
+    arxiv_id: str | None = Field(None, alias="arxivId")
+    doi: str | None = None
+    fields_of_study: list[str] = Field(default_factory=list, alias="fieldsOfStudy")
 
 
 class SearchResult(BaseModel):
@@ -35,8 +33,8 @@ class SearchResult(BaseModel):
 
     total: int
     offset: int
-    next: Optional[int] = None
-    data: List[Paper]
+    next: int | None = None
+    data: list[Paper]
 
 
 class AuthorDetails(BaseModel):
@@ -44,10 +42,10 @@ class AuthorDetails(BaseModel):
 
     author_id: str = Field(alias="authorId")
     name: str
-    aliases: List[str] = []
-    affiliations: List[str] = []
-    homepage: Optional[str] = None
+    aliases: list[str] = []
+    affiliations: list[str] = []
+    homepage: str | None = None
     paper_count: int = Field(0, alias="paperCount")
     citation_count: int = Field(0, alias="citationCount")
-    h_index: Optional[int] = Field(None, alias="hIndex")
-    papers: List[Paper] = []
+    h_index: int | None = Field(None, alias="hIndex")
+    papers: list[Paper] = []

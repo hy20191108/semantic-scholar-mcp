@@ -1,19 +1,26 @@
 """Integration tests for MCP server functionality."""
 
-import pytest
 import asyncio
-import json
-from unittest.mock import AsyncMock, patch, MagicMock
-from pathlib import Path
+import os
 
 # Add src to path for imports
 import sys
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
-from semantic_scholar_mcp.server import (
-    search_papers, get_paper, get_author, get_recommendations,
-    get_paper_resource, literature_review, initialize_server
+from semantic_scholar_mcp.server import (  # noqa: E402
+    get_author,
+    get_paper,
+    get_paper_resource,
+    get_recommendations,
+    initialize_server,
+    literature_review,
+    search_papers,
 )
 
 
@@ -45,7 +52,7 @@ class TestMCPIntegration:
                 year=2024,
                 citation_count=10,
                 authors=[MagicMock(name="Author 1")],
-                model_dump=lambda **kwargs: {
+                model_dump=lambda **_kwargs: {
                     "paperId": "123",
                     "title": "Test Paper",
                     "abstract": "Test abstract",
@@ -59,13 +66,13 @@ class TestMCPIntegration:
         mock_response.offset = 0
         mock_response.limit = 10
         mock_response.has_more = False
-        
+
         with patch('semantic_scholar_mcp.server.api_client') as mock_client:
             mock_client.search_papers = AsyncMock(return_value=mock_response)
-            
+
             # Act
             result = await search_papers("test query", limit=10)
-            
+
             # Assert
             assert result["success"] is True
             assert len(result["data"]["papers"]) == 1
@@ -81,10 +88,10 @@ class TestMCPIntegration:
             mock_client.search_papers = AsyncMock(
                 side_effect=Exception("API Error")
             )
-            
+
             # Act
             result = await search_papers("test query")
-            
+
             # Assert
             assert result["success"] is False
             assert result["error"]["type"] == "error"
@@ -110,13 +117,13 @@ class TestMCPIntegration:
                 "authors": [{"name": "Author 1"}]
             }
         )
-        
+
         with patch('semantic_scholar_mcp.server.api_client') as mock_client:
             mock_client.get_paper = AsyncMock(return_value=mock_paper)
-            
+
             # Act
             result = await get_paper("123", include_citations=False)
-            
+
             # Assert
             assert result["success"] is True
             assert result["data"]["paperId"] == "123"
@@ -140,13 +147,13 @@ class TestMCPIntegration:
                 "hIndex": 25
             }
         )
-        
+
         with patch('semantic_scholar_mcp.server.api_client') as mock_client:
             mock_client.get_author = AsyncMock(return_value=mock_author)
-            
+
             # Act
             result = await get_author("1234567")
-            
+
             # Assert
             assert result["success"] is True
             assert result["data"]["name"] == "John Doe"
@@ -160,20 +167,20 @@ class TestMCPIntegration:
             MagicMock(
                 paper_id=f"rec{i}",
                 title=f"Recommended Paper {i}",
-                model_dump=lambda i=i, **kwargs: {
+                model_dump=lambda i=i, **_kwargs: {
                     "paperId": f"rec{i}",
                     "title": f"Recommended Paper {i}"
                 }
             )
             for i in range(3)
         ]
-        
+
         with patch('semantic_scholar_mcp.server.api_client') as mock_client:
             mock_client.get_recommendations = AsyncMock(return_value=mock_papers)
-            
+
             # Act
             result = await get_recommendations("123", limit=3)
-            
+
             # Assert
             assert result["success"] is True
             assert len(result["data"]["recommendations"]) == 3
@@ -195,13 +202,13 @@ class TestMCPIntegration:
                 MagicMock(name="Author 2")
             ]
         )
-        
+
         with patch('semantic_scholar_mcp.server.api_client') as mock_client:
             mock_client.get_paper = AsyncMock(return_value=mock_paper)
-            
+
             # Act
             result = await get_paper_resource("123")
-            
+
             # Assert
             assert "# Test Paper" in result
             assert "**Authors**: Author 1, Author 2" in result
@@ -213,7 +220,7 @@ class TestMCPIntegration:
         """Test prompt handler for literature review."""
         # Act
         result = literature_review("machine learning", max_papers=15, start_year=2020)
-        
+
         # Assert
         assert "machine learning" in result
         assert "15 papers" in result
@@ -226,7 +233,7 @@ class TestMCPIntegration:
         # Arrange
         async def make_search(query: str):
             return await search_papers(query, limit=5)
-        
+
         with patch('semantic_scholar_mcp.server.api_client') as mock_client:
             mock_response = MagicMock(
                 items=[],
@@ -236,39 +243,38 @@ class TestMCPIntegration:
                 has_more=False
             )
             mock_client.search_papers = AsyncMock(return_value=mock_response)
-            
+
             # Act - Make 10 concurrent requests
             tasks = [make_search(f"query {i}") for i in range(10)]
             results = await asyncio.gather(*tasks)
-            
+
             # Assert - All should succeed
             for result in results:
                 assert result["success"] is True
                 assert result["data"]["total"] == 0
 
-    @pytest.mark.asyncio 
+    @pytest.mark.asyncio
     async def test_validation_errors(self):
         """Test validation error handling."""
         # Test with invalid limit
         result = await search_papers("test", limit=1000)  # Max is 100
-        
+
         # The function should handle this gracefully
         assert "success" in result
-        
+
     @pytest.mark.asyncio
     async def test_api_key_configuration(self):
         """Test API key configuration handling."""
         # Arrange
-        import os
         os.environ["SEMANTIC_SCHOLAR_API_KEY"] = "test-api-key"
-        
+
         with patch('semantic_scholar_mcp.server.get_config') as mock_config:
             mock_config.return_value = MagicMock(
                 semantic_scholar=MagicMock(api_key="test-api-key")
             )
-            
+
             # Act - Re-initialize with API key
             await initialize_server()
-            
+
             # Assert - Client should be configured with API key
             # This would be verified by checking the headers in actual requests

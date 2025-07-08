@@ -77,21 +77,23 @@ partition "API Request with Resilience" {
 }
 
 partition "Fetch Additional Data" {
-  if (include_citations?) then (yes)
+  if (include_citations or include_references?) then (yes)
     fork
-      :Fetch citations;
-      :Create Citation objects;
-      :Add to Paper.citations;
+      if (include_citations?) then (yes)
+        :Fetch citations;
+        :Create Citation objects;
+        :Add to Paper.citations;
+      endif
     fork again
+      if (include_references?) then (yes)
+        :Fetch references;
+        :Create Reference objects;
+        :Add to Paper.references;
+      endif
+    end fork
+  else (no)
+    :No additional data needed;
   endif
-  
-  if (include_references?) then (yes)
-    :Fetch references;
-    :Create Reference objects;
-    :Add to Paper.references;
-  endif
-  
-  end fork
 }
 
 partition "Cache and Return" {

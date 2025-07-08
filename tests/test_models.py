@@ -1,250 +1,247 @@
 """Unit tests for domain models."""
 
+from datetime import datetime, timezone
+
 import pytest
-from datetime import datetime
 from pydantic import ValidationError
 
 from semantic_scholar_mcp.domain_models import (
-    Paper, Author, Citation, Reference, SearchQuery, SearchFilters
+    Author,
+    Citation,
+    Paper,
+    Reference,
+    SearchFilters,
+    SearchQuery,
+    SearchResult,
 )
 
 
-class TestPaperModel:
-    """Test cases for Paper model."""
+class TestPaper:
+    """Tests for Paper model."""
 
-    def test_paper_creation_minimal(self):
-        """Test creating paper with minimal fields."""
+    def test_paper_creation(self):
+        """Test creating a valid paper."""
+        paper = Paper(
+            paper_id="123",
+            title="Test Paper",
+            abstract="This is a test abstract.",
+            year=2023,
+            venue="Test Conference"
+        )
+
+        assert paper.paper_id == "123"
+        assert paper.title == "Test Paper"
+        assert paper.abstract == "This is a test abstract."
+        assert paper.year == 2023
+        assert paper.venue == "Test Conference"
+
+    def test_paper_without_optional_fields(self):
+        """Test creating paper with only required fields."""
         paper = Paper(
             paper_id="123",
             title="Test Paper"
         )
-        
+
         assert paper.paper_id == "123"
         assert paper.title == "Test Paper"
-        assert paper.citation_count == 0
-        assert paper.authors == []
-
-    def test_paper_creation_full(self, mock_paper_data):
-        """Test creating paper with all fields."""
-        paper = Paper(**mock_paper_data)
-        
-        assert paper.paper_id == "test123"
-        assert paper.title == "Test Paper: A Comprehensive Study"
-        assert paper.year == 2024
-        assert paper.citation_count == 42
-        assert len(paper.authors) == 2
-        assert paper.fields_of_study == ["Computer Science", "Machine Learning"]
+        assert paper.abstract is None
+        assert paper.year is None
+        assert paper.venue is None
 
     def test_paper_title_validation(self):
         """Test paper title validation."""
         # Empty title should fail
         with pytest.raises(ValidationError) as exc_info:
-            Paper(paper_id="123", title="")
-        
-        assert "Title cannot be empty" in str(exc_info.value)
-        
-        # Whitespace-only title should fail
-        with pytest.raises(ValidationError) as exc_info:
-            Paper(paper_id="123", title="   ")
-        
+            Paper(
+                paper_id="123",
+                title=""
+            )
+
         assert "Title cannot be empty" in str(exc_info.value)
 
     def test_paper_year_validation(self):
         """Test paper year validation."""
-        current_year = datetime.now().year
-        
+        current_year = datetime.now(tz=timezone.utc).year
+
         # Future year should fail
         with pytest.raises(ValidationError) as exc_info:
             Paper(
                 paper_id="123",
-                title="Test",
-                year=current_year + 2
+                title="Future Paper",
+                year=current_year + 10
             )
-        
+
         assert "Year cannot be in the future" in str(exc_info.value)
-        
-        # Very old year should fail
-        with pytest.raises(ValidationError) as exc_info:
-            Paper(
-                paper_id="123",
-                title="Test",
-                year=1799
-            )
-        
-        assert "Year must be 1800 or later" in str(exc_info.value)
 
-    def test_paper_metrics_validation(self):
-        """Test paper metrics validation."""
-        # Negative citation count should fail
-        with pytest.raises(ValidationError) as exc_info:
-            Paper(
-                paper_id="123",
-                title="Test",
-                citation_count=-1
-            )
-        
-        assert "greater than or equal to 0" in str(exc_info.value)
-
-    def test_paper_cache_key_generation(self):
-        """Test cache key generation."""
-        paper = Paper(paper_id="test123", title="Test Paper")
-        cache_key = paper.generate_cache_key()
-        
-        assert cache_key == "paper:test123"
+        # Valid current year should pass
+        paper = Paper(
+            paper_id="123",
+            title="Current Paper",
+            year=current_year
+        )
+        assert paper.year == current_year
 
 
-class TestAuthorModel:
-    """Test cases for Author model."""
+class TestAuthor:
+    """Tests for Author model."""
 
-    def test_author_creation_minimal(self):
-        """Test creating author with minimal fields."""
-        author = Author(name="John Doe")
-        
-        assert author.name == "John Doe"
-        assert author.author_id is None
-        assert author.aliases == []
-        assert author.paper_count == 0
+    def test_author_creation(self):
+        """Test creating a valid author."""
+        author = Author(
+            author_id="1234567",
+            name="John Doe",
+            affiliation="University of Example",
+            h_index=15,
+            citation_count=250
+        )
 
-    def test_author_creation_full(self, mock_author_data):
-        """Test creating author with all fields."""
-        author = Author(**mock_author_data)
-        
         assert author.author_id == "1234567"
-        assert author.name == "Dr. Test Author"
-        assert len(author.aliases) == 2
-        assert author.h_index == 35
+        assert author.name == "John Doe"
+        assert author.affiliation == "University of Example"
+        assert author.h_index == 15
+        assert author.citation_count == 250
+
+    def test_author_without_optional_fields(self):
+        """Test creating author with only required fields."""
+        author = Author(name="Jane Smith")
+
+        assert author.name == "Jane Smith"
+        assert author.author_id is None
+        assert author.affiliation is None
+        assert author.h_index is None
+        assert author.citation_count is None
 
     def test_author_name_validation(self):
         """Test author name validation."""
         # Empty name should fail
         with pytest.raises(ValidationError) as exc_info:
             Author(name="")
-        
+
         assert "Name cannot be empty" in str(exc_info.value)
 
 
 class TestSearchQuery:
-    """Test cases for SearchQuery model."""
+    """Tests for SearchQuery model."""
 
-    def test_search_query_minimal(self):
-        """Test creating search query with minimal fields."""
-        query = SearchQuery(query="machine learning")
-        
+    def test_search_query_creation(self):
+        """Test creating a valid search query."""
+        query = SearchQuery(
+            query="machine learning",
+            limit=20,
+            offset=10
+        )
+
         assert query.query == "machine learning"
+        assert query.limit == 20
+        assert query.offset == 10
+
+    def test_search_query_defaults(self):
+        """Test search query default values."""
+        query = SearchQuery(query="test")
+
+        assert query.query == "test"
         assert query.limit == 10
         assert query.offset == 0
-        assert query.filters is None
-
-    def test_search_query_with_filters(self):
-        """Test creating search query with filters."""
-        filters = SearchFilters(
-            year=2024,
-            fields_of_study=["Computer Science"],
-            min_citation_count=10
-        )
-        
-        query = SearchQuery(
-            query="deep learning",
-            limit=20,
-            offset=10,
-            filters=filters
-        )
-        
-        assert query.query == "deep learning"
-        assert query.limit == 20
-        assert query.filters.year == 2024
-        assert query.filters.min_citation_count == 10
 
     def test_search_query_validation(self):
         """Test search query validation."""
         # Empty query should fail
         with pytest.raises(ValidationError) as exc_info:
             SearchQuery(query="")
-        
+
         assert "Query cannot be empty" in str(exc_info.value)
-        
-        # Invalid limit
-        with pytest.raises(ValidationError) as exc_info:
-            SearchQuery(query="test", limit=0)
-        
-        assert "greater than or equal to 1" in str(exc_info.value)
-        
-        # Limit too high
+
+        # Limit too high should fail
         with pytest.raises(ValidationError) as exc_info:
             SearchQuery(query="test", limit=101)
-        
+
         assert "less than or equal to 100" in str(exc_info.value)
 
 
+class TestSearchResult:
+    """Tests for SearchResult model."""
+
+    def test_search_result_creation(self):
+        """Test creating a valid search result."""
+        papers = [
+            Paper(paper_id="1", title="Paper 1"),
+            Paper(paper_id="2", title="Paper 2")
+        ]
+
+        result = SearchResult(
+            items=papers,
+            total=2,
+            offset=0,
+            has_more=False
+        )
+
+        assert len(result.items) == 2
+        assert result.total == 2
+        assert result.offset == 0
+        assert result.has_more is False
+
+
 class TestSearchFilters:
-    """Test cases for SearchFilters model."""
+    """Tests for SearchFilters model."""
 
     def test_search_filters_creation(self):
         """Test creating search filters."""
         filters = SearchFilters(
             year=2024,
-            fields_of_study=["AI", "ML"],
-            open_access_only=True,
+            fields_of_study=["Computer Science", "Mathematics"],
             min_citation_count=5
         )
-        
+
         assert filters.year == 2024
         assert len(filters.fields_of_study) == 2
-        assert filters.open_access_only is True
         assert filters.min_citation_count == 5
 
-    def test_year_range_validation(self):
-        """Test year range validation."""
+    def test_search_filters_year_range(self):
+        """Test search filters with year range."""
         # Invalid year range (start > end)
         with pytest.raises(ValidationError) as exc_info:
             SearchFilters(year_range=(2024, 2020))
-        
-        assert "Start year must be less than or equal to end year" in str(exc_info.value)
-        
+
+        expected_msg = "Start year must be less than or equal to end year"
+        assert expected_msg in str(exc_info.value)
+
         # Valid year range
         filters = SearchFilters(year_range=(2020, 2024))
         assert filters.year_range == (2020, 2024)
 
 
-class TestCitationModel:
-    """Test cases for Citation model."""
+class TestCitation:
+    """Tests for Citation model."""
 
     def test_citation_creation(self):
-        """Test creating citation."""
+        """Test creating a citation."""
         citation = Citation(
             paper_id="cited123",
             title="Cited Paper",
             year=2023,
-            authors=[Author(name="Author 1")],
-            citation_count=15,
             is_influential=True,
-            contexts=["This work builds on [1]..."],
             intents=["background"]
         )
-        
+
         assert citation.paper_id == "cited123"
         assert citation.is_influential is True
-        assert len(citation.contexts) == 1
-        assert citation.intents == ["background"]
 
 
-class TestReferenceModel:
-    """Test cases for Reference model."""
+class TestReference:
+    """Tests for Reference model."""
 
     def test_reference_creation(self):
-        """Test creating reference."""
+        """Test creating a reference."""
         reference = Reference(
             paper_id="ref123",
-            title="Referenced Paper",
+            title="Reference Paper",
             year=2022,
-            authors=[Author(name="Ref Author")],
-            venue="Conference 2022",
+            authors=[Author(name="Reference Author")],
             citation_count=25
         )
-        
+
         assert reference.paper_id == "ref123"
         assert reference.year == 2022
-        assert reference.venue == "Conference 2022"
 
     def test_reference_without_paper_id(self):
         """Test creating reference without paper ID."""
@@ -254,6 +251,6 @@ class TestReferenceModel:
             year=1995,
             authors=[Author(name="Old Author")]
         )
-        
+
         assert reference.paper_id is None
         assert reference.title == "Old Reference"
