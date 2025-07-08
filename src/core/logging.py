@@ -169,8 +169,8 @@ class LoggerFactory:
         else:
             formatter = TextFormatter(self.config.include_context)
 
-        # Console handler
-        console_handler = logging.StreamHandler(sys.stdout)
+        # Console handler (stderr for MCP compatibility)
+        console_handler = logging.StreamHandler(sys.stderr)
         console_handler.setFormatter(formatter)
         root_logger.addHandler(console_handler)
 

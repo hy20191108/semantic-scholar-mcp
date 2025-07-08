@@ -38,7 +38,11 @@ async def initialize_server():
     # Load configuration
     config = get_config()
 
-    # Initialize logging
+    # Initialize logging with MCP-safe settings
+    import os
+    if os.getenv("MCP_MODE", "false").lower() == "true":
+        # Disable most logging for MCP compatibility
+        config.logging.level = "ERROR"
     initialize_logging(config.logging)
 
     # Create cache

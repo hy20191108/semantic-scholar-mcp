@@ -24,6 +24,9 @@ Semantic Scholar APIをMCP（Model Context Protocol）経由でClaude Desktopか
 ### 開発者コミュニケーション
 - 絵文字使うのやめて．きもい
 
+### 開発環境
+- pipとpythonは使うな.
+
 ### テスト状況 (2025-07-08)
 #### 修復完了
 - **元のテストスイート**: 31個中31個 = 100%成功 ✓
@@ -215,6 +218,12 @@ mv tests/test_real_api.py.disabled tests/test_real_api.py
 - **PyPI**: https://pypi.org/project/semantic-scholar-mcp/
 - **TestPyPI**: https://test.pypi.org/project/semantic-scholar-mcp/
 - **インストール**: `pip install semantic-scholar-mcp`
+- **最新バージョン**: v0.1.1 (2025-07-08)
+
+### PyPI確認方法
+- **パッケージページ**: https://pypi.org/project/semantic-scholar-mcp/
+- **バージョン履歴**: https://pypi.org/project/semantic-scholar-mcp/#history
+- **作者情報**: https://pypi.org/project/semantic-scholar-mcp/#description
 
 ### GitHub Actions ワークフロー
 - **test-pypi.yml**: TestPyPIへの公開（すべてのプッシュで実行）
