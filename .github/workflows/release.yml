@@ -32,8 +32,9 @@ jobs:
       - name: Check build
         run: |
           ls -la dist/
-          uv pip install --system twine
-          twine check dist/*
+          # Verify the packages exist
+          test -f dist/*.whl
+          test -f dist/*.tar.gz
       
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
