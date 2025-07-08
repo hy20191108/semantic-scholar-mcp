@@ -17,28 +17,32 @@ Access millions of academic papers from Semantic Scholar using the Model Context
 
 ## Quick Start
 
+### Installation
+
 ```bash
-# Install the MCP server
+# Install and run (recommended)
 uvx semantic-scholar-mcp
-```
 
-### Or install globally
-
-```bash
+# Or install globally
 uv tool install semantic-scholar-mcp
+
+# Or install with pip
+pip install semantic-scholar-mcp
 ```
 
 ## Configuration
 
 ### Claude Code
 
-Claude Code automatically detects MCP servers when you run:
-
 ```bash
+# Install with command
 uvx semantic-scholar-mcp
+
+# Or configure via command
+claude mcp add semantic-scholar-mcp
 ```
 
-No additional configuration needed!
+Claude Code automatically detects MCP servers - no additional configuration needed!
 
 ### Claude Desktop
 
@@ -60,51 +64,15 @@ Add to your Claude Desktop configuration:
 
 ### Cursor
 
-Add to your Cursor settings:
+Cursor uses the same configuration format as Claude Desktop. Check Cursor's MCP documentation for the exact config file location.
 
-**macOS**: `~/Library/Application Support/Cursor/User/globalStorage/mcp-config.json`  
-**Windows**: `%APPDATA%\Cursor\User\globalStorage\mcp-config.json`
+### VS Code
 
-```json
-{
-  "mcpServers": {
-    "semantic-scholar": {
-      "command": "uvx",
-      "args": ["semantic-scholar-mcp"]
-    }
-  }
-}
-```
+Install the MCP extension for VS Code and add the server configuration. Refer to the MCP extension documentation for setup instructions.
 
-### VS Code with MCP Extension
+### Other Editors
 
-Install an MCP extension for VS Code and configure:
-
-```json
-{
-  "mcp.servers": {
-    "semantic-scholar": {
-      "command": "uvx",
-      "args": ["semantic-scholar-mcp"]
-    }
-  }
-}
-```
-
-### Other MCP-Compatible Editors
-
-For any MCP-compatible editor, use this configuration:
-
-```json
-{
-  "mcpServers": {
-    "semantic-scholar": {
-      "command": "uvx",
-      "args": ["semantic-scholar-mcp"]
-    }
-  }
-}
-```
+Most MCP-compatible editors use a similar JSON configuration. Consult your editor's MCP documentation for the specific setup.
 
 ### Optional: API Key for Higher Rate Limits
 
