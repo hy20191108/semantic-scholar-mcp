@@ -41,7 +41,7 @@ pip install semantic-scholar-mcp
 
 ### Manual Configuration (if needed)
 
-For editors that require manual setup, add this JSON config:
+Basic setup:
 ```json
 {
   "mcpServers": {
@@ -53,15 +53,22 @@ For editors that require manual setup, add this JSON config:
 }
 ```
 
-### Optional: API Key for Higher Limits
-
-```bash
-# Get a free API key from https://www.semanticscholar.org/product/api
-export SEMANTIC_SCHOLAR_API_KEY="your-api-key"
-
-# Then install normally
-claude mcp add semantic-scholar -- uvx semantic-scholar-mcp
+With API key for higher limits:
+```json
+{
+  "mcpServers": {
+    "semantic-scholar": {
+      "command": "uvx",
+      "args": ["semantic-scholar-mcp"],
+      "env": {
+        "SEMANTIC_SCHOLAR_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}
 ```
+
+Get your free API key at: https://www.semanticscholar.org/product/api
 
 ## Usage
 
