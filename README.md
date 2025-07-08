@@ -21,7 +21,7 @@ Access millions of academic papers from Semantic Scholar using the Model Context
 
 **Claude Code** (recommended):
 ```bash
-claude mcp add semantic-scholar-mcp
+claude mcp add semantic-scholar -- uvx semantic-scholar-mcp
 ```
 
 **Or run directly**:
@@ -60,7 +60,7 @@ For editors that require manual setup, add this JSON config:
 export SEMANTIC_SCHOLAR_API_KEY="your-api-key"
 
 # Then install normally
-claude mcp add semantic-scholar-mcp
+claude mcp add semantic-scholar -- uvx semantic-scholar-mcp
 ```
 
 ## Usage
