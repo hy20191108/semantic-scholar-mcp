@@ -36,10 +36,19 @@ pip install semantic-scholar-mcp
   "mcpServers": {
     "semantic-scholar": {
       "command": "uvx",
+      "args": ["semantic-scholar-mcp"]
+    }
+  }
+}
+```
+
+With API key:
+```json
+{
+  "mcpServers": {
+    "semantic-scholar": {
+      "command": "uvx",
       "args": ["semantic-scholar-mcp"],
-      
-      // Optional: Set environment variables
-      // Uncomment and set your API key if needed
       "env": {
         "SEMANTIC_SCHOLAR_API_KEY": "your-api-key-here"
       }
