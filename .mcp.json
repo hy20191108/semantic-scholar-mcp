@@ -4,11 +4,12 @@
       "command": "uv",
       "args": [
         "run",
-        "python",
-        "server_standalone.py"
+        "semantic-scholar-mcp"
       ],
       "env": {
-        "PYTHONPATH": "/mnt/ext-hdd1/yoshioka/github/semantic-scholar-mcp/src"
+        "DEBUG_MCP_MODE": "true",
+        "LOG_MCP_MESSAGES": "true",
+        "LOG_API_PAYLOADS": "true"
       }
     }
   }

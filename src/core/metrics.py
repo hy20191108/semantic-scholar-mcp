@@ -11,7 +11,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from threading import Lock
 from typing import Any
@@ -413,7 +413,7 @@ class HealthCheck:
         """Run all health checks."""
         results = {
             "status": "healthy",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "checks": {}
         }
 

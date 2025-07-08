@@ -3,7 +3,7 @@
 import asyncio
 import random
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, TypeVar
 
@@ -54,7 +54,8 @@ class CircuitBreaker:
         self,
         failure_threshold: int = 5,
         recovery_timeout: float = 60.0,
-        expected_exception_types: list[type[Exception]] | None = None
+        expected_exception_types: list[type[Exception]] | None = None,
+        logger: ILogger | None = None
     ):
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
@@ -63,6 +64,7 @@ class CircuitBreaker:
             httpx.TimeoutException,
             NetworkError
         ]
+        self.logger = logger or get_logger("circuit_breaker")
 
         self._failure_count = 0
         self._last_failure_time: datetime | None = None
@@ -76,10 +78,15 @@ class CircuitBreaker:
             # Check if recovery timeout has passed
             if (
                 self._last_failure_time and
-                (datetime.utcnow() - self._last_failure_time).total_seconds() > self.recovery_timeout
+                (datetime.now(timezone.utc) - self._last_failure_time).total_seconds() > self.recovery_timeout
             ):
                 self._state = CircuitBreakerState.HALF_OPEN
                 self._half_open_attempts = 0
+                self.logger.log_circuit_breaker_state(
+                    "half_open",
+                    recovery_timeout=self.recovery_timeout,
+                    failure_count=self._failure_count
+                )
 
         return self._state
 
@@ -108,16 +115,30 @@ class CircuitBreaker:
             if self._half_open_attempts >= 3:  # Successful attempts to close
                 self._state = CircuitBreakerState.CLOSED
                 self._failure_count = 0
+                self.logger.log_circuit_breaker_state(
+                    "closed",
+                    half_open_attempts=self._half_open_attempts,
+                    reason="recovery_successful"
+                )
         else:
             self._failure_count = 0
 
     def _on_failure(self):
         """Handle failed call."""
+        previous_state = self._state
         self._failure_count += 1
-        self._last_failure_time = datetime.utcnow()
+        self._last_failure_time = datetime.now(timezone.utc)
 
         if self._failure_count >= self.failure_threshold or self._state == CircuitBreakerState.HALF_OPEN:
             self._state = CircuitBreakerState.OPEN
+            if previous_state != CircuitBreakerState.OPEN:
+                self.logger.log_circuit_breaker_state(
+                    "open",
+                    failure_count=self._failure_count,
+                    failure_threshold=self.failure_threshold,
+                    recovery_timeout=self.recovery_timeout,
+                    reason="failure_threshold_exceeded" if self._failure_count >= self.failure_threshold else "half_open_failure"
+                )
 
     def reset(self):
         """Reset circuit breaker."""
@@ -130,12 +151,13 @@ class CircuitBreaker:
 class TokenBucketRateLimiter:
     """Token bucket rate limiter implementation."""
 
-    def __init__(self, rate: float, burst: int):
+    def __init__(self, rate: float, burst: int, logger: ILogger | None = None):
         self.rate = rate  # Tokens per second
         self.burst = burst  # Maximum burst size
         self._tokens = float(burst)
         self._last_update = time.time()
         self._lock = asyncio.Lock()
+        self.logger = logger or get_logger("rate_limiter")
 
     async def acquire(self, tokens: int = 1) -> bool:
         """Acquire tokens from bucket."""
@@ -157,6 +179,13 @@ class TokenBucketRateLimiter:
         """Wait if rate limit would be exceeded."""
         while not await self.acquire(tokens):
             wait_time = (tokens - self._tokens) / self.rate
+            self.logger.debug_mcp(
+                "Rate limit reached, waiting",
+                wait_time_seconds=wait_time,
+                available_tokens=self._tokens,
+                requested_tokens=tokens,
+                rate_per_second=self.rate
+            )
             await asyncio.sleep(wait_time)
 
     @property
@@ -214,12 +243,14 @@ class SemanticScholarClient:
         # Initialize resilience components
         self.circuit_breaker = CircuitBreaker(
             failure_threshold=config.circuit_breaker.failure_threshold if hasattr(config, 'circuit_breaker') else 5,
-            recovery_timeout=config.circuit_breaker.recovery_timeout if hasattr(config, 'circuit_breaker') else 60.0
+            recovery_timeout=config.circuit_breaker.recovery_timeout if hasattr(config, 'circuit_breaker') else 60.0,
+            logger=self.logger.with_context(component="circuit_breaker")
         )
 
         self.rate_limiter = TokenBucketRateLimiter(
             rate=config.rate_limit.requests_per_second if hasattr(config, 'rate_limit') else 1.0,
-            burst=config.rate_limit.burst_size if hasattr(config, 'rate_limit') else 10
+            burst=config.rate_limit.burst_size if hasattr(config, 'rate_limit') else 10,
+            logger=self.logger.with_context(component="rate_limiter")
         )
 
         self.retry_strategy = ExponentialBackoffRetryStrategy(
@@ -282,12 +313,16 @@ class SemanticScholarClient:
 
         async def _execute_request():
             """Execute the actual request."""
+            start_time = time.time()
+            
             with RequestContext(request_id=request_id):
-                self.logger.debug(
-                    f"Making request to {path}",
+                # Log request details
+                self.logger.log_api_request(
                     method=method,
+                    url=f"{self.config.base_url}{path}",
                     params=params,
-                    retry_attempt=retry_count
+                    retry_attempt=retry_count,
+                    rate_limit_tokens=self.rate_limiter.available_tokens
                 )
 
                 try:
@@ -296,6 +331,16 @@ class SemanticScholarClient:
                         url=path,
                         params=params,
                         json=json
+                    )
+                    
+                    response_time = time.time() - start_time
+                    
+                    # Log response details
+                    self.logger.log_api_response(
+                        status_code=response.status_code,
+                        response_time=response_time,
+                        retry_attempt=retry_count,
+                        content_length=len(response.content) if response.content else 0
                     )
 
                     # Handle rate limiting
@@ -373,12 +418,20 @@ class SemanticScholarClient:
             return await self.circuit_breaker.call(_execute_request)
         except (RateLimitError, ServiceUnavailableError, NetworkError) as e:
             # Retry with exponential backoff
-            if retry_count < self.config.retry.max_attempts if hasattr(self.config, 'retry') else 3:
+            max_attempts = self.config.retry.max_attempts if hasattr(self.config, 'retry') else 3
+            if retry_count < max_attempts:
                 delay = self.retry_strategy.get_delay(retry_count + 1)
-                self.logger.warning(
+                self.logger.debug_mcp(
                     f"Retrying request after {delay:.2f}s",
-                    retry_count=retry_count + 1,
-                    error=str(e)
+                    retry_attempt=retry_count + 1,
+                    max_attempts=max_attempts,
+                    delay_seconds=delay,
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    method=method,
+                    path=path,
+                    exponential_base=self.retry_strategy.exponential_base,
+                    max_delay=self.retry_strategy.max_delay
                 )
                 await asyncio.sleep(delay)
                 return await self._make_request(
@@ -669,13 +722,25 @@ class SemanticScholarClient:
             "limit": limit
         }
 
-        data = await self._make_request(
-            "GET",
-            f"/recommendations/v1/papers/forpaper/{paper_id}",
-            params=params
-        )
-
-        return [Paper(**paper_data) for paper_data in data.get("recommendedPapers", [])]
+        try:
+            # Try the recommendations endpoint
+            data = await self._make_request(
+                "GET",
+                f"/recommendations/v1/papers/forpaper/{paper_id}",
+                params=params
+            )
+            
+            # Handle different response formats
+            papers_data = data.get("recommendedPapers", data.get("papers", data.get("data", [])))
+            return [Paper(**paper_data) for paper_data in papers_data]
+        except Exception as e:
+            # If recommendations endpoint fails, return empty list with warning
+            self.logger.warning(
+                "Recommendations endpoint failed, returning empty list",
+                paper_id=paper_id,
+                error=str(e)
+            )
+            return []
 
     def get_circuit_breaker_state(self) -> str:
         """Get current circuit breaker state."""
@@ -701,7 +766,7 @@ class SemanticScholarClient:
                 "status": "healthy",
                 "circuit_breaker": self.get_circuit_breaker_state(),
                 "rate_limiter": self.get_rate_limiter_status(),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         except Exception as e:
             return {
@@ -709,5 +774,5 @@ class SemanticScholarClient:
                 "error": str(e),
                 "circuit_breaker": self.get_circuit_breaker_state(),
                 "rate_limiter": self.get_rate_limiter_status(),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }

@@ -4,7 +4,8 @@ This module defines a comprehensive exception hierarchy that provides
 structured error handling throughout the application.
 """
 
-from datetime import datetime
+import traceback
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -70,6 +71,7 @@ class SemanticScholarMCPError(Exception):
         error_code: ErrorCode = ErrorCode.UNKNOWN_ERROR,
         details: dict[str, Any] | None = None,
         inner_exception: Exception | None = None,
+        include_stack_trace: bool = False,
     ) -> None:
         """Initialize the base exception.
 
@@ -78,13 +80,18 @@ class SemanticScholarMCPError(Exception):
             error_code: Standardized error code
             details: Additional error details
             inner_exception: Original exception if wrapping
+            include_stack_trace: Whether to include stack trace in details
         """
         super().__init__(message)
         self.message = message
         self.error_code = error_code
         self.details = details or {}
         self.inner_exception = inner_exception
-        self.timestamp = datetime.utcnow()
+        self.timestamp = datetime.now(timezone.utc)
+        
+        # Add stack trace if requested
+        if include_stack_trace:
+            self.details["stack_trace"] = "".join(traceback.format_stack())
 
     def to_dict(self) -> dict[str, Any]:
         """Convert exception to dictionary for serialization."""

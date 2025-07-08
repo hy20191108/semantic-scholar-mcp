@@ -3,11 +3,13 @@
 import asyncio
 import json
 import logging
+import os
 import sys
 import time
+import traceback
 import uuid
 from contextvars import ContextVar
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import wraps
 from logging.handlers import RotatingFileHandler
 from typing import Any
@@ -19,6 +21,8 @@ from .protocols import ILogger
 correlation_id_var: ContextVar[str | None] = ContextVar("correlation_id", default=None)
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 user_id_var: ContextVar[str | None] = ContextVar("user_id", default=None)
+tool_name_var: ContextVar[str | None] = ContextVar("tool_name", default=None)
+mcp_operation_var: ContextVar[str | None] = ContextVar("mcp_operation", default=None)
 
 
 class StructuredFormatter(logging.Formatter):
@@ -31,7 +35,7 @@ class StructuredFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Format log record as JSON."""
         log_data = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -40,11 +44,13 @@ class StructuredFormatter(logging.Formatter):
             "line": record.lineno,
         }
 
-        # Add correlation IDs
+        # Add correlation IDs and MCP context
         if self.include_context:
             correlation_id = correlation_id_var.get()
             request_id = request_id_var.get()
             user_id = user_id_var.get()
+            tool_name = tool_name_var.get()
+            mcp_operation = mcp_operation_var.get()
 
             if correlation_id:
                 log_data["correlation_id"] = correlation_id
@@ -52,6 +58,10 @@ class StructuredFormatter(logging.Formatter):
                 log_data["request_id"] = request_id
             if user_id:
                 log_data["user_id"] = user_id
+            if tool_name:
+                log_data["tool_name"] = tool_name
+            if mcp_operation:
+                log_data["mcp_operation"] = mcp_operation
 
         # Add exception info if present
         if record.exc_info:
@@ -142,6 +152,55 @@ class ContextLogger(ILogger):
         new_context = self._context.copy()
         new_context.update(context)
         return ContextLogger(self._logger, new_context)
+    
+    def debug_mcp(self, message: str, **kwargs: Any) -> None:
+        """Log MCP-specific debug message (only when DEBUG_MCP_MODE is enabled)."""
+        if os.getenv("DEBUG_MCP_MODE", "false").lower() == "true":
+            kwargs["mcp_debug"] = True
+            self.debug(message, **kwargs)
+    
+    def trace_tool_execution(self, tool_name: str, operation: str, **kwargs: Any) -> None:
+        """Log tool execution trace."""
+        kwargs.update({
+            "tool_name": tool_name,
+            "operation": operation,
+            "execution_trace": True
+        })
+        self.debug_mcp(f"Tool execution: {tool_name}.{operation}", **kwargs)
+    
+    def log_api_request(self, method: str, url: str, **kwargs: Any) -> None:
+        """Log API request details (when API payload logging is enabled)."""
+        if os.getenv("LOG_API_PAYLOADS", "false").lower() == "true":
+            kwargs.update({
+                "api_request": True,
+                "method": method,
+                "url": url
+            })
+            self.debug_mcp(f"API Request: {method} {url}", **kwargs)
+    
+    def log_api_response(self, status_code: int, response_time: float, **kwargs: Any) -> None:
+        """Log API response details (when API payload logging is enabled)."""
+        if os.getenv("LOG_API_PAYLOADS", "false").lower() == "true":
+            kwargs.update({
+                "api_response": True,
+                "status_code": status_code,
+                "response_time_ms": response_time * 1000
+            })
+            self.debug_mcp(f"API Response: {status_code} ({response_time:.2f}s)", **kwargs)
+    
+    def log_circuit_breaker_state(self, state: str, **kwargs: Any) -> None:
+        """Log circuit breaker state changes."""
+        kwargs.update({
+            "circuit_breaker": True,
+            "state": state
+        })
+        self.info(f"Circuit breaker state: {state}", **kwargs)
+    
+    def log_with_stack_trace(self, level: int, message: str, **kwargs: Any) -> None:
+        """Log message with stack trace for debugging."""
+        if os.getenv("DEBUG_MCP_MODE", "false").lower() == "true":
+            kwargs["stack_trace"] = "".join(traceback.format_stack())
+        self._log(level, message, **kwargs)
 
 
 class LoggerFactory:
@@ -326,6 +385,72 @@ class RequestContext:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        for token in reversed(self._tokens):
+            if token:
+                token.var.reset(token)
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self.__enter__()
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        return self.__exit__(exc_type, exc_val, exc_tb)
+
+
+class MCPToolContext:
+    """Context manager for MCP tool execution tracking."""
+
+    def __init__(
+        self,
+        tool_name: str,
+        operation: str = "execute",
+        correlation_id: str | None = None
+    ):
+        self.tool_name = tool_name
+        self.operation = operation
+        self.correlation_id = correlation_id or correlation_id_var.get() or str(uuid.uuid4())
+        self._tokens = []
+        self._start_time = None
+
+    def __enter__(self):
+        self._start_time = time.time()
+        self._tokens.append(tool_name_var.set(self.tool_name))
+        self._tokens.append(mcp_operation_var.set(self.operation))
+        self._tokens.append(correlation_id_var.set(self.correlation_id))
+        
+        # Log tool start if MCP debugging is enabled
+        if os.getenv("DEBUG_MCP_MODE", "false").lower() == "true":
+            logger = get_logger(f"mcp.tool.{self.tool_name}")
+            logger.debug_mcp(
+                f"Tool {self.tool_name} starting",
+                tool_operation=self.operation,
+                start_time=self._start_time
+            )
+        
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Log tool completion if MCP debugging is enabled
+        if os.getenv("DEBUG_MCP_MODE", "false").lower() == "true" and self._start_time:
+            elapsed = time.time() - self._start_time
+            logger = get_logger(f"mcp.tool.{self.tool_name}")
+            
+            if exc_type is None:
+                logger.debug_mcp(
+                    f"Tool {self.tool_name} completed successfully",
+                    tool_operation=self.operation,
+                    elapsed_seconds=elapsed
+                )
+            else:
+                logger.debug_mcp(
+                    f"Tool {self.tool_name} failed",
+                    tool_operation=self.operation,
+                    elapsed_seconds=elapsed,
+                    exception_type=exc_type.__name__ if exc_type else None,
+                    exception_message=str(exc_val) if exc_val else None
+                )
+        
         for token in reversed(self._tokens):
             if token:
                 token.var.reset(token)

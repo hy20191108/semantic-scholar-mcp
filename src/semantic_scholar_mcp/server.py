@@ -1,6 +1,7 @@
 """MCP server implementation for Semantic Scholar API."""
 
 import asyncio
+import logging
 import sys
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,7 @@ from pydantic import Field
 from core.cache import InMemoryCache
 from core.config import ApplicationConfig, get_config
 from core.exceptions import ValidationError
-from core.logging import RequestContext, get_logger, initialize_logging
+from core.logging import MCPToolContext, RequestContext, get_logger, initialize_logging
 
 from .api_client_enhanced import SemanticScholarClient
 from .domain_models import (
@@ -40,9 +41,20 @@ async def initialize_server():
 
     # Initialize logging with MCP-safe settings
     import os
+    
+    # Handle MCP mode logging configuration
     if os.getenv("MCP_MODE", "false").lower() == "true":
-        # Disable most logging for MCP compatibility
-        config.logging.level = "ERROR"
+        # Standard MCP compatibility mode
+        if not config.logging.debug_mcp_mode:
+            config.logging.level = "ERROR"
+    
+    # Override log level for debug mode
+    if config.logging.debug_mcp_mode and config.logging.debug_level_override:
+        config.logging.level = config.logging.debug_level_override
+    elif config.logging.debug_mcp_mode:
+        # Enable debug logging when MCP debug mode is active
+        config.logging.level = "DEBUG"
+    
     initialize_logging(config.logging)
 
     # Create cache
@@ -58,11 +70,34 @@ async def initialize_server():
         cache=cache
     )
 
+    # Log server initialization details
     logger.info(
         "Semantic Scholar MCP server initialized",
         version=config.server.version,
-        environment=config.environment.value
+        environment=config.environment.value,
+        debug_mcp_mode=config.logging.debug_mcp_mode,
+        log_level=config.logging.level.value if hasattr(config.logging.level, 'value') else str(config.logging.level),
+        performance_metrics_enabled=config.logging.log_performance_metrics
     )
+    
+    # Log MCP tools and resources if debug mode is enabled
+    if config.logging.debug_mcp_mode:
+        logger.debug_mcp(
+            "MCP server configuration details",
+            mcp_tools=[
+                "search_papers", "get_paper", "get_paper_citations", "get_paper_references",
+                "get_author", "get_author_papers", "search_authors", "get_recommendations", "batch_get_papers"
+            ],
+            mcp_resources=[
+                "papers/{paper_id}", "authors/{author_id}"
+            ],
+            mcp_prompts=[
+                "literature_review", "citation_analysis", "research_trend_analysis"
+            ],
+            cache_enabled=config.cache.enabled,
+            rate_limit_enabled=config.rate_limit.enabled,
+            circuit_breaker_enabled=config.circuit_breaker.enabled
+        )
 
 
 def extract_field_value(value: Any) -> Any:
@@ -97,14 +132,33 @@ async def search_papers(
     Returns:
         Dictionary containing search results with papers and metadata
     """
-    with RequestContext():
+    with RequestContext(), MCPToolContext("search_papers"):
         try:
+            logger.debug_mcp(
+                "Starting search_papers tool execution",
+                query=query,
+                limit=limit,
+                offset=offset,
+                year=year,
+                fields_of_study=fields_of_study,
+                sort=sort
+            )
+            
             # Extract actual values from Field objects
             actual_limit = extract_field_value(limit)
             actual_offset = extract_field_value(offset)
             actual_sort = extract_field_value(sort)
             actual_year = extract_field_value(year)
             actual_fields_of_study = extract_field_value(fields_of_study)
+
+            logger.debug_mcp(
+                "Extracted field values",
+                actual_limit=actual_limit,
+                actual_offset=actual_offset,
+                actual_sort=actual_sort,
+                actual_year=actual_year,
+                actual_fields_of_study=actual_fields_of_study
+            )
 
             # Build search query
             search_query = SearchQuery(
@@ -120,10 +174,19 @@ async def search_papers(
                     year=actual_year,
                     fields_of_study=actual_fields_of_study
                 )
+                logger.debug_mcp("Applied search filters", filters=search_query.filters.model_dump() if search_query.filters else None)
 
             # Execute search
+            logger.debug_mcp("Executing API search", search_query=search_query.model_dump())
             async with api_client:
                 result = await api_client.search_papers(search_query)
+
+            logger.debug_mcp(
+                "Search completed successfully",
+                result_count=len(result.items),
+                total=result.total,
+                has_more=result.has_more
+            )
 
             # Format response
             return {
@@ -138,7 +201,14 @@ async def search_papers(
             }
 
         except ValidationError as e:
-            logger.error("Validation error in search_papers", exception=e)
+            logger.log_with_stack_trace(
+                logging.ERROR,
+                "Validation error in search_papers",
+                exception=e,
+                tool_name="search_papers",
+                query=query,
+                validation_details=e.details
+            )
             return {
                 "success": False,
                 "error": {
@@ -148,7 +218,14 @@ async def search_papers(
                 }
             }
         except Exception as e:
-            logger.error("Error searching papers", exception=e)
+            logger.log_with_stack_trace(
+                logging.ERROR,
+                "Error searching papers",
+                exception=e,
+                tool_name="search_papers",
+                query=query,
+                exception_type=type(e).__name__
+            )
             return {
                 "success": False,
                 "error": {
@@ -749,23 +826,59 @@ Please provide:
 
 async def on_startup():
     """Initialize server on startup."""
+    logger.debug_mcp("MCP server startup initiated")
     await initialize_server()
+    logger.debug_mcp("MCP server startup completed")
 
 
 async def on_shutdown():
     """Cleanup on shutdown."""
+    logger.debug_mcp("MCP server shutdown initiated")
     logger.info("Semantic Scholar MCP server shutting down")
+    logger.debug_mcp("MCP server shutdown completed")
 
 
 # Main entry point
 def main():
     """Main entry point for the server."""
+    import os
+    
+    # Log environment information if debug mode is enabled
+    if os.getenv("DEBUG_MCP_MODE", "false").lower() == "true":
+        temp_config = get_config()
+        temp_logger = get_logger("mcp.main")
+        temp_logger.debug_mcp(
+            "MCP server main() called",
+            environment_vars={
+                "DEBUG_MCP_MODE": os.getenv("DEBUG_MCP_MODE"),
+                "LOG_MCP_MESSAGES": os.getenv("LOG_MCP_MESSAGES"),
+                "LOG_API_PAYLOADS": os.getenv("LOG_API_PAYLOADS"),
+                "LOG_PERFORMANCE_METRICS": os.getenv("LOG_PERFORMANCE_METRICS"),
+                "MCP_MODE": os.getenv("MCP_MODE"),
+                "SEMANTIC_SCHOLAR_API_KEY": "***SET***" if os.getenv("SEMANTIC_SCHOLAR_API_KEY") else "***NOT_SET***"
+            },
+            python_version=sys.version,
+            working_directory=str(Path.cwd())
+        )
+    
     # Initialize server on startup
     asyncio.run(on_startup())
 
     # Run the server
     try:
+        logger.debug_mcp("Starting FastMCP server with stdio transport")
+        # Run the MCP server - this will block and handle stdio communication
         mcp.run(transport="stdio")
+    except KeyboardInterrupt:
+        logger.debug_mcp("MCP server interrupted by user")
+    except Exception as e:
+        logger.log_with_stack_trace(
+            logging.ERROR,
+            "Fatal error running MCP server",
+            exception=e,
+            transport="stdio"
+        )
+        raise
     finally:
         asyncio.run(on_shutdown())
 
