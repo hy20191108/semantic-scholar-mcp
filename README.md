@@ -15,22 +15,33 @@ Access millions of academic papers from Semantic Scholar using the Model Context
 - **AI-Powered**: Get paper recommendations and research insights
 - **Fast & Reliable**: Built-in caching, rate limiting, and error recovery
 
-## Installation & Setup
+## Installation
+
+### One-Command Setup
+
+**Claude Code** (recommended):
+```bash
+claude mcp add semantic-scholar-mcp
+```
+
+**Or run directly**:
+```bash
+uvx semantic-scholar-mcp
+```
+
+### Alternative Installation Methods
 
 ```bash
-# Install and run (recommended)
-uvx semantic-scholar-mcp
-
-# Or install globally  
+# Install globally with uv
 uv tool install semantic-scholar-mcp
 
-# Or with pip
+# Or with pip  
 pip install semantic-scholar-mcp
 ```
 
-**Claude Code**: Run `uvx semantic-scholar-mcp` or `claude mcp add semantic-scholar-mcp` - auto-detected!
+### Manual Configuration (if needed)
 
-**Claude Desktop**: Add to config file (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+For editors that require manual setup, add this JSON config:
 ```json
 {
   "mcpServers": {
@@ -42,26 +53,14 @@ pip install semantic-scholar-mcp
 }
 ```
 
-With API key:
-```json
-{
-  "mcpServers": {
-    "semantic-scholar": {
-      "command": "uvx",
-      "args": ["semantic-scholar-mcp"],
-      "env": {
-        "SEMANTIC_SCHOLAR_API_KEY": "your-api-key-here"
-      }
-    }
-  }
-}
-```
+### Optional: API Key for Higher Limits
 
-**Other editors** (Cursor, VS Code): Use similar JSON config - check your editor's MCP documentation.
-
-**Optional API Key**: For higher rate limits, get one from [Semantic Scholar](https://www.semanticscholar.org/product/api):
 ```bash
+# Get a free API key from https://www.semanticscholar.org/product/api
 export SEMANTIC_SCHOLAR_API_KEY="your-api-key"
+
+# Then install normally
+claude mcp add semantic-scholar-mcp
 ```
 
 ## Usage
