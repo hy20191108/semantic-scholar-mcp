@@ -3,7 +3,7 @@
 import asyncio
 import hashlib
 from collections import OrderedDict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, TypeVar
 
 from .protocols import ICache
@@ -29,7 +29,7 @@ class InMemoryCache(ICache[str, Any]):
             value, expiry = self._cache[key]
 
             # Check if expired
-            if datetime.utcnow() > expiry:
+            if datetime.now(timezone.utc) > expiry:
                 del self._cache[key]
                 return None
 
@@ -40,7 +40,7 @@ class InMemoryCache(ICache[str, Any]):
     async def set(self, key: str, value: Any, ttl: int | None = None) -> None:
         """Set value in cache."""
         ttl = ttl or self.default_ttl
-        expiry = datetime.utcnow() + timedelta(seconds=ttl)
+        expiry = datetime.now(timezone.utc) + timedelta(seconds=ttl)
 
         async with self._lock:
             # Remove oldest if at capacity
@@ -65,7 +65,7 @@ class InMemoryCache(ICache[str, Any]):
                 return False
 
             _, expiry = self._cache[key]
-            if datetime.utcnow() > expiry:
+            if datetime.now(timezone.utc) > expiry:
                 del self._cache[key]
                 return False
 
@@ -78,7 +78,7 @@ class InMemoryCache(ICache[str, Any]):
 
     def _cleanup_expired(self) -> None:
         """Remove expired entries."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         expired_keys = [
             key for key, (_, expiry) in self._cache.items()
             if now > expiry

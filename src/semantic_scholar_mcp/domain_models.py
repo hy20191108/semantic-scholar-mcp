@@ -140,6 +140,10 @@ class Paper(CacheableModel, BaseEntity):
     tldr: TLDR | None = None
     is_open_access: bool = Field(False, alias="isOpenAccess")
     open_access_pdf: OpenAccessPdf | None = Field(None, alias="openAccessPdf")
+    
+    # Citations and references (optional for enhanced get_paper functionality)
+    citations: list["Citation"] = Field(default_factory=list)
+    references: list["Reference"] = Field(default_factory=list)
 
     @field_validator("title")
     @classmethod
@@ -159,6 +163,49 @@ class Paper(CacheableModel, BaseEntity):
                 raise ValueError(f"Invalid publication year: {v}")
         return v
 
+    @field_validator("external_ids", mode="before")
+    @classmethod
+    def validate_external_ids(cls, v: Any) -> dict[str, str]:
+        """Validate and convert external IDs to strings."""
+        if not isinstance(v, dict):
+            return {}
+        
+        # Convert all values to strings, handling integers
+        result = {}
+        for key, value in v.items():
+            if value is not None:
+                result[key] = str(value)
+        return result
+
+    @field_validator("publication_types", mode="before")
+    @classmethod
+    def validate_publication_types(cls, v: Any) -> list[PublicationType]:
+        """Validate publication types, converting None to empty list."""
+        if v is None:
+            return []
+        if not isinstance(v, list):
+            return []
+        
+        # Convert strings to PublicationType enum values
+        result = []
+        for item in v:
+            if isinstance(item, str):
+                try:
+                    # Try to match the enum value
+                    for pub_type in PublicationType:
+                        if pub_type.value == item:
+                            result.append(pub_type)
+                            break
+                    else:
+                        # If no match found, use UNKNOWN
+                        result.append(PublicationType.UNKNOWN)
+                except (ValueError, AttributeError):
+                    result.append(PublicationType.UNKNOWN)
+            elif isinstance(item, PublicationType):
+                result.append(item)
+        
+        return result
+
     @model_validator(mode="after")
     def validate_metrics(self) -> "Paper":
         """Validate citation metrics are consistent."""
@@ -176,8 +223,8 @@ class Paper(CacheableModel, BaseEntity):
 class Citation(BaseModel):
     """Citation model."""
 
-    paper_id: PaperId = Field(alias="paperId")
-    title: str
+    paper_id: PaperId | None = Field(None, alias="paperId")
+    title: str | None = None
     year: Year | None = None
     authors: list[Author] = Field(default_factory=list)
     venue: Venue = None
@@ -191,7 +238,7 @@ class Reference(BaseModel):
     """Reference model."""
 
     paper_id: PaperId | None = Field(None, alias="paperId")
-    title: str
+    title: str | None = None
     year: Year | None = None
     authors: list[Author] = Field(default_factory=list)
     venue: Venue = None

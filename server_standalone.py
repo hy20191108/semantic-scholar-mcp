@@ -8,7 +8,23 @@ from pathlib import Path
 src_dir = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_dir))
 
-from semantic_scholar_mcp.server import main  # noqa: E402
+from semantic_scholar_mcp.server import mcp  # noqa: E402
+
+# Export the FastMCP server for MCP inspector
+server = mcp
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    from semantic_scholar_mcp.server import on_startup, on_shutdown
+    
+    # Initialize server
+    asyncio.run(on_startup())
+    
+    try:
+        # Run MCP server (this will handle stdio communication)
+        mcp.run(transport="stdio")
+    except KeyboardInterrupt:
+        pass
+    finally:
+        # Cleanup
+        asyncio.run(on_shutdown())

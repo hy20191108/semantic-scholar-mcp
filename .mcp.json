@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "semantic-scholar-dev": {
+      "command": "uv",
+      "args": [
+        "run",
+        "semantic-scholar-mcp"
+      ],
+      "env": {
+        "DEBUG_MCP_MODE": "true",
+        "LOG_MCP_MESSAGES": "true",
+        "LOG_API_PAYLOADS": "true"
+      }
+    }
+  }
+}

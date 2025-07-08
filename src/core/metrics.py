@@ -11,7 +11,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from threading import Lock
 from typing import Any
@@ -38,7 +38,7 @@ class MetricValue:
     value: float
     metric_type: MetricType
     tags: dict[str, str] = field(default_factory=dict)
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     unit: str | None = None
     description: str | None = None
 
@@ -413,7 +413,7 @@ class HealthCheck:
         """Run all health checks."""
         results = {
             "status": "healthy",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "checks": {}
         }
 

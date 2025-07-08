@@ -4,7 +4,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io/)
 
-Access millions of academic papers from Semantic Scholar directly in Claude Desktop using the Model Context Protocol (MCP).
+Access millions of academic papers from Semantic Scholar using the Model Context Protocol (MCP). Works with Claude Code, Claude Desktop, Cursor, VS Code, and other MCP-compatible editors.
 
 ## Features
 
@@ -15,27 +15,33 @@ Access millions of academic papers from Semantic Scholar directly in Claude Desk
 - **AI-Powered**: Get paper recommendations and research insights
 - **Fast & Reliable**: Built-in caching, rate limiting, and error recovery
 
-## Quick Start
+## Installation
 
-### Install via Claude Desktop
+### One-Command Setup
 
+**Claude Code** (recommended):
 ```bash
 claude mcp add semantic-scholar -- uvx semantic-scholar-mcp
 ```
 
-### Or install directly
-
+**Or run directly**:
 ```bash
 uvx semantic-scholar-mcp
 ```
 
-## Configuration
+### Alternative Installation Methods
 
-Add to your Claude Desktop configuration:
+```bash
+# Install globally with uv
+uv tool install semantic-scholar-mcp
 
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`  
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+# Or with pip  
+pip install semantic-scholar-mcp
+```
 
+### Manual Configuration (if needed)
+
+Basic setup:
 ```json
 {
   "mcpServers": {
@@ -47,10 +53,7 @@ Add to your Claude Desktop configuration:
 }
 ```
 
-### Optional: API Key for Higher Rate Limits
-
-Get your free API key from [Semantic Scholar](https://www.semanticscholar.org/product/api) and add it:
-
+With API key for higher limits:
 ```json
 {
   "mcpServers": {
@@ -65,48 +68,30 @@ Get your free API key from [Semantic Scholar](https://www.semanticscholar.org/pr
 }
 ```
 
-## Usage Examples
+Get your free API key at: https://www.semanticscholar.org/product/api
 
-Once configured, use natural language in Claude Desktop:
+## Usage
 
-### Search Papers
-```
-Find recent papers on transformer architectures in NLP
-```
-
-### Get Specific Paper
-```
-Show me the paper "Attention is All You Need"
-```
-
-### Explore Authors
-```
-Find papers by Yoshua Bengio
-```
-
-### Literature Review
-```
-Help me create a literature review on quantum computing
-```
-
-### Citation Analysis
-```
-Analyze the impact of BERT paper through its citations
-```
+Ask in natural language:
+- *"Find recent papers on transformer architectures in NLP"*
+- *"Show me the paper 'Attention is All You Need'"*
+- *"Find papers by Yoshua Bengio"*  
+- *"Help me create a literature review on quantum computing"*
+- *"Analyze the impact of BERT paper through its citations"*
 
 ## Available Tools
 
-| Tool | Description |
-|------|-------------|
-| `search_papers` | Search papers with advanced filters |
-| `get_paper` | Get detailed paper information |
-| `get_paper_citations` | Retrieve papers citing a given paper |
-| `get_paper_references` | Get references from a paper |
-| `search_authors` | Search for researchers |
-| `get_author` | Get author profile details |
-| `get_author_papers` | List papers by an author |
-| `get_recommendations` | Get AI-powered paper recommendations |
-| `batch_get_papers` | Fetch multiple papers efficiently |
+| Tool                   | Description                          |
+| ---------------------- | ------------------------------------ |
+| `search_papers`        | Search papers with advanced filters  |
+| `get_paper`            | Get detailed paper information       |
+| `get_paper_citations`  | Retrieve papers citing a given paper |
+| `get_paper_references` | Get references from a paper          |
+| `search_authors`       | Search for researchers               |
+| `get_author`           | Get author profile details           |
+| `get_author_papers`    | List papers by an author             |
+| `get_recommendations`  | Get AI-powered paper recommendations |
+| `batch_get_papers`     | Fetch multiple papers efficiently    |
 
 ## Advanced Features
 
