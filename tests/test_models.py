@@ -22,7 +22,7 @@ class TestPaper:
     def test_paper_creation(self):
         """Test creating a valid paper."""
         paper = Paper(
-            paper_id="123",
+            paperId="123",
             title="Test Paper",
             abstract="This is a test abstract.",
             year=2023,
@@ -38,7 +38,7 @@ class TestPaper:
     def test_paper_without_optional_fields(self):
         """Test creating paper with only required fields."""
         paper = Paper(
-            paper_id="123",
+            paperId="123",
             title="Test Paper"
         )
 
@@ -53,11 +53,11 @@ class TestPaper:
         # Empty title should fail
         with pytest.raises(ValidationError) as exc_info:
             Paper(
-                paper_id="123",
+                paperId="123",
                 title=""
             )
 
-        assert "Title cannot be empty" in str(exc_info.value)
+        assert "Paper title cannot be empty" in str(exc_info.value)
 
     def test_paper_year_validation(self):
         """Test paper year validation."""
@@ -66,16 +66,16 @@ class TestPaper:
         # Future year should fail
         with pytest.raises(ValidationError) as exc_info:
             Paper(
-                paper_id="123",
+                paperId="123",
                 title="Future Paper",
                 year=current_year + 10
             )
 
-        assert "Year cannot be in the future" in str(exc_info.value)
+        assert "Invalid publication year" in str(exc_info.value)
 
         # Valid current year should pass
         paper = Paper(
-            paper_id="123",
+            paperId="123",
             title="Current Paper",
             year=current_year
         )
@@ -88,16 +88,16 @@ class TestAuthor:
     def test_author_creation(self):
         """Test creating a valid author."""
         author = Author(
-            author_id="1234567",
+            authorId="1234567",
             name="John Doe",
-            affiliation="University of Example",
-            h_index=15,
-            citation_count=250
+            affiliations=["University of Example"],
+            hIndex=15,
+            citationCount=250
         )
 
         assert author.author_id == "1234567"
         assert author.name == "John Doe"
-        assert author.affiliation == "University of Example"
+        assert author.affiliations == ["University of Example"]
         assert author.h_index == 15
         assert author.citation_count == 250
 
@@ -107,7 +107,7 @@ class TestAuthor:
 
         assert author.name == "Jane Smith"
         assert author.author_id is None
-        assert author.affiliation is None
+        assert author.affiliations == []
         assert author.h_index is None
         assert author.citation_count is None
 
@@ -117,7 +117,7 @@ class TestAuthor:
         with pytest.raises(ValidationError) as exc_info:
             Author(name="")
 
-        assert "Name cannot be empty" in str(exc_info.value)
+        assert "Author name cannot be empty" in str(exc_info.value)
 
 
 class TestSearchQuery:
@@ -149,7 +149,7 @@ class TestSearchQuery:
         with pytest.raises(ValidationError) as exc_info:
             SearchQuery(query="")
 
-        assert "Query cannot be empty" in str(exc_info.value)
+        assert "Search query cannot be empty" in str(exc_info.value)
 
         # Limit too high should fail
         with pytest.raises(ValidationError) as exc_info:
@@ -164,8 +164,8 @@ class TestSearchResult:
     def test_search_result_creation(self):
         """Test creating a valid search result."""
         papers = [
-            Paper(paper_id="1", title="Paper 1"),
-            Paper(paper_id="2", title="Paper 2")
+            Paper(paperId="1", title="Paper 1"),
+            Paper(paperId="2", title="Paper 2")
         ]
 
         result = SearchResult(
@@ -188,8 +188,8 @@ class TestSearchFilters:
         """Test creating search filters."""
         filters = SearchFilters(
             year=2024,
-            fields_of_study=["Computer Science", "Mathematics"],
-            min_citation_count=5
+            fieldsOfStudy=["Computer Science", "Mathematics"],
+            minCitationCount=5
         )
 
         assert filters.year == 2024
@@ -200,13 +200,13 @@ class TestSearchFilters:
         """Test search filters with year range."""
         # Invalid year range (start > end)
         with pytest.raises(ValidationError) as exc_info:
-            SearchFilters(year_range=(2024, 2020))
+            SearchFilters(yearRange=(2024, 2020))
 
-        expected_msg = "Start year must be less than or equal to end year"
+        expected_msg = "Year range start must be before end"
         assert expected_msg in str(exc_info.value)
 
         # Valid year range
-        filters = SearchFilters(year_range=(2020, 2024))
+        filters = SearchFilters(yearRange=(2020, 2024))
         assert filters.year_range == (2020, 2024)
 
 
@@ -216,10 +216,10 @@ class TestCitation:
     def test_citation_creation(self):
         """Test creating a citation."""
         citation = Citation(
-            paper_id="cited123",
+            paperId="cited123",
             title="Cited Paper",
             year=2023,
-            is_influential=True,
+            isInfluential=True,
             intents=["background"]
         )
 
@@ -233,11 +233,11 @@ class TestReference:
     def test_reference_creation(self):
         """Test creating a reference."""
         reference = Reference(
-            paper_id="ref123",
+            paperId="ref123",
             title="Reference Paper",
             year=2022,
             authors=[Author(name="Reference Author")],
-            citation_count=25
+            citationCount=25
         )
 
         assert reference.paper_id == "ref123"

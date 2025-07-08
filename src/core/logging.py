@@ -154,7 +154,11 @@ class LoggerFactory:
     def _setup_root_logger(self) -> None:
         """Set up the root logger configuration."""
         root_logger = logging.getLogger()
-        root_logger.setLevel(self.config.level.value)
+        # Handle both enum and string values for level
+        level = self.config.level
+        if hasattr(level, 'value'):
+            level = level.value
+        root_logger.setLevel(level)
 
         # Remove existing handlers
         root_logger.handlers.clear()

@@ -242,3 +242,12 @@ class SearchQuery(BaseModel):
         if not v or not v.strip():
             raise ValueError("Search query cannot be empty")
         return v.strip()
+
+
+class SearchResult(BaseModel):
+    """Search result model."""
+
+    items: list[Paper] = Field(default_factory=list)
+    total: int = Field(0, ge=0)
+    offset: int = Field(0, ge=0)
+    has_more: bool = Field(False)

@@ -33,7 +33,15 @@ class TestMCPIntegration:
         # Initialize server components
         with patch('semantic_scholar_mcp.server.get_config') as mock_config:
             mock_config.return_value = MagicMock(
-                logging=MagicMock(level="INFO", format="json"),
+                logging=MagicMock(
+                    level="INFO", 
+                    format="json",
+                    file_path=None,
+                    max_file_size=1024,
+                    backup_count=3,
+                    include_timestamp=True,
+                    include_context=True
+                ),
                 cache=MagicMock(enabled=True, max_size=100, ttl_seconds=300),
                 semantic_scholar=MagicMock()
             )
