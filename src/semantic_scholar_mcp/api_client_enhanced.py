@@ -545,12 +545,16 @@ class SemanticScholarClient:
         
         fields = fields or BASIC_PAPER_FIELDS
         
+        # Ensure fields is iterable
+        if isinstance(fields, str):
+            fields = [fields]
+        
         # Batch request
         data = await self._make_request(
             "POST",
             "/paper/batch",
             json={"ids": paper_ids},
-            params={"fields": ",".join(fields)}
+            params={"fields": ",".join(fields)} if fields else {}
         )
         
         return [Paper(**paper_data) for paper_data in data if paper_data]

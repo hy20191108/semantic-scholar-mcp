@@ -206,7 +206,7 @@ def log_performance(
             start_time = time.time()
             context = {
                 "function": func.__name__,
-                "module": func.__module__,
+                "func_module": func.__module__,
             }
             
             if log_args:
@@ -247,7 +247,7 @@ def log_performance(
             start_time = time.time()
             context = {
                 "function": func.__name__,
-                "module": func.__module__,
+                "func_module": func.__module__,
             }
             
             if log_args:
@@ -304,7 +304,7 @@ class CorrelationContext:
 
 
 class RequestContext:
-    """Context manager for request tracking."""
+    """Context manager for request tracking (supports both sync and async)."""
     
     def __init__(
         self,
@@ -328,6 +328,14 @@ class RequestContext:
         for token in reversed(self._tokens):
             if token:
                 token.var.reset(token)
+    
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self.__enter__()
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        return self.__exit__(exc_type, exc_val, exc_tb)
 
 
 # Global logger instance

@@ -195,7 +195,7 @@ class APIError(SemanticScholarMCPError):
         )
 
 
-class RateLimitError(APIError):
+class RateLimitError(SemanticScholarMCPError):
     """Raised when rate limits are exceeded."""
 
     def __init__(
@@ -218,6 +218,7 @@ class RateLimitError(APIError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
+        kwargs.pop("error_code", None)  # Remove any existing error_code
         
         if retry_after is not None:
             details["retry_after"] = retry_after
@@ -228,8 +229,12 @@ class RateLimitError(APIError):
         if reset_time:
             details["reset_time"] = reset_time.isoformat()
             
-        kwargs["error_code"] = ErrorCode.RATE_LIMIT_EXCEEDED
-        super().__init__(message=message, details=details, **kwargs)
+        super().__init__(
+            message=message, 
+            details=details, 
+            error_code=ErrorCode.RATE_LIMIT_EXCEEDED, 
+            **kwargs
+        )
 
 
 class NetworkError(APIError):

@@ -1,75 +1,55 @@
 # Semantic Scholar MCP Server
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io/)
 
-An enterprise-grade MCP (Model Context Protocol) server that provides seamless access to the Semantic Scholar academic database. This server enables AI assistants like Claude to search, retrieve, and analyze academic papers with advanced features including caching, rate limiting, and circuit breaker patterns.
+Access millions of academic papers from Semantic Scholar directly in Claude Desktop using the Model Context Protocol (MCP).
 
-## 🚀 Features
+## Features
 
-- **Comprehensive Paper Search**: Search academic papers with filters for year, fields of study, and sorting options
-- **Detailed Paper Information**: Retrieve complete paper details including abstracts, authors, citations, and references
-- **Author Search and Profiles**: Find authors and explore their publication history
-- **Citation Analysis**: Analyze paper citations and references with pagination support
-- **Paper Recommendations**: Get AI-powered paper recommendations based on a given paper
-- **Batch Operations**: Retrieve multiple papers in a single request (up to 500)
-- **Enterprise Features**:
-  - 🔄 Circuit breaker pattern for fault tolerance
-  - ⏱️ Exponential backoff retry with jitter
-  - 💾 In-memory LRU caching
-  - 🚦 Token bucket rate limiting
-  - 📊 Structured logging with correlation IDs
-  - 🔍 Comprehensive error handling
-  - 🏥 Health check endpoints
+- **Smart Search**: Search papers with filters for year, fields of study, and sorting
+- **Full Paper Details**: Get abstracts, authors, citations, and references
+- **Author Profiles**: Explore researcher profiles and their publications
+- **Citation Network**: Analyze citation relationships and impact
+- **AI-Powered**: Get paper recommendations and research insights
+- **Fast & Reliable**: Built-in caching, rate limiting, and error recovery
 
-## 📋 Prerequisites
+## Quick Start
 
-- Python 3.9 or higher
-- [uv](https://github.com/astral-sh/uv) package manager (recommended)
-- Claude Desktop or any MCP-compatible client
-- (Optional) Semantic Scholar API key for higher rate limits
-
-## 🛠️ Installation
-
-### Quick Install with Claude Desktop
+### Install via Claude Desktop
 
 ```bash
 claude mcp add semantic-scholar -- uvx semantic-scholar-mcp
 ```
 
-### Install from PyPI
+### Or install directly
 
 ```bash
-# Using pip
-pip install semantic-scholar-mcp
-
-# Using uv (recommended)
-uv add semantic-scholar-mcp
+uvx semantic-scholar-mcp
 ```
 
-### Install from Source
+## Configuration
 
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/semantic-scholar-mcp.git
-cd semantic-scholar-mcp
+Add to your Claude Desktop configuration:
 
-# Install with uv
-uv install
-
-# Or with pip
-pip install -e .
-```
-
-## ⚙️ Configuration
-
-### Claude Desktop Configuration
-
-Add the following to your Claude Desktop configuration file:
-
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`  
 **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "semantic-scholar": {
+      "command": "uvx",
+      "args": ["semantic-scholar-mcp"]
+    }
+  }
+}
+```
+
+### Optional: API Key for Higher Rate Limits
+
+Get your free API key from [Semantic Scholar](https://www.semanticscholar.org/product/api) and add it:
 
 ```json
 {
@@ -85,239 +65,108 @@ Add the following to your Claude Desktop configuration file:
 }
 ```
 
-### Environment Variables
+## Usage Examples
 
-Create a `.env` file in your project directory (see `.env.example`):
+Once configured, use natural language in Claude Desktop:
 
-```bash
-# Optional: Semantic Scholar API key for higher rate limits
-SEMANTIC_SCHOLAR_API_KEY=your-api-key-here
-
-# Logging configuration
-LOG_LEVEL=INFO
-LOG_FORMAT=json
-
-# Cache settings
-CACHE__ENABLED=true
-CACHE__TTL_SECONDS=3600
-
-# Rate limiting
-RATE_LIMIT__REQUESTS_PER_SECOND=1.0
-RATE_LIMIT__BURST_SIZE=10
+### Search Papers
+```
+Find recent papers on transformer architectures in NLP
 ```
 
-## 📖 Usage
-
-Once configured, you can use the following commands in Claude Desktop:
-
-### Search for Papers
-
+### Get Specific Paper
 ```
-Search for papers on "large language models" published after 2020
+Show me the paper "Attention is All You Need"
 ```
 
-### Get Paper Details
-
+### Explore Authors
 ```
-Get details for paper "2020arXiv200308271R" including citations and references
-```
-
-### Find Authors
-
-```
-Search for authors named "Yoshua Bengio"
+Find papers by Yoshua Bengio
 ```
 
-### Get Paper Recommendations
-
+### Literature Review
 ```
-Get recommendations based on paper "2017arXiv170603762V"
-```
-
-### Batch Operations
-
-```
-Get details for multiple papers: ["paper-id-1", "paper-id-2", "paper-id-3"]
+Help me create a literature review on quantum computing
 ```
 
-## 🔧 API Reference
+### Citation Analysis
+```
+Analyze the impact of BERT paper through its citations
+```
 
-### Tools
+## Available Tools
 
-#### `search_papers`
-Search for academic papers with advanced filtering options.
+| Tool | Description |
+|------|-------------|
+| `search_papers` | Search papers with advanced filters |
+| `get_paper` | Get detailed paper information |
+| `get_paper_citations` | Retrieve papers citing a given paper |
+| `get_paper_references` | Get references from a paper |
+| `search_authors` | Search for researchers |
+| `get_author` | Get author profile details |
+| `get_author_papers` | List papers by an author |
+| `get_recommendations` | Get AI-powered paper recommendations |
+| `batch_get_papers` | Fetch multiple papers efficiently |
 
-**Parameters:**
-- `query` (str, required): Search query string
-- `limit` (int, optional): Number of results (1-100, default: 10)
-- `offset` (int, optional): Pagination offset (default: 0)
-- `year` (int, optional): Filter by publication year
-- `fields_of_study` (List[str], optional): Filter by fields
-- `sort` (str, optional): Sort order (relevance, citationCount, year)
-
-#### `get_paper`
-Get detailed information about a specific paper.
-
-**Parameters:**
-- `paper_id` (str, required): Paper ID (Semantic Scholar ID, DOI, or ArXiv ID)
-- `include_citations` (bool, optional): Include citation details
-- `include_references` (bool, optional): Include reference details
-
-#### `get_paper_citations`
-Get citations for a specific paper.
-
-**Parameters:**
-- `paper_id` (str, required): Paper ID
-- `limit` (int, optional): Maximum citations (1-1000, default: 100)
-- `offset` (int, optional): Pagination offset
-
-#### `get_paper_references`
-Get references for a specific paper.
-
-**Parameters:**
-- `paper_id` (str, required): Paper ID
-- `limit` (int, optional): Maximum references (1-1000, default: 100)
-- `offset` (int, optional): Pagination offset
-
-#### `get_author`
-Get detailed information about an author.
-
-**Parameters:**
-- `author_id` (str, required): Author ID
-
-#### `get_author_papers`
-Get papers by a specific author.
-
-**Parameters:**
-- `author_id` (str, required): Author ID
-- `limit` (int, optional): Maximum papers (1-1000, default: 100)
-- `offset` (int, optional): Pagination offset
-
-#### `search_authors`
-Search for authors by name.
-
-**Parameters:**
-- `query` (str, required): Author name search query
-- `limit` (int, optional): Number of results (1-100, default: 10)
-- `offset` (int, optional): Pagination offset
-
-#### `get_recommendations`
-Get paper recommendations based on a given paper.
-
-**Parameters:**
-- `paper_id` (str, required): Paper ID for recommendations
-- `limit` (int, optional): Number of recommendations (1-100, default: 10)
-
-#### `batch_get_papers`
-Get multiple papers in a single request.
-
-**Parameters:**
-- `paper_ids` (List[str], required): List of paper IDs (max 500)
-- `fields` (List[str], optional): Fields to include in response
+## Advanced Features
 
 ### Resources
+- `papers/{paper_id}` - Direct access to paper data
+- `authors/{author_id}` - Direct access to author profiles
 
-#### `papers/{paper_id}`
-Get paper information as a formatted resource.
+### AI Prompts
+- `literature_review` - Generate comprehensive literature reviews
+- `citation_analysis` - Analyze citation networks and impact
+- `research_trend_analysis` - Identify emerging research trends
 
-#### `authors/{author_id}`
-Get author information as a formatted resource.
+## Development
 
-### Prompts
-
-#### `literature_review`
-Generate a literature review prompt for a given topic.
-
-**Parameters:**
-- `topic` (str, required): Research topic
-- `max_papers` (int, optional): Maximum papers to include (5-50, default: 20)
-- `start_year` (int, optional): Starting year for paper search
-
-#### `citation_analysis`
-Generate a citation analysis prompt for a paper.
-
-**Parameters:**
-- `paper_id` (str, required): Paper ID to analyze
-- `depth` (int, optional): Analysis depth (1-3, default: 1)
-
-#### `research_trend_analysis`
-Generate a research trend analysis prompt.
-
-**Parameters:**
-- `field` (str, required): Research field to analyze
-- `years` (int, optional): Years to analyze (1-20, default: 5)
-
-## 🏗️ Architecture
-
-The server is built with enterprise-grade patterns:
-
-- **Dependency Injection**: IoC container for loose coupling
-- **Repository Pattern**: Abstract data access layer
-- **Circuit Breaker**: Fault tolerance for external API calls
-- **Caching Layer**: LRU cache with TTL support
-- **Structured Logging**: JSON logging with correlation IDs
-- **Type Safety**: Comprehensive type hints and Pydantic models
-- **Async/Await**: Non-blocking I/O operations throughout
-
-## 🧪 Development
-
-### Setting Up Development Environment
+### Setup
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/semantic-scholar-mcp.git
+git clone https://github.com/hy20191108/semantic-scholar-mcp.git
 cd semantic-scholar-mcp
+uv sync
+```
 
-# Install dependencies with uv
-uv install --dev
+### Testing
 
-# Copy environment variables
-cp .env.example .env
-
+```bash
 # Run tests
 uv run pytest
 
-# Run linting
-uv run ruff check .
+# Test MCP server
+uv run python test_simple_search.py
 
-# Run type checking
-uv run mypy .
+# Use MCP Inspector
+uv run mcp dev server_standalone.py
 ```
 
-### Running the Server Locally
+### Build
 
 ```bash
-# Using MCP inspector
-uv run mcp dev src/semantic_scholar_mcp/server.py
-
-# Direct execution
-uv run python -m semantic_scholar_mcp
+uv build
 ```
 
-## 🤝 Contributing
+## Architecture
 
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+Built with enterprise-grade patterns:
+- **Resilience**: Circuit breaker pattern for fault tolerance
+- **Performance**: In-memory LRU caching with TTL
+- **Reliability**: Exponential backoff with jitter for retries
+- **Observability**: Structured logging with correlation IDs
+- **Type Safety**: Full type hints with Pydantic models
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+## License
 
-## 📝 License
+MIT License - see [LICENSE](LICENSE) for details.
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## Acknowledgments
 
-## 🙏 Acknowledgments
-
-- [Semantic Scholar](https://www.semanticscholar.org/) for providing the academic graph API
+- [Semantic Scholar](https://www.semanticscholar.org/) for the academic graph API
 - [Anthropic](https://www.anthropic.com/) for the MCP specification
-- The open-source community for various tools and libraries used in this project
-
-## 📧 Support
-
-For issues, questions, or contributions, please visit our [GitHub repository](https://github.com/yourusername/semantic-scholar-mcp).
+- The academic community for making research accessible
 
 ---
 
-Built with ❤️ for the academic community
+Built for researchers worldwide

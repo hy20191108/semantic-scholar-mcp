@@ -105,23 +105,15 @@ BASIC_PAPER_FIELDS: List[str] = [
 DETAILED_PAPER_FIELDS: List[str] = BASIC_PAPER_FIELDS + [
     "externalIds",
     "url",
-    "s2Url",
     "publicationDate",
-    "journal",
     "referenceCount",
     "fieldsOfStudy",
-    "publicationVenue",
-    "tldr",
 ]
 
 AUTHOR_FIELDS: List[str] = [
     "authorId",
     "name",
-    "aliases",
     "affiliations",
-    "homepage",
-    "citationCount",
-    "hIndex",
     "paperCount",
 ]
 

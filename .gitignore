@@ -149,10 +149,6 @@ cython_debug/
 Thumbs.db
 ehthumbs.db
 
-# uv
-.uv/
-uv.lock
-
 # MCP specific
 .mcp/
 mcp-logs/

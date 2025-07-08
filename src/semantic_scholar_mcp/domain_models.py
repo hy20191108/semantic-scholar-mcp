@@ -89,6 +89,13 @@ class TLDR(BaseModel):
         return v.strip()
 
 
+class OpenAccessPdf(BaseModel):
+    """Open access PDF information model."""
+    
+    url: Optional[str] = None
+    status: Optional[str] = None
+
+
 class Paper(CacheableModel, BaseEntity):
     """Paper model with all fields."""
     
@@ -124,7 +131,7 @@ class Paper(CacheableModel, BaseEntity):
     publication_venue: Optional[PublicationVenue] = Field(None, alias="publicationVenue")
     tldr: Optional[TLDR] = None
     is_open_access: bool = Field(False, alias="isOpenAccess")
-    open_access_pdf: Optional[Url] = Field(None, alias="openAccessPdf")
+    open_access_pdf: Optional[OpenAccessPdf] = Field(None, alias="openAccessPdf")
     
     @field_validator("title")
     @classmethod

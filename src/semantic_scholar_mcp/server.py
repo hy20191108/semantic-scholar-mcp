@@ -3,10 +3,16 @@
 import asyncio
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
-import os
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
+
+import sys
+from pathlib import Path
+
+# Add src directory to Python path
+src_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(src_dir))
 
 from core.config import get_config, ApplicationConfig
 from core.logging import get_logger, initialize_logging, RequestContext
@@ -59,6 +65,13 @@ async def initialize_server():
     )
 
 
+def extract_field_value(value: Any) -> Any:
+    """Extract actual value from Pydantic Field objects."""
+    if hasattr(value, 'default'):
+        return getattr(value, 'default', value)
+    return value
+
+
 # Tool implementations
 
 @mcp.tool()
@@ -84,21 +97,28 @@ async def search_papers(
     Returns:
         Dictionary containing search results with papers and metadata
     """
-    async with RequestContext():
+    with RequestContext():
         try:
+            # Extract actual values from Field objects
+            actual_limit = extract_field_value(limit)
+            actual_offset = extract_field_value(offset)
+            actual_sort = extract_field_value(sort)
+            actual_year = extract_field_value(year)
+            actual_fields_of_study = extract_field_value(fields_of_study)
+            
             # Build search query
             search_query = SearchQuery(
                 query=query,
-                limit=limit,
-                offset=offset,
-                sort=sort
+                limit=actual_limit,
+                offset=actual_offset,
+                sort=actual_sort
             )
             
             # Apply filters if provided
-            if year or fields_of_study:
+            if actual_year or actual_fields_of_study:
                 search_query.filters = SearchFilters(
-                    year=year,
-                    fields_of_study=fields_of_study
+                    year=actual_year,
+                    fields_of_study=actual_fields_of_study
                 )
             
             # Execute search
@@ -155,7 +175,7 @@ async def get_paper(
     Returns:
         Dictionary containing paper details
     """
-    async with RequestContext():
+    with RequestContext():
         try:
             async with api_client:
                 paper = await api_client.get_paper(
@@ -207,7 +227,7 @@ async def get_paper_citations(
     Returns:
         Dictionary containing citation list
     """
-    async with RequestContext():
+    with RequestContext():
         try:
             async with api_client:
                 citations = await api_client.get_paper_citations(
@@ -252,7 +272,7 @@ async def get_paper_references(
     Returns:
         Dictionary containing reference list
     """
-    async with RequestContext():
+    with RequestContext():
         try:
             async with api_client:
                 references = await api_client.get_paper_references(
@@ -293,7 +313,7 @@ async def get_author(
     Returns:
         Dictionary containing author details
     """
-    async with RequestContext():
+    with RequestContext():
         try:
             async with api_client:
                 author = await api_client.get_author(author_id=author_id)
@@ -331,7 +351,7 @@ async def get_author_papers(
     Returns:
         Dictionary containing author's papers
     """
-    async with RequestContext():
+    with RequestContext():
         try:
             async with api_client:
                 result = await api_client.get_author_papers(
@@ -379,13 +399,16 @@ async def search_authors(
     Returns:
         Dictionary containing search results
     """
-    async with RequestContext():
+    with RequestContext():
         try:
+            # Extract actual values from Field objects if needed
+            actual_offset = extract_field_value(offset)
+            
             async with api_client:
                 result = await api_client.search_authors(
                     query=query,
                     limit=limit,
-                    offset=offset
+                    offset=actual_offset
                 )
             
             return {
@@ -425,7 +448,7 @@ async def get_recommendations(
     Returns:
         Dictionary containing recommended papers
     """
-    async with RequestContext():
+    with RequestContext():
         try:
             async with api_client:
                 papers = await api_client.get_recommendations(
@@ -467,7 +490,7 @@ async def batch_get_papers(
     Returns:
         Dictionary containing paper details
     """
-    async with RequestContext():
+    with RequestContext():
         try:
             if len(paper_ids) > 500:
                 raise ValidationError(
@@ -476,10 +499,15 @@ async def batch_get_papers(
                     value=len(paper_ids)
                 )
             
+            # Extract actual values from Field objects if needed
+            actual_fields = None
+            if fields is not None:
+                actual_fields = extract_field_value(fields)
+            
             async with api_client:
                 papers = await api_client.batch_get_papers(
                     paper_ids=paper_ids,
-                    fields=fields
+                    fields=actual_fields
                 )
             
             return {
