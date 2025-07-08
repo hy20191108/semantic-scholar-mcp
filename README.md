@@ -15,111 +15,47 @@ Access millions of academic papers from Semantic Scholar using the Model Context
 - **AI-Powered**: Get paper recommendations and research insights
 - **Fast & Reliable**: Built-in caching, rate limiting, and error recovery
 
-## Quick Start
-
-### Installation
+## Installation & Setup
 
 ```bash
 # Install and run (recommended)
 uvx semantic-scholar-mcp
 
-# Or install globally
+# Or install globally  
 uv tool install semantic-scholar-mcp
 
-# Or install with pip
+# Or with pip
 pip install semantic-scholar-mcp
 ```
 
-## Configuration
+**Claude Code**: Run `uvx semantic-scholar-mcp` or `claude mcp add semantic-scholar-mcp` - auto-detected!
 
-### Claude Code
+**Claude Desktop**: Add to config file (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+```json
+{
+  "mcpServers": {
+    "semantic-scholar": {
+      "command": "uvx", "args": ["semantic-scholar-mcp"]
+    }
+  }
+}
+```
 
+**Other editors** (Cursor, VS Code): Use similar JSON config - check your editor's MCP documentation.
+
+**Optional API Key**: For higher rate limits, get one from [Semantic Scholar](https://www.semanticscholar.org/product/api):
 ```bash
-# Install with command
-uvx semantic-scholar-mcp
-
-# Or configure via command
-claude mcp add semantic-scholar-mcp
+export SEMANTIC_SCHOLAR_API_KEY="your-api-key"
 ```
 
-Claude Code automatically detects MCP servers - no additional configuration needed!
+## Usage
 
-### Claude Desktop
-
-Add to your Claude Desktop configuration:
-
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`  
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "semantic-scholar": {
-      "command": "uvx",
-      "args": ["semantic-scholar-mcp"]
-    }
-  }
-}
-```
-
-### Cursor
-
-Cursor uses the same configuration format as Claude Desktop. Check Cursor's MCP documentation for the exact config file location.
-
-### VS Code
-
-Install the MCP extension for VS Code and add the server configuration. Refer to the MCP extension documentation for setup instructions.
-
-### Other Editors
-
-Most MCP-compatible editors use a similar JSON configuration. Consult your editor's MCP documentation for the specific setup.
-
-### Optional: API Key for Higher Rate Limits
-
-Get your free API key from [Semantic Scholar](https://www.semanticscholar.org/product/api) and add it:
-
-```json
-{
-  "mcpServers": {
-    "semantic-scholar": {
-      "command": "uvx",
-      "args": ["semantic-scholar-mcp"],
-      "env": {
-        "SEMANTIC_SCHOLAR_API_KEY": "your-api-key-here"
-      }
-    }
-  }
-}
-```
-
-## Usage Examples
-
-Once configured, use natural language in your MCP-compatible editor:
-
-### Search Papers
-```
-Find recent papers on transformer architectures in NLP
-```
-
-### Get Specific Paper
-```
-Show me the paper "Attention is All You Need"
-```
-
-### Explore Authors
-```
-Find papers by Yoshua Bengio
-```
-
-### Literature Review
-```
-Help me create a literature review on quantum computing
-```
-
-### Citation Analysis
-```
-Analyze the impact of BERT paper through its citations
-```
+Ask in natural language:
+- *"Find recent papers on transformer architectures in NLP"*
+- *"Show me the paper 'Attention is All You Need'"*
+- *"Find papers by Yoshua Bengio"*  
+- *"Help me create a literature review on quantum computing"*
+- *"Analyze the impact of BERT paper through its citations"*
 
 ## Available Tools
 
