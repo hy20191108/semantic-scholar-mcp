@@ -35,7 +35,14 @@ pip install semantic-scholar-mcp
 {
   "mcpServers": {
     "semantic-scholar": {
-      "command": "uvx", "args": ["semantic-scholar-mcp"]
+      "command": "uvx",
+      "args": ["semantic-scholar-mcp"],
+      
+      // Optional: Set environment variables
+      // Uncomment and set your API key if needed
+      "env": {
+        "SEMANTIC_SCHOLAR_API_KEY": "your-api-key-here"
+      }
     }
   }
 }
@@ -59,17 +66,17 @@ Ask in natural language:
 
 ## Available Tools
 
-| Tool | Description |
-|------|-------------|
-| `search_papers` | Search papers with advanced filters |
-| `get_paper` | Get detailed paper information |
-| `get_paper_citations` | Retrieve papers citing a given paper |
-| `get_paper_references` | Get references from a paper |
-| `search_authors` | Search for researchers |
-| `get_author` | Get author profile details |
-| `get_author_papers` | List papers by an author |
-| `get_recommendations` | Get AI-powered paper recommendations |
-| `batch_get_papers` | Fetch multiple papers efficiently |
+| Tool                   | Description                          |
+| ---------------------- | ------------------------------------ |
+| `search_papers`        | Search papers with advanced filters  |
+| `get_paper`            | Get detailed paper information       |
+| `get_paper_citations`  | Retrieve papers citing a given paper |
+| `get_paper_references` | Get references from a paper          |
+| `search_authors`       | Search for researchers               |
+| `get_author`           | Get author profile details           |
+| `get_author_papers`    | List papers by an author             |
+| `get_recommendations`  | Get AI-powered paper recommendations |
+| `batch_get_papers`     | Fetch multiple papers efficiently    |
 
 ## Advanced Features
 
