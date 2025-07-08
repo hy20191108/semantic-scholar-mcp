@@ -2,8 +2,10 @@ name: Test PyPI Release
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
+    branches: [ "**" ]  # All branches
+  pull_request:
+    branches: [ "**" ]  # All pull requests
+  workflow_dispatch:    # Manual trigger
 
 env:
   PYTHON_VERSION: "3.10"
@@ -46,6 +48,7 @@ jobs:
       
       - name: Publish to Test PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        if: github.event_name != 'pull_request'  # Skip publishing for PRs
         with:
           repository-url: https://test.pypi.org/legacy/
           verbose: true
