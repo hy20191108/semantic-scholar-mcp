@@ -28,6 +28,10 @@ jobs:
         run: |
           uv sync --dev
       
+      - name: Check pytest installation
+        run: |
+          uv run python -c "import pytest; print(f'pytest version: {pytest.__version__}')"
+      
       - name: Run tests
         run: |
           uv run pytest
