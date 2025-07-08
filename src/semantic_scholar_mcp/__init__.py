@@ -1,6 +1,10 @@
 """Semantic Scholar MCP server package."""
 
-__version__ = "0.1.3"
+try:
+    from importlib.metadata import version
+    __version__ = version("semantic-scholar-mcp")
+except ImportError:
+    __version__ = "unknown"
 
 from .server import main
 

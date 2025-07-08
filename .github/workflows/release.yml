@@ -32,6 +32,13 @@ jobs:
         run: |
           uv sync
       
+      - name: Create version tag
+        run: |
+          TAG="v$(date +%Y%m%d.%H%M%S)"
+          git tag $TAG
+          git push origin $TAG
+          echo "Created tag: $TAG"
+      
       - name: Run tests
         run: |
           uv run pytest tests/ -v
