@@ -5,13 +5,14 @@ build-backend = "hatchling.build"
 [project]
 name = "semantic-scholar-mcp"
 dynamic = ["version"]
-description = "MCP server for Semantic Scholar API integration"
+description = "MCP server for Semantic Scholar API integration with Claude Desktop"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
     {name = "hy20191108", email = "zwwp9976@gmail.com"},
 ]
+keywords = ["mcp", "semantic-scholar", "claude", "research", "papers", "api"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -20,6 +21,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
     "mcp[cli]>=1.2.1",
@@ -35,25 +37,20 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.1.0",
     "pytest-mock>=3.11.0",
-    "pytest-benchmark>=4.0.0",
     "pytest-timeout>=2.1.0",
-    "pytest-xdist>=3.3.0",
-    "factory-boy>=3.3.0",
-    "faker>=19.0.0",
     "respx>=0.20.0",
-    "black>=23.0.0",
     "ruff>=0.1.0",
     "mypy>=1.5.0",
     "bandit[toml]>=1.7.5",
-    "safety>=2.3.0",
-    "pre-commit>=3.3.0",
-    "tox>=4.0.0",
-    "coverage[toml]>=7.2.0",
+    "build>=0.10.0",
+    "twine>=4.0.0",
 ]
 
 [project.urls]
 "Homepage" = "https://github.com/hy20191108/semantic-scholar-mcp"
 "Bug Tracker" = "https://github.com/hy20191108/semantic-scholar-mcp/issues"
+"Repository" = "https://github.com/hy20191108/semantic-scholar-mcp"
+"Documentation" = "https://github.com/hy20191108/semantic-scholar-mcp#readme"
 
 [project.scripts]
 semantic-scholar-mcp = "semantic_scholar_mcp:main"
@@ -127,22 +124,14 @@ select = [
     "UP",   # pyupgrade
     "S",    # flake8-bandit
     "A",    # flake8-builtins
-    "DTZ",  # flake8-datetimez
-    "ICN",  # flake8-import-conventions
     "PIE",  # flake8-pie
     "PT",   # flake8-pytest-style
     "RET",  # flake8-return
     "SIM",  # flake8-simplify
-    "TID",  # flake8-tidy-imports
-    "TCH",  # flake8-type-checking
     "ARG",  # flake8-unused-arguments
     "PTH",  # flake8-use-pathlib
     "ERA",  # eradicate
-    "PD",   # pandas-vet
     "PGH",  # pygrep-hooks
-    "PL",   # Pylint
-    "TRY",  # tryceratops
-    "NPY",  # NumPy-specific rules
     "RUF",  # Ruff-specific rules
 ]
 ignore = [
@@ -153,9 +142,6 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101", "PLR2004", "ARG001"]
 
-[tool.black]
-line-length = 88
-target-version = ["py310"]
 
 [tool.bandit]
 tests = ["B201", "B301"]
@@ -164,7 +150,9 @@ skips = ["B101", "B601"]
 [tool.hatch.version]
 source = "vcs"
 tag-prefix = "v"
-fallback-version = "0.2.0"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/semantic_scholar_mcp/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/semantic_scholar_mcp", "src/core"]
