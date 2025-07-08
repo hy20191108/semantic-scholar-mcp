@@ -1,0 +1,56 @@
+name: Test PyPI Release
+
+on:
+  push:
+    branches: [ "**" ]  # All branches
+  pull_request:
+    branches: [ "**" ]  # All pull requests
+  workflow_dispatch:    # Manual trigger
+
+env:
+  PYTHON_VERSION: "3.10"
+
+jobs:
+  build-and-publish:
+    name: Build and Publish to Test PyPI
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Install dependencies
+        run: |
+          uv sync
+      
+      - name: Run linting
+        run: |
+          uv run ruff check .
+        continue-on-error: true
+      
+      - name: Build package
+        run: |
+          uv build
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      
+      - name: Publish to Test PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        if: github.event_name != 'pull_request'  # Skip publishing for PRs
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          verbose: true
+          print-hash: true
+          skip-existing: true
