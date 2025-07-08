@@ -38,7 +38,7 @@ class MetricValue:
     value: float
     metric_type: MetricType
     tags: dict[str, str] = field(default_factory=dict)
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     unit: str | None = None
     description: str | None = None
 
