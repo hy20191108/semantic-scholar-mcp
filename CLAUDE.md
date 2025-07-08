@@ -75,15 +75,15 @@ mv tests/test_real_api.py.disabled tests/test_real_api.py
 
 ## 技術スタック
 
-| カテゴリ | 技術 |
-|---------|------|
-| 言語 | Python 3.10+ |
+| カテゴリ       | 技術                    |
+| -------------- | ----------------------- |
+| 言語           | Python 3.10+            |
 | フレームワーク | MCP SDK (FastMCP統合版) |
-| パッケージ管理 | uv |
-| 非同期処理 | asyncio + httpx |
-| データ検証 | Pydantic |
-| テスト | pytest + pytest-asyncio |
-| CI/CD | GitHub Actions |
+| パッケージ管理 | uv                      |
+| 非同期処理     | asyncio + httpx         |
+| データ検証     | Pydantic                |
+| テスト         | pytest + pytest-asyncio |
+| CI/CD          | GitHub Actions          |
 
 ## アーキテクチャ
 
@@ -115,17 +115,17 @@ mv tests/test_real_api.py.disabled tests/test_real_api.py
 ## 実装機能
 
 ### MCPツール（9個）
-| ツール | 説明 | 主な用途 |
-|--------|------|----------|
-| `search_papers` | 論文検索 | キーワード、年、分野でフィルタ |
-| `get_paper` | 論文詳細 | アブストラクト、著者情報取得 |
-| `get_paper_citations` | 引用取得 | インパクト分析 |
-| `get_paper_references` | 参考文献 | 関連研究の探索 |
-| `search_authors` | 著者検索 | 研究者の発見 |
-| `get_author` | 著者詳細 | h-index、所属確認 |
-| `get_author_papers` | 著者の論文 | 研究履歴追跡 |
-| `get_recommendations` | 推薦 | AI による関連論文提案 |
-| `batch_get_papers` | 一括取得 | 効率的な複数論文取得 |
+| ツール                 | 説明       | 主な用途                       |
+| ---------------------- | ---------- | ------------------------------ |
+| `search_papers`        | 論文検索   | キーワード、年、分野でフィルタ |
+| `get_paper`            | 論文詳細   | アブストラクト、著者情報取得   |
+| `get_paper_citations`  | 引用取得   | インパクト分析                 |
+| `get_paper_references` | 参考文献   | 関連研究の探索                 |
+| `search_authors`       | 著者検索   | 研究者の発見                   |
+| `get_author`           | 著者詳細   | h-index、所属確認              |
+| `get_author_papers`    | 著者の論文 | 研究履歴追跡                   |
+| `get_recommendations`  | 推薦       | AI による関連論文提案          |
+| `batch_get_papers`     | 一括取得   | 効率的な複数論文取得           |
 
 ### リソース（2個）
 - `papers/{paper_id}`: 論文への直接アクセス
@@ -138,12 +138,12 @@ mv tests/test_real_api.py.disabled tests/test_real_api.py
 
 ## パフォーマンス最適化
 
-| 機能 | 実装 | 効果 |
-|------|------|------|
-| キャッシング | In-memory LRU (1000件) | レスポンス時間90%削減 |
-| レート制限 | Token Bucket (1req/s) | API制限の回避 |
-| リトライ | Exponential Backoff | 一時的エラーの自動回復 |
-| Circuit Breaker | 5失敗で60秒オープン | カスケード障害の防止 |
+| 機能            | 実装                   | 効果                   |
+| --------------- | ---------------------- | ---------------------- |
+| キャッシング    | In-memory LRU (1000件) | レスポンス時間90%削減  |
+| レート制限      | Token Bucket (1req/s)  | API制限の回避          |
+| リトライ        | Exponential Backoff    | 一時的エラーの自動回復 |
+| Circuit Breaker | 5失敗で60秒オープン    | カスケード障害の防止   |
 
 ## 開発履歴
 
@@ -169,12 +169,12 @@ mv tests/test_real_api.py.disabled tests/test_real_api.py
 
 ## 技術的決定事項
 
-| 決定 | 理由 |
-|------|------|
-| Python 3.10+ | MCP SDKの要件 |
-| FastMCP統合版 | 公式サポートと安定性 |
-| Pydantic | 型安全性とバリデーション |
-| pathlib使用 | クロスプラットフォーム対応 |
+| 決定               | 理由                       |
+| ------------------ | -------------------------- |
+| Python 3.10+       | MCP SDKの要件              |
+| FastMCP統合版      | 公式サポートと安定性       |
+| Pydantic           | 型安全性とバリデーション   |
+| pathlib使用        | クロスプラットフォーム対応 |
 | 相対インポート回避 | パッケージング時の問題防止 |
 
 ## トラブルシューティング
@@ -238,3 +238,118 @@ mv tests/test_real_api.py.disabled tests/test_real_api.py
 ---
 
 *最終更新: 2025-07-08*
+
+
+# Development Guidelines
+
+## Code Quality Standards
+
+### Language and Documentation
+- Write all code, comments, and docstrings in English only (no Japanese)
+- Use clear, descriptive variable and function names
+- Add comprehensive docstrings for all public functions and classes
+- Include type hints for all function parameters and return values
+
+### Type Safety
+- Never use `Any` type - always specify concrete types
+- Use mypy for static type checking to ensure type safety
+
+### Code Style and Linting
+- Resolve all linter errors before completing any task
+- Follow PEP 8 style guidelines
+- Use Ruff for code formatting and linting
+- Use mypy for static type checking
+- Maintain consistent import ordering (use isort)
+- Prefer pathlib over os.path for file operations
+
+### Configuration and Constants
+- Never hardcode values - use configuration files, environment variables, or constants
+- Define all magic numbers and strings as named constants at module level
+- Use environment variables for runtime configuration (API keys, URLs, file paths)
+- Store application settings in configuration files (YAML, TOML, or JSON)
+- Group related constants in dedicated modules or classes
+- Make configuration values easily discoverable and documented
+
+## Architecture and Design
+
+### Dependency Management
+- Use `uv` for all dependency management (never pip, pip-tools, or poetry)
+- Pin dependency versions in pyproject.toml
+- Keep dependencies minimal and well-justified
+- Separate dev dependencies from runtime dependencies
+
+### Error Handling
+- Use specific exception types rather than generic Exception
+- Provide meaningful error messages with context
+- Log errors appropriately with proper log levels
+- Handle edge cases gracefully
+
+### Performance Considerations
+- Implement caching where appropriate (following existing cache system)
+- Use efficient data structures and algorithms
+- Profile performance-critical code paths
+- Consider memory usage for large datasets
+
+## Project-Specific Guidelines
+
+### OpenAI API Integration
+- Handle API rate limits and errors gracefully
+- Implement proper retry logic with exponential backoff
+- Validate API responses before processing
+- Use environment variables for API configuration
+
+### File I/O and Data Handling
+- Use pathlib for all file operations
+- Validate file formats and content before processing
+- Handle missing files and directories gracefully
+- Implement proper cleanup for temporary files
+
+### Logging and Debugging
+- Use structured logging with appropriate levels
+- Include context information in log messages
+- Support debug mode for detailed troubleshooting
+- Respect user-configured log levels
+
+### CLI Interface
+- Provide clear help messages and examples
+- Validate user input and provide helpful error messages
+- Support both interactive and batch processing modes
+
+## Security Considerations
+- Never commit API keys or sensitive data
+- Validate all external inputs
+- Use secure file permissions for cache and output files
+- Follow principle of least privilege for file operations
+
+
+以下で現状のプロジェクトのMCPサーバー設定を示します。これを基に，動作チェックできます．
+mcpを適宜再起動するようにしてください。
+.mcp.json に書かれています．
+```json
+{
+  "mcpServers": {
+    "semantic-scholar-dev": {
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "server_standalone.py"
+      ]
+    }
+  }
+}
+```
+{
+  "mcpServers": {
+    "semantic-scholar-dev": {
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "server_standalone.py"
+      ]
+    }
+  }
+}
+
+ｓｒｃレイアウト守ってください．

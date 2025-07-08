@@ -6,7 +6,10 @@
         "run",
         "python",
         "server_standalone.py"
-      ]
+      ],
+      "env": {
+        "PYTHONPATH": "/mnt/ext-hdd1/yoshioka/github/semantic-scholar-mcp/src"
+      }
     }
   }
 }

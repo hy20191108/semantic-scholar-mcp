@@ -8,7 +8,10 @@ from pathlib import Path
 src_dir = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_dir))
 
-from semantic_scholar_mcp.server import main  # noqa: E402
+from semantic_scholar_mcp.server import main, mcp  # noqa: E402
+
+# Export the FastMCP server for MCP inspector
+server = mcp
 
 if __name__ == "__main__":
     main()
