@@ -4,7 +4,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io/)
 
-Access millions of academic papers from Semantic Scholar directly in Claude Code using the Model Context Protocol (MCP).
+Access millions of academic papers from Semantic Scholar using the Model Context Protocol (MCP). Works with Claude Code, Claude Desktop, Cursor, VS Code, and other MCP-compatible editors.
 
 ## Features
 
@@ -16,8 +16,6 @@ Access millions of academic papers from Semantic Scholar directly in Claude Code
 - **Fast & Reliable**: Built-in caching, rate limiting, and error recovery
 
 ## Quick Start
-
-### Install via Claude Code
 
 ```bash
 # Install the MCP server
@@ -32,19 +30,70 @@ uv tool install semantic-scholar-mcp
 
 ## Configuration
 
-### Claude Code Configuration
+### Claude Code
 
-Claude Code automatically detects and configures MCP servers when you run:
+Claude Code automatically detects MCP servers when you run:
 
 ```bash
 uvx semantic-scholar-mcp
 ```
 
-The server will be available for use with Claude Code's MCP integration.
+No additional configuration needed!
 
-### Manual Configuration (if needed)
+### Claude Desktop
 
-For manual setup, add to your MCP configuration:
+Add to your Claude Desktop configuration:
+
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`  
+**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "semantic-scholar": {
+      "command": "uvx",
+      "args": ["semantic-scholar-mcp"]
+    }
+  }
+}
+```
+
+### Cursor
+
+Add to your Cursor settings:
+
+**macOS**: `~/Library/Application Support/Cursor/User/globalStorage/mcp-config.json`  
+**Windows**: `%APPDATA%\Cursor\User\globalStorage\mcp-config.json`
+
+```json
+{
+  "mcpServers": {
+    "semantic-scholar": {
+      "command": "uvx",
+      "args": ["semantic-scholar-mcp"]
+    }
+  }
+}
+```
+
+### VS Code with MCP Extension
+
+Install an MCP extension for VS Code and configure:
+
+```json
+{
+  "mcp.servers": {
+    "semantic-scholar": {
+      "command": "uvx",
+      "args": ["semantic-scholar-mcp"]
+    }
+  }
+}
+```
+
+### Other MCP-Compatible Editors
+
+For any MCP-compatible editor, use this configuration:
 
 ```json
 {
@@ -77,7 +126,7 @@ Get your free API key from [Semantic Scholar](https://www.semanticscholar.org/pr
 
 ## Usage Examples
 
-Once configured, use natural language in Claude Code:
+Once configured, use natural language in your MCP-compatible editor:
 
 ### Search Papers
 ```
