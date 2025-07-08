@@ -40,17 +40,31 @@ jobs:
       
       - name: Create version tag
         run: |
-          # Get current version from pyproject.toml and increment patch
-          CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.1.3")
-          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
-          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
-          PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+          # Get base version and increment based on commits since last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.3")
+          LAST_VERSION=$(echo $LAST_TAG | sed 's/^v//')
+          COMMITS_SINCE=$(git rev-list ${LAST_TAG}..HEAD --count 2>/dev/null || echo "1")
+          
+          if [ "$COMMITS_SINCE" -eq "0" ]; then
+            echo "No new commits since $LAST_TAG, skipping tag creation"
+            exit 0
+          fi
+          
+          MAJOR=$(echo $LAST_VERSION | cut -d. -f1)
+          MINOR=$(echo $LAST_VERSION | cut -d. -f2)
+          PATCH=$(echo $LAST_VERSION | cut -d. -f3)
           NEW_PATCH=$((PATCH + 1))
           NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
           TAG="v$NEW_VERSION"
-          git tag $TAG
-          git push origin $TAG
-          echo "Created tag: $TAG (version: $NEW_VERSION)"
+          
+          # Check if tag already exists
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists, skipping tag creation"
+          else
+            git tag $TAG
+            git push origin $TAG
+            echo "Created tag: $TAG (version: $NEW_VERSION)"
+          fi
       
       - name: Run tests
         run: |
