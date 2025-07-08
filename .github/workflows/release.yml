@@ -3,13 +3,9 @@ name: PyPI Release
 on:
   release:
     types: [published]
-  workflow_dispatch:
   push:
-    branches:
-      - main
-
-env:
-  PYTHON_VERSION: "3.10"
+    tags:
+      - 'v*'
 
 jobs:
   build-and-publish:
@@ -17,68 +13,38 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for hatch-vcs
       
       - name: Install uv
         uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
       
       - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
+        run: uv python install 3.10
       
       - name: Install dependencies
-        run: |
-          uv sync
+        run: uv sync --all-extras
       
-      - name: Configure git
+      - name: Display version info
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      
-      - name: Create version tag
-        run: |
-          # Get base version and increment based on commits since last tag
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.3")
-          LAST_VERSION=$(echo $LAST_TAG | sed 's/^v//')
-          COMMITS_SINCE=$(git rev-list ${LAST_TAG}..HEAD --count 2>/dev/null || echo "1")
-          
-          if [ "$COMMITS_SINCE" -eq "0" ]; then
-            echo "No new commits since $LAST_TAG, skipping tag creation"
-            exit 0
-          fi
-          
-          MAJOR=$(echo $LAST_VERSION | cut -d. -f1)
-          MINOR=$(echo $LAST_VERSION | cut -d. -f2)
-          PATCH=$(echo $LAST_VERSION | cut -d. -f3)
-          NEW_PATCH=$((PATCH + 1))
-          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
-          TAG="v$NEW_VERSION"
-          
-          # Check if tag already exists
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists, skipping tag creation"
-          else
-            git tag $TAG
-            git push origin $TAG
-            echo "Created tag: $TAG (version: $NEW_VERSION)"
-          fi
+          echo "Building from ref: ${{ github.ref }}"
+          echo "Event: ${{ github.event_name }}"
+          uv run python -c "import hatchling.metadata.core; print(f'Version: {hatchling.metadata.core.ProjectMetadata.from_file(\"pyproject.toml\").version}')" || echo "Version determined by hatch-vcs"
       
       - name: Run tests
-        run: |
-          uv run pytest tests/ -v --tb=short -x || echo "Tests completed with issues"
-        continue-on-error: true
+        run: uv run pytest tests/ -v --tb=short
       
       - name: Run linting
-        run: |
-          uv run ruff check . || echo "Linting completed with issues"
-        continue-on-error: true
+        run: uv run ruff check .
       
       - name: Build package
-        run: |
-          uv build
+        run: uv build
       
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
