@@ -4,7 +4,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io/)
 
-Access millions of academic papers from Semantic Scholar directly in Claude Desktop using the Model Context Protocol (MCP).
+Access millions of academic papers from Semantic Scholar directly in Claude Code using the Model Context Protocol (MCP).
 
 ## Features
 
@@ -17,24 +17,34 @@ Access millions of academic papers from Semantic Scholar directly in Claude Desk
 
 ## Quick Start
 
-### Install via Claude Desktop
+### Install via Claude Code
 
 ```bash
-claude mcp add semantic-scholar -- uvx semantic-scholar-mcp
+# Install the MCP server
+uvx semantic-scholar-mcp
 ```
 
-### Or install directly
+### Or install globally
+
+```bash
+uv tool install semantic-scholar-mcp
+```
+
+## Configuration
+
+### Claude Code Configuration
+
+Claude Code automatically detects and configures MCP servers when you run:
 
 ```bash
 uvx semantic-scholar-mcp
 ```
 
-## Configuration
+The server will be available for use with Claude Code's MCP integration.
 
-Add to your Claude Desktop configuration:
+### Manual Configuration (if needed)
 
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`  
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+For manual setup, add to your MCP configuration:
 
 ```json
 {
@@ -67,7 +77,7 @@ Get your free API key from [Semantic Scholar](https://www.semanticscholar.org/pr
 
 ## Usage Examples
 
-Once configured, use natural language in Claude Desktop:
+Once configured, use natural language in Claude Code:
 
 ### Search Papers
 ```
