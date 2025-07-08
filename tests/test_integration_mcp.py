@@ -198,6 +198,11 @@ class TestMCPIntegration:
     async def test_resource_handler(self):
         """Test resource handler for paper retrieval."""
         # Arrange
+        mock_author1 = MagicMock()
+        mock_author1.name = "Author 1"
+        mock_author2 = MagicMock()
+        mock_author2.name = "Author 2"
+        
         mock_paper = MagicMock(
             title="Test Paper",
             abstract="Test abstract",
@@ -205,10 +210,7 @@ class TestMCPIntegration:
             venue="Test Conference",
             citation_count=10,
             url="https://example.com/paper",
-            authors=[
-                MagicMock(name="Author 1"),
-                MagicMock(name="Author 2")
-            ]
+            authors=[mock_author1, mock_author2]
         )
 
         with patch('semantic_scholar_mcp.server.api_client') as mock_client:
@@ -278,6 +280,16 @@ class TestMCPIntegration:
 
         with patch('semantic_scholar_mcp.server.get_config') as mock_config:
             mock_config.return_value = MagicMock(
+                logging=MagicMock(
+                    level="INFO", 
+                    format="json",
+                    file_path=None,
+                    max_file_size=1024,
+                    backup_count=3,
+                    include_timestamp=True,
+                    include_context=True
+                ),
+                cache=MagicMock(enabled=True, max_size=100, ttl_seconds=300),
                 semantic_scholar=MagicMock(api_key="test-api-key")
             )
 
