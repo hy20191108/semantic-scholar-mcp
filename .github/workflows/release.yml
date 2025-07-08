@@ -39,10 +39,17 @@ jobs:
       
       - name: Create version tag
         run: |
-          TAG="v$(date +%Y%m%d.%H%M%S)"
+          # Get current version from pyproject.toml and increment patch
+          CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "0.1.3")
+          MAJOR=$(echo $CURRENT_VERSION | cut -d. -f1)
+          MINOR=$(echo $CURRENT_VERSION | cut -d. -f2)
+          PATCH=$(echo $CURRENT_VERSION | cut -d. -f3)
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+          TAG="v$NEW_VERSION"
           git tag $TAG
           git push origin $TAG
-          echo "Created tag: $TAG"
+          echo "Created tag: $TAG (version: $NEW_VERSION)"
       
       - name: Run tests
         run: |
