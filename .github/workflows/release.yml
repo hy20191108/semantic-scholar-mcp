@@ -32,6 +32,11 @@ jobs:
         run: |
           uv sync
       
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      
       - name: Create version tag
         run: |
           TAG="v$(date +%Y%m%d.%H%M%S)"
@@ -42,12 +47,10 @@ jobs:
       - name: Run tests
         run: |
           uv run pytest tests/ -v
-        continue-on-error: true
       
       - name: Run linting
         run: |
           uv run ruff check .
-        continue-on-error: true
       
       - name: Build package
         run: |

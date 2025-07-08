@@ -1,9 +1,9 @@
 """Semantic Scholar MCP server package."""
 
 try:
-    from importlib.metadata import version
+    from importlib.metadata import version, PackageNotFoundError
     __version__ = version("semantic-scholar-mcp")
-except ImportError:
+except (ImportError, PackageNotFoundError):
     __version__ = "unknown"
 
 from .server import main

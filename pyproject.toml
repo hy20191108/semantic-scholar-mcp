@@ -163,6 +163,7 @@ skips = ["B101", "B601"]
 
 [tool.hatch.version]
 source = "vcs"
+tag-prefix = "v"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/semantic_scholar_mcp", "src/core"]
