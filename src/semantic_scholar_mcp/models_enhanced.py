@@ -29,9 +29,7 @@ class ValueObject(BaseModel, ABC):
     """Base class for value objects with immutability."""
 
     model_config = ConfigDict(
-        frozen=True,
-        validate_assignment=True,
-        str_strip_whitespace=True
+        frozen=True, validate_assignment=True, str_strip_whitespace=True
     )
 
     @abstractmethod
@@ -45,18 +43,18 @@ class ValueObject(BaseModel, ABC):
 
 class PaperId(ValueObject):
     """Paper ID value object with validation.
-    
+
     Examples:
         >>> # Create from Semantic Scholar ID
         >>> paper_id = PaperId(value="649def34f8be52c8b66281af98ae884c09aef38b")
         >>> print(paper_id.format())
         'S2:649def34f8be52c8b66281af98ae884c09aef38b'
-        
+
         >>> # Create from DOI
         >>> doi_id = PaperId(value="10.1038/nature12373", id_type=ExternalIdType.DOI)
         >>> print(doi_id.format())
         'DOI:10.1038/nature12373'
-        
+
         >>> # Value objects are immutable and hashable
         >>> paper_set = {paper_id, doi_id}
         >>> len(paper_set)
@@ -77,7 +75,7 @@ class PaperId(ValueObject):
         v = v.strip()
         for prefix in ["S2:", "DOI:", "ArXiv:", "MAG:", "ACM:", "PMID:", "PMC:"]:
             if v.upper().startswith(prefix.upper()):
-                v = v[len(prefix):]
+                v = v[len(prefix) :]
 
         return v
 
@@ -89,7 +87,9 @@ class PaperId(ValueObject):
         """Compare paper IDs."""
         if not isinstance(other, PaperId):
             return False
-        return self.value.lower() == other.value.lower() and self.id_type == other.id_type
+        return (
+            self.value.lower() == other.value.lower() and self.id_type == other.id_type
+        )
 
     def format(self) -> str:
         """Format paper ID with type prefix."""
@@ -112,14 +112,14 @@ class PaperId(ValueObject):
 
 class AuthorName(ValueObject):
     """Author name value object with normalization.
-    
+
     Examples:
         >>> name = AuthorName(first="John", middle="Q.", last="Doe")
         >>> print(name.full_name)
         'John Q. Doe'
         >>> print(name.normalized)
         'doe, john q'
-        
+
         >>> # Names are comparable
         >>> name1 = AuthorName(first="John", last="Doe")
         >>> name2 = AuthorName(first="john", last="doe")
@@ -207,7 +207,7 @@ class AuthorName(ValueObject):
 
 class CitationContext(ValueObject):
     """Citation context value object.
-    
+
     Examples:
         >>> context = CitationContext(
         ...     text="This method improves upon Smith et al. [15] by...",
@@ -272,7 +272,7 @@ class ModelBuilder(ABC, BaseModel):
 
 class AuthorBuilder(ModelBuilder):
     """Builder for Author entities.
-    
+
     Examples:
         >>> author = (AuthorBuilder()
         ...     .with_id("12345")
@@ -298,7 +298,9 @@ class AuthorBuilder(ModelBuilder):
         self.author_id = author_id
         return self
 
-    def with_name(self, first: str, last: str, middle: str | None = None) -> AuthorBuilder:
+    def with_name(
+        self, first: str, last: str, middle: str | None = None
+    ) -> AuthorBuilder:
         """Set author name."""
         self.name = AuthorName(first=first, middle=middle, last=last)
         return self
@@ -337,7 +339,7 @@ class AuthorBuilder(ModelBuilder):
         self,
         citation_count: int | None = None,
         h_index: int | None = None,
-        paper_count: int | None = None
+        paper_count: int | None = None,
     ) -> AuthorBuilder:
         """Set author metrics."""
         if citation_count is not None:
@@ -362,13 +364,13 @@ class AuthorBuilder(ModelBuilder):
             homepage=self.homepage,
             citation_count=self.citation_count,
             h_index=self.h_index,
-            paper_count=self.paper_count
+            paper_count=self.paper_count,
         )
 
 
 class PaperBuilder(ModelBuilder):
     """Builder for Paper entities.
-    
+
     Examples:
         >>> paper = (PaperBuilder()
         ...     .with_id("12345")
@@ -400,7 +402,9 @@ class PaperBuilder(ModelBuilder):
     doi: str | None = None
     arxiv_id: str | None = None
 
-    def with_id(self, paper_id: str, id_type: ExternalIdType = ExternalIdType.CORPUS_ID) -> PaperBuilder:
+    def with_id(
+        self, paper_id: str, id_type: ExternalIdType = ExternalIdType.CORPUS_ID
+    ) -> PaperBuilder:
         """Set paper ID."""
         self.paper_id = PaperId(value=paper_id, id_type=id_type)
         return self
@@ -450,12 +454,16 @@ class PaperBuilder(ModelBuilder):
                     self.authors.append(AuthorName(first=first, last=last))
                 elif len(author) == 3:
                     first, middle, last = author
-                    self.authors.append(AuthorName(first=first, middle=middle, last=last))
+                    self.authors.append(
+                        AuthorName(first=first, middle=middle, last=last)
+                    )
             elif isinstance(author, AuthorName):
                 self.authors.append(author)
         return self
 
-    def add_author(self, first: str, last: str, middle: str | None = None) -> PaperBuilder:
+    def add_author(
+        self, first: str, last: str, middle: str | None = None
+    ) -> PaperBuilder:
         """Add an author."""
         self.authors.append(AuthorName(first=first, middle=middle, last=last))
         return self
@@ -464,7 +472,7 @@ class PaperBuilder(ModelBuilder):
         self,
         citations: int | None = None,
         references: int | None = None,
-        influential_citations: int | None = None
+        influential_citations: int | None = None,
     ) -> PaperBuilder:
         """Set paper metrics."""
         if citations is not None:
@@ -537,13 +545,13 @@ class PaperBuilder(ModelBuilder):
             fields_of_study=self.fields_of_study,
             url=self.url,
             doi=self.doi,
-            arxiv_id=self.arxiv_id
+            arxiv_id=self.arxiv_id,
         )
 
 
 class EnhancedAuthor(BaseAuthor, CacheableModel, BaseEntity):
     """Enhanced author model with value objects and validation.
-    
+
     Examples:
         >>> author = EnhancedAuthor.create(
         ...     author_id="12345",
@@ -558,19 +566,11 @@ class EnhancedAuthor(BaseAuthor, CacheableModel, BaseEntity):
 
     @classmethod
     def create(
-        cls,
-        author_id: str | None = None,
-        name: str = "",
-        **kwargs: Any
+        cls, author_id: str | None = None, name: str = "", **kwargs: Any
     ) -> EnhancedAuthor:
         """Factory method to create author."""
         name_parts = AuthorName.from_string(name) if name else None
-        return cls(
-            author_id=author_id,
-            name=name,
-            name_parts=name_parts,
-            **kwargs
-        )
+        return cls(author_id=author_id, name=name, name_parts=name_parts, **kwargs)
 
     @classmethod
     def builder(cls) -> AuthorBuilder:
@@ -590,7 +590,7 @@ class EnhancedAuthor(BaseAuthor, CacheableModel, BaseEntity):
                 raise ValidationError(
                     "H-index cannot exceed citation count",
                     field="h_index",
-                    value=self.h_index
+                    value=self.h_index,
                 )
 
         if self.paper_count and self.h_index:
@@ -598,13 +598,13 @@ class EnhancedAuthor(BaseAuthor, CacheableModel, BaseEntity):
                 raise ValidationError(
                     "H-index cannot exceed paper count",
                     field="h_index",
-                    value=self.h_index
+                    value=self.h_index,
                 )
 
 
 class EnhancedPaper(BasePaper):
     """Enhanced paper model with value objects and validation.
-    
+
     Examples:
         >>> paper = EnhancedPaper.create(
         ...     paper_id="12345",
@@ -625,7 +625,7 @@ class EnhancedPaper(BasePaper):
         paper_id: str,
         title: str,
         authors: list[str | BaseAuthor] | None = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> EnhancedPaper:
         """Factory method to create paper."""
         paper_id_obj = PaperId.from_string(paper_id)
@@ -651,7 +651,7 @@ class EnhancedPaper(BasePaper):
             title=title,
             authors=author_objects,
             author_names=author_names,
-            **kwargs
+            **kwargs,
         )
 
     @classmethod
@@ -689,28 +689,26 @@ class EnhancedPaper(BasePaper):
                 raise ValidationError(
                     "Publication date year must match year field",
                     field="publication_date",
-                    value=self.publication_date
+                    value=self.publication_date,
                 )
 
         # Validate external IDs match
         if self.doi and self.external_ids.get("DOI") != self.doi:
             raise ValidationError(
-                "DOI mismatch in external IDs",
-                field="doi",
-                value=self.doi
+                "DOI mismatch in external IDs", field="doi", value=self.doi
             )
 
         if self.arxiv_id and self.external_ids.get("ArXiv") != self.arxiv_id:
             raise ValidationError(
                 "ArXiv ID mismatch in external IDs",
                 field="arxiv_id",
-                value=self.arxiv_id
+                value=self.arxiv_id,
             )
 
 
 class EnhancedCitation(BaseCitation):
     """Enhanced citation model with context.
-    
+
     Examples:
         >>> citation = EnhancedCitation.create(
         ...     paper_id="12345",
@@ -730,7 +728,7 @@ class EnhancedCitation(BaseCitation):
         paper_id: str,
         title: str,
         contexts: list[str | CitationContext] | None = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> EnhancedCitation:
         """Factory method to create citation."""
         citation_contexts = []
@@ -750,7 +748,7 @@ class EnhancedCitation(BaseCitation):
             title=title,
             contexts=context_strings,
             citation_contexts=citation_contexts,
-            **kwargs
+            **kwargs,
         )
 
     @property
@@ -773,7 +771,7 @@ class EnhancedCitation(BaseCitation):
 
 class ModelFactory:
     """Factory for creating domain models.
-    
+
     Examples:
         >>> factory = ModelFactory()
         >>> paper = factory.create_paper(
@@ -790,7 +788,9 @@ class ModelFactory:
         return EnhancedPaper.create(paper_id=paper_id, title=title, **kwargs)
 
     @staticmethod
-    def create_author(author_id: str | None, name: str, **kwargs: Any) -> EnhancedAuthor:
+    def create_author(
+        author_id: str | None, name: str, **kwargs: Any
+    ) -> EnhancedAuthor:
         """Create enhanced author."""
         return EnhancedAuthor.create(author_id=author_id, name=name, **kwargs)
 
@@ -798,10 +798,7 @@ class ModelFactory:
     def create_author_from_string(name: str) -> EnhancedAuthor:
         """Create author from name string."""
         name_parts = AuthorName.from_string(name)
-        return EnhancedAuthor(
-            name=name_parts.full_name,
-            name_parts=name_parts
-        )
+        return EnhancedAuthor(name=name_parts.full_name, name_parts=name_parts)
 
     @staticmethod
     def create_citation(paper_id: str, title: str, **kwargs: Any) -> EnhancedCitation:

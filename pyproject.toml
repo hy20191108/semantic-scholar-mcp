@@ -156,3 +156,11 @@ version-file = "src/semantic_scholar_mcp/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/semantic_scholar_mcp", "src/core"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.0.0",
+    "pytest-cov>=6.2.1",
+    "ruff>=0.12.2",
+]

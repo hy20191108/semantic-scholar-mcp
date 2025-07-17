@@ -1,7 +1,6 @@
 """Data models for Semantic Scholar API responses."""
 
-
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Author(BaseModel):
@@ -13,6 +12,8 @@ class Author(BaseModel):
 
 class Paper(BaseModel):
     """Paper information from Semantic Scholar."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     paper_id: str = Field(alias="paperId")
     title: str
@@ -26,6 +27,7 @@ class Paper(BaseModel):
     arxiv_id: str | None = Field(None, alias="arxivId")
     doi: str | None = None
     fields_of_study: list[str] = Field(default_factory=list, alias="fieldsOfStudy")
+    match_score: float | None = Field(None, alias="matchScore")
 
 
 class SearchResult(BaseModel):

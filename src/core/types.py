@@ -64,9 +64,11 @@ SortOrderDirection: TypeAlias = str
 
 # Pagination and sorting types
 
+
 @dataclass
 class PaginationParams:
     """Pagination parameters."""
+
     page: int = 1
     page_size: int = 10
     offset: int | None = None
@@ -76,6 +78,7 @@ class PaginationParams:
 @dataclass
 class SortOrder:
     """Sort order specification."""
+
     field: str
     direction: str = "asc"  # asc or desc
 
@@ -83,6 +86,7 @@ class SortOrder:
 @dataclass
 class SearchQuery:
     """Search query specification."""
+
     query: str
     filters: dict[str, Any] | None = None
     fields: list[str] | None = None
@@ -104,13 +108,7 @@ BASIC_PAPER_FIELDS: list[str] = [
     "influentialCitationCount",
 ]
 
-DETAILED_PAPER_FIELDS: list[str] = BASIC_PAPER_FIELDS + [
-    "externalIds",
-    "url",
-    "publicationDate",
-    "referenceCount",
-    "fieldsOfStudy",
-]
+DETAILED_PAPER_FIELDS: list[str] = [*BASIC_PAPER_FIELDS, "externalIds", "url", "publicationDate", "referenceCount", "fieldsOfStudy"]
 
 AUTHOR_FIELDS: list[str] = [
     "authorId",

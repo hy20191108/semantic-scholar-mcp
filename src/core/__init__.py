@@ -32,15 +32,12 @@ from .types import (
 __all__ = [
     # Exceptions
     "APIError",
+    # Types
+    "AuthorDetails",
+    "AuthorId",
     "CacheError",
     "ConfigurationError",
-    "NetworkError",
-    "NotFoundError",
-    "RateLimitError",
-    "SemanticScholarMCPError",
-    "ServiceUnavailableError",
-    "UnauthorizedError",
-    "ValidationError",
+    "Fields",
     # Protocols
     "ICache",
     "IConfigurable",
@@ -48,11 +45,14 @@ __all__ = [
     "ILogger",
     "IMetricsCollector",
     "IRepository",
-    # Types
-    "AuthorDetails",
-    "AuthorId",
-    "Fields",
+    "NetworkError",
+    "NotFoundError",
     "PaperDetails",
     "PaperId",
+    "RateLimitError",
     "SearchResult",
+    "SemanticScholarMCPError",
+    "ServiceUnavailableError",
+    "UnauthorizedError",
+    "ValidationError",
 ]

@@ -1,22 +1,16 @@
 {
   "hooks": {
-    "before_file_edit": "echo '📝 Editing: {{file_path}}'",
-    "after_file_edit": "echo '✅ Edit completed: {{file_path}}'",
-    
-    "before_file_write": "echo '📄 Creating: {{file_path}}'",
-    "after_file_write": "echo '✅ Created: {{file_path}}'",
-    
-    "before_bash": "echo '🚀 Running: {{command}}'",
-    "after_bash": "echo '✅ Command completed'",
-    
-    "after_edit_python": "cd /mnt/ext-hdd1/yoshioka/github/semantic-scholar-mcp && uv run ruff check {{file_path}} --fix",
-    
-    "before_test": "echo '🧪 Starting tests...'",
-    "after_test": "echo '✅ Tests completed'",
-    
-    "before_git_commit": "cd /mnt/ext-hdd1/yoshioka/github/semantic-scholar-mcp && uv run ruff check . --fix",
-    
-    "after_pyproject_edit": "cd /mnt/ext-hdd1/yoshioka/github/semantic-scholar-mcp && uv sync"
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run ruff . --fix & uv run mypy ."
+          }
+        ]
+      }
+    ]
   },
   
   "project": {

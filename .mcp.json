@@ -11,6 +11,13 @@
         "LOG_MCP_MESSAGES": "true",
         "LOG_API_PAYLOADS": "true"
       }
+    },
+    "semantic-scholar-pypi": {
+      "command": "uvx",
+      "args": [
+        "--force-reinstall",
+        "semantic-scholar-mcp@latest"
+      ]
     }
   }
 }

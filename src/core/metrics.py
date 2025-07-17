@@ -51,7 +51,7 @@ class MetricValue:
             "tags": self.tags,
             "timestamp": self.timestamp.isoformat(),
             "unit": self.unit,
-            "description": self.description
+            "description": self.description,
         }
 
 
@@ -59,15 +59,21 @@ class MetricBackend(ABC):
     """Abstract base class for metric backends."""
 
     @abstractmethod
-    def record_counter(self, name: str, value: float, tags: dict[str, str] | None = None) -> None:
+    def record_counter(
+        self, name: str, value: float, tags: dict[str, str] | None = None
+    ) -> None:
         """Record counter metric."""
 
     @abstractmethod
-    def record_gauge(self, name: str, value: float, tags: dict[str, str] | None = None) -> None:
+    def record_gauge(
+        self, name: str, value: float, tags: dict[str, str] | None = None
+    ) -> None:
         """Record gauge metric."""
 
     @abstractmethod
-    def record_histogram(self, name: str, value: float, tags: dict[str, str] | None = None) -> None:
+    def record_histogram(
+        self, name: str, value: float, tags: dict[str, str] | None = None
+    ) -> None:
         """Record histogram metric."""
 
     @abstractmethod
@@ -83,21 +89,27 @@ class InMemoryBackend(MetricBackend):
         self._metrics: dict[str, list[MetricValue]] = defaultdict(list)
         self._lock = Lock()
 
-    def record_counter(self, name: str, value: float, tags: dict[str, str] | None = None) -> None:
+    def record_counter(
+        self, name: str, value: float, tags: dict[str, str] | None = None
+    ) -> None:
         """Record counter metric."""
         with self._lock:
             self._metrics[name].append(
                 MetricValue(name, value, MetricType.COUNTER, tags or {})
             )
 
-    def record_gauge(self, name: str, value: float, tags: dict[str, str] | None = None) -> None:
+    def record_gauge(
+        self, name: str, value: float, tags: dict[str, str] | None = None
+    ) -> None:
         """Record gauge metric."""
         with self._lock:
             self._metrics[name].append(
                 MetricValue(name, value, MetricType.GAUGE, tags or {})
             )
 
-    def record_histogram(self, name: str, value: float, tags: dict[str, str] | None = None) -> None:
+    def record_histogram(
+        self, name: str, value: float, tags: dict[str, str] | None = None
+    ) -> None:
         """Record histogram metric."""
         with self._lock:
             self._metrics[name].append(
@@ -132,24 +144,31 @@ class PrometheusBackend(MetricBackend):
         # Import prometheus_client dynamically
         try:
             import prometheus_client
+
             self.prometheus = prometheus_client
             self._initialize_metrics()
         except ImportError:
             raise ImportError("prometheus_client is required for Prometheus backend")
 
-    def record_counter(self, name: str, value: float, tags: dict[str, str] | None = None) -> None:
+    def record_counter(
+        self, name: str, value: float, tags: dict[str, str] | None = None
+    ) -> None:
         """Record counter metric."""
         with self._lock:
             counter = self._get_or_create_counter(name, tags)
             counter.inc(value)
 
-    def record_gauge(self, name: str, value: float, tags: dict[str, str] | None = None) -> None:
+    def record_gauge(
+        self, name: str, value: float, tags: dict[str, str] | None = None
+    ) -> None:
         """Record gauge metric."""
         with self._lock:
             gauge = self._get_or_create_gauge(name, tags)
             gauge.set(value)
 
-    def record_histogram(self, name: str, value: float, tags: dict[str, str] | None = None) -> None:
+    def record_histogram(
+        self, name: str, value: float, tags: dict[str, str] | None = None
+    ) -> None:
         """Record histogram metric."""
         with self._lock:
             histogram = self._get_or_create_histogram(name, tags)
@@ -170,9 +189,7 @@ class PrometheusBackend(MetricBackend):
         if name not in self._counters:
             label_names = list(tags.keys()) if tags else []
             self._counters[name] = self.prometheus.Counter(
-                name.replace(".", "_"),
-                f"Counter for {name}",
-                label_names
+                name.replace(".", "_"), f"Counter for {name}", label_names
             )
 
         counter = self._counters[name]
@@ -185,9 +202,7 @@ class PrometheusBackend(MetricBackend):
         if name not in self._gauges:
             label_names = list(tags.keys()) if tags else []
             self._gauges[name] = self.prometheus.Gauge(
-                name.replace(".", "_"),
-                f"Gauge for {name}",
-                label_names
+                name.replace(".", "_"), f"Gauge for {name}", label_names
             )
 
         gauge = self._gauges[name]
@@ -203,7 +218,7 @@ class PrometheusBackend(MetricBackend):
                 name.replace(".", "_"),
                 f"Histogram for {name}",
                 label_names,
-                buckets=self.config.histogram_buckets
+                buckets=self.config.histogram_buckets,
             )
 
         histogram = self._histograms[name]
@@ -228,7 +243,9 @@ class MetricsCollector(IMetricsCollector):
         # Performance tracking
         self._timers: dict[str, float] = {}
 
-    def increment(self, metric: MetricName, value: int = 1, tags: dict[str, str] | None = None) -> None:
+    def increment(
+        self, metric: MetricName, value: int = 1, tags: dict[str, str] | None = None
+    ) -> None:
         """Increment a counter metric."""
         if not self.config.enabled:
             return
@@ -239,7 +256,9 @@ class MetricsCollector(IMetricsCollector):
         # Track in registry
         self._update_registry(metric, float(value), MetricType.COUNTER, merged_tags)
 
-    def gauge(self, metric: MetricName, value: float, tags: dict[str, str] | None = None) -> None:
+    def gauge(
+        self, metric: MetricName, value: float, tags: dict[str, str] | None = None
+    ) -> None:
         """Set a gauge metric."""
         if not self.config.enabled:
             return
@@ -250,7 +269,9 @@ class MetricsCollector(IMetricsCollector):
         # Track in registry
         self._update_registry(metric, value, MetricType.GAUGE, merged_tags)
 
-    def histogram(self, metric: MetricName, value: float, tags: dict[str, str] | None = None) -> None:
+    def histogram(
+        self, metric: MetricName, value: float, tags: dict[str, str] | None = None
+    ) -> None:
         """Record a histogram metric."""
         if not self.config.enabled:
             return
@@ -317,20 +338,15 @@ class MetricsCollector(IMetricsCollector):
         return merged if self.config.include_labels else {}
 
     def _update_registry(
-        self,
-        name: str,
-        value: float,
-        metric_type: MetricType,
-        tags: dict[str, str]
+        self, name: str, value: float, metric_type: MetricType, tags: dict[str, str]
     ) -> None:
         """Update metric registry."""
         with self._lock:
-            registry_key = f"{name}:{','.join(f'{k}={v}' for k, v in sorted(tags.items()))}"
+            registry_key = (
+                f"{name}:{','.join(f'{k}={v}' for k, v in sorted(tags.items()))}"
+            )
             self._metric_registry[registry_key] = MetricValue(
-                name=name,
-                value=value,
-                metric_type=metric_type,
-                tags=tags
+                name=name, value=value, metric_type=metric_type, tags=tags
             )
 
 
@@ -353,7 +369,7 @@ class MetricAggregator:
         metric_type: MetricType | None = None,
         tags: dict[str, str] | None = None,
         start_time: datetime | None = None,
-        end_time: datetime | None = None
+        end_time: datetime | None = None,
     ) -> list[MetricValue]:
         """Get filtered metrics."""
         with self._lock:
@@ -365,7 +381,8 @@ class MetricAggregator:
                 metrics = [m for m in metrics if m.metric_type == metric_type]
             if tags:
                 metrics = [
-                    m for m in metrics
+                    m
+                    for m in metrics
                     if all(m.tags.get(k) == v for k, v in tags.items())
                 ]
             if start_time:
@@ -391,7 +408,7 @@ class MetricAggregator:
             "max": max(values),
             "latest": metrics[-1].value,
             "first_seen": metrics[0].timestamp.isoformat(),
-            "last_seen": metrics[-1].timestamp.isoformat()
+            "last_seen": metrics[-1].timestamp.isoformat(),
         }
 
 
@@ -414,7 +431,7 @@ class HealthCheck:
         results = {
             "status": "healthy",
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "checks": {}
+            "checks": {},
         }
 
         overall_healthy = True
@@ -427,34 +444,23 @@ class HealthCheck:
 
                 # Record metrics
                 self.metrics.histogram(
-                    "health_check.duration",
-                    duration,
-                    {"check": name}
+                    "health_check.duration", duration, {"check": name}
                 )
 
                 if result.get("status") != "healthy":
                     overall_healthy = False
-                    self.metrics.increment(
-                        "health_check.failure",
-                        tags={"check": name}
-                    )
+                    self.metrics.increment("health_check.failure", tags={"check": name})
                 else:
-                    self.metrics.increment(
-                        "health_check.success",
-                        tags={"check": name}
-                    )
+                    self.metrics.increment("health_check.success", tags={"check": name})
 
                 results["checks"][name] = result
 
             except Exception as e:
                 overall_healthy = False
-                results["checks"][name] = {
-                    "status": "unhealthy",
-                    "error": str(e)
-                }
+                results["checks"][name] = {"status": "unhealthy", "error": str(e)}
                 self.metrics.increment(
                     "health_check.error",
-                    tags={"check": name, "error": type(e).__name__}
+                    tags={"check": name, "error": type(e).__name__},
                 )
 
         results["status"] = "healthy" if overall_healthy else "unhealthy"
@@ -492,7 +498,7 @@ class MetricsMiddleware:
                 "method": method,
                 "path": path,
                 "status": str(status),
-                "status_class": f"{status // 100}xx"
+                "status_class": f"{status // 100}xx",
             }
 
             self.metrics.histogram("http.request.duration", duration, tags)
@@ -509,11 +515,7 @@ class MetricsMiddleware:
             # Record error metrics
             duration = time.time() - start_time
 
-            tags = {
-                "method": method,
-                "path": path,
-                "error": type(e).__name__
-            }
+            tags = {"method": method, "path": path, "error": type(e).__name__}
 
             self.metrics.histogram("http.request.duration", duration, tags)
             self.metrics.increment("http.requests.errors", tags=tags)
@@ -522,12 +524,15 @@ class MetricsMiddleware:
 
         finally:
             # Decrement active requests
-            self.metrics.increment("http.requests.active", value=-1, tags={"method": method})
+            self.metrics.increment(
+                "http.requests.active", value=-1, tags={"method": method}
+            )
 
 
 # Decorators for method-level metrics
 def track_performance(metric_name: str | None = None):
     """Decorator to track method performance."""
+
     def decorator(func: Callable) -> Callable:
         name = metric_name or f"{func.__module__}.{func.__name__}"
 
@@ -559,8 +564,12 @@ def track_performance(metric_name: str | None = None):
                     return result
                 except Exception as e:
                     duration = time.time() - start_time
-                    metrics.histogram(f"{name}.duration", duration, {"error": type(e).__name__})
-                    metrics.increment(f"{name}.errors", tags={"error": type(e).__name__})
+                    metrics.histogram(
+                        f"{name}.duration", duration, {"error": type(e).__name__}
+                    )
+                    metrics.increment(
+                        f"{name}.errors", tags={"error": type(e).__name__}
+                    )
                     raise
             else:
                 return func(*args, **kwargs)

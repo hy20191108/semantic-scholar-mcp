@@ -40,7 +40,9 @@ class ILogger(Protocol):
         """Log warning message."""
         ...
 
-    def error(self, message: str, exception: Exception | None = None, **kwargs: Any) -> None:
+    def error(
+        self, message: str, exception: Exception | None = None, **kwargs: Any
+    ) -> None:
         """Log error message."""
         ...
 
@@ -53,15 +55,21 @@ class ILogger(Protocol):
 class IMetricsCollector(Protocol):
     """Protocol for metrics collection."""
 
-    def increment(self, metric: str, value: int = 1, tags: dict[str, str] | None = None) -> None:
+    def increment(
+        self, metric: str, value: int = 1, tags: dict[str, str] | None = None
+    ) -> None:
         """Increment a counter metric."""
         ...
 
-    def gauge(self, metric: str, value: float, tags: dict[str, str] | None = None) -> None:
+    def gauge(
+        self, metric: str, value: float, tags: dict[str, str] | None = None
+    ) -> None:
         """Set a gauge metric."""
         ...
 
-    def histogram(self, metric: str, value: float, tags: dict[str, str] | None = None) -> None:
+    def histogram(
+        self, metric: str, value: float, tags: dict[str, str] | None = None
+    ) -> None:
         """Record a histogram value."""
         ...
 
@@ -122,10 +130,7 @@ class IRetryable(Protocol):
     """Protocol for retryable operations."""
 
     async def execute_with_retry(
-        self,
-        operation: Any,
-        max_attempts: int = 3,
-        backoff_factor: float = 2.0
+        self, operation: Any, max_attempts: int = 3, backoff_factor: float = 2.0
     ) -> Any:
         """Execute operation with retry logic."""
         ...

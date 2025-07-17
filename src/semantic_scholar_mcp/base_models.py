@@ -18,9 +18,8 @@ class BaseEntity(BaseModel):
         use_enum_values=True,
         arbitrary_types_allowed=True,
         str_strip_whitespace=True,
-        json_encoders={
-            datetime: lambda v: v.isoformat() if v else None
-        }
+        json_encoders={datetime: lambda v: v.isoformat() if v else None},
+        extra="allow",
     )
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -36,10 +35,7 @@ class BaseEntity(BaseModel):
 class CacheableModel(BaseModel, ABC):
     """Base model for cacheable entities."""
 
-    model_config = ConfigDict(
-        validate_assignment=True,
-        extra="forbid"
-    )
+    model_config = ConfigDict(validate_assignment=True, extra="allow")
 
     cache_key: str | None = Field(default=None, exclude=True)
     cache_ttl: int = Field(default=3600, exclude=True)  # 1 hour default
@@ -58,10 +54,7 @@ class CacheableModel(BaseModel, ABC):
 class ApiResponse(BaseModel, Generic[T]):
     """Generic API response wrapper."""
 
-    model_config = ConfigDict(
-        validate_assignment=True,
-        arbitrary_types_allowed=True
-    )
+    model_config = ConfigDict(validate_assignment=True, arbitrary_types_allowed=True)
 
     success: bool = Field(default=True)
     data: T | None = Field(default=None)
@@ -71,24 +64,14 @@ class ApiResponse(BaseModel, Generic[T]):
 
     @classmethod
     def success_response(
-        cls,
-        data: T,
-        metadata: dict[str, Any] | None = None
+        cls, data: T, metadata: dict[str, Any] | None = None
     ) -> "ApiResponse[T]":
         """Create a successful response."""
-        return cls(
-            success=True,
-            data=data,
-            error=None,
-            metadata=metadata
-        )
+        return cls(success=True, data=data, error=None, metadata=metadata)
 
     @classmethod
     def error_response(
-        cls,
-        error_code: str,
-        error_message: str,
-        details: dict[str, Any] | None = None
+        cls, error_code: str, error_message: str, details: dict[str, Any] | None = None
     ) -> "ApiResponse[T]":
         """Create an error response."""
         return cls(
@@ -97,18 +80,15 @@ class ApiResponse(BaseModel, Generic[T]):
             error={
                 "code": error_code,
                 "message": error_message,
-                "details": details or {}
-            }
+                "details": details or {},
+            },
         )
 
 
 class PaginatedResponse(BaseModel, Generic[T]):
     """Paginated response model."""
 
-    model_config = ConfigDict(
-        validate_assignment=True,
-        arbitrary_types_allowed=True
-    )
+    model_config = ConfigDict(validate_assignment=True, arbitrary_types_allowed=True)
 
     items: list[T] = Field(default_factory=list)
     total: int = Field(ge=0)
