@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from core.types import (
     Abstract,
@@ -34,6 +34,7 @@ class PublicationType(str, Enum):
     NEWS = "News"
     STUDY = "Study"
     LETTER = "Letter"
+    REPOSITORY = "Repository"
     UNKNOWN = "Unknown"
 
 
@@ -48,6 +49,37 @@ class ExternalIdType(str, Enum):
     PUBMED_CENTRAL = "PubMedCentral"
     DBLP = "DBLP"
     CORPUS_ID = "CorpusId"
+
+
+class EmbeddingType(str, Enum):
+    """Paper embedding type enumeration."""
+
+    SPECTER_V1 = "specter_v1"
+    SPECTER_V2 = "specter_v2"
+
+
+class PublicationVenue(BaseModel):
+    """Publication venue model."""
+
+    id: str | None = None
+    name: str | None = None
+    type: str | None = None
+    alternate_names: list[str] = Field(default_factory=list, alias="alternateNames")
+    issn: str | None = None
+    url: Url | None = None
+
+    class Config:
+        populate_by_name = True
+
+
+class PaperEmbedding(BaseModel):
+    """Paper embedding vector."""
+
+    model: EmbeddingType
+    vector: list[float]
+
+    class Config:
+        populate_by_name = True
 
 
 class Author(BaseModel):
@@ -69,17 +101,6 @@ class Author(BaseModel):
         if not v or not v.strip():
             raise ValueError("Author name cannot be empty")
         return v.strip()
-
-
-class PublicationVenue(BaseModel):
-    """Publication venue model."""
-
-    id: str | None = None
-    name: str | None = None
-    type: str | None = None
-    alternate_names: list[str] = Field(default_factory=list, alias="alternateNames")
-    issn: str | None = None
-    url: Url | None = None
 
 
 class TLDR(BaseModel):
@@ -107,14 +128,22 @@ class OpenAccessPdf(BaseModel):
 class Paper(CacheableModel, BaseEntity):
     """Paper model with all fields."""
 
+    model_config = ConfigDict(
+        validate_assignment=True,
+        use_enum_values=True,
+        arbitrary_types_allowed=True,
+        str_strip_whitespace=True,
+        extra="allow",
+        populate_by_name=True,
+    )
+
     paper_id: PaperId = Field(alias="paperId")
     title: str
     abstract: Abstract = None
     year: Year | None = None
     venue: Venue = None
     publication_types: list[PublicationType] = Field(
-        default_factory=list,
-        alias="publicationTypes"
+        default_factory=list, alias="publicationTypes"
     )
     publication_date: datetime | None = Field(None, alias="publicationDate")
     journal: dict[str, Any] | None = None
@@ -129,6 +158,9 @@ class Paper(CacheableModel, BaseEntity):
 
     # External IDs
     external_ids: dict[str, str] = Field(default_factory=dict, alias="externalIds")
+    corpus_id: str | None = Field(
+        None, alias="corpusId", description="Semantic Scholar corpus identifier"
+    )
 
     # URLs
     url: Url | None = None
@@ -140,10 +172,16 @@ class Paper(CacheableModel, BaseEntity):
     tldr: TLDR | None = None
     is_open_access: bool = Field(False, alias="isOpenAccess")
     open_access_pdf: OpenAccessPdf | None = Field(None, alias="openAccessPdf")
-    
+
     # Citations and references (optional for enhanced get_paper functionality)
     citations: list["Citation"] = Field(default_factory=list)
     references: list["Reference"] = Field(default_factory=list)
+
+    # Embeddings (API spec support)
+    embedding: PaperEmbedding | None = None
+
+    # Match score for search results
+    match_score: float | None = Field(None, alias="matchScore")
 
     @field_validator("title")
     @classmethod
@@ -163,13 +201,22 @@ class Paper(CacheableModel, BaseEntity):
                 raise ValueError(f"Invalid publication year: {v}")
         return v
 
+    @field_validator("corpus_id", mode="before")
+    @classmethod
+    def validate_corpus_id(cls, v: Any) -> str | None:
+        """Validate corpus ID format."""
+        if v is None:
+            return None
+        # Convert to string if integer
+        return str(v) if isinstance(v, int) else v
+
     @field_validator("external_ids", mode="before")
     @classmethod
     def validate_external_ids(cls, v: Any) -> dict[str, str]:
         """Validate and convert external IDs to strings."""
         if not isinstance(v, dict):
             return {}
-        
+
         # Convert all values to strings, handling integers
         result = {}
         for key, value in v.items():
@@ -185,7 +232,7 @@ class Paper(CacheableModel, BaseEntity):
             return []
         if not isinstance(v, list):
             return []
-        
+
         # Convert strings to PublicationType enum values
         result = []
         for item in v:
@@ -203,7 +250,7 @@ class Paper(CacheableModel, BaseEntity):
                     result.append(PublicationType.UNKNOWN)
             elif isinstance(item, PublicationType):
                 result.append(item)
-        
+
         return result
 
     @model_validator(mode="after")
@@ -251,13 +298,20 @@ class SearchFilters(BaseModel):
     year: Year | None = None
     year_range: tuple[Year, Year] | None = Field(None, alias="yearRange")
     publication_types: list[PublicationType] | None = Field(
-        None,
-        alias="publicationTypes"
+        None, alias="publicationTypes"
     )
     fields_of_study: FieldsOfStudy | None = Field(None, alias="fieldsOfStudy")
     venues: list[str] | None = None
     open_access_only: bool = Field(False, alias="openAccessOnly")
     min_citation_count: CitationCount | None = Field(None, alias="minCitationCount")
+
+    # New API spec fields
+    publication_date_or_year: str | None = Field(None, alias="publicationDateOrYear")
+    min_influential_citation_count: int | None = Field(
+        None, alias="minInfluentialCitationCount"
+    )
+    venue_id: str | None = Field(None, alias="venueId")
+    field_of_study_id: str | None = Field(None, alias="fieldOfStudyId")
 
     @model_validator(mode="after")
     def validate_year_range(self) -> "SearchFilters":

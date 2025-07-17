@@ -18,12 +18,13 @@ class RateLimitError(Exception):
     """Raised when API rate limit is exceeded."""
 
 
-
 class SemanticScholarClient:
     """Client for Semantic Scholar API."""
 
-    BASE_URL = "https://api.semanticscholar.org/v1"
+    # API endpoints - v1 is deprecated, use specific API endpoints
     GRAPH_URL = "https://api.semanticscholar.org/graph/v1"
+    RECOMMENDATIONS_URL = "https://api.semanticscholar.org/recommendations/v1"
+    DATASETS_URL = "https://api.semanticscholar.org/datasets/v1"
 
     def __init__(
         self,

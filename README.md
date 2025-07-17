@@ -74,35 +74,104 @@ Get your free API key at: https://www.semanticscholar.org/product/api
 
 Ask in natural language:
 - *"Find recent papers on transformer architectures in NLP"*
-- *"Show me the paper 'Attention is All You Need'"*
-- *"Find papers by Yoshua Bengio"*  
-- *"Help me create a literature review on quantum computing"*
-- *"Analyze the impact of BERT paper through its citations"*
+- *"Show me details about paper with DOI 10.1038/nature14539"*
+- *"Find papers by Yoshua Bengio from 2020 onwards"*  
+- *"Get recommendations based on the BERT paper"*
+- *"Create a literature review on quantum computing"*
 
 ## Available Tools
 
-| Tool                   | Description                          |
-| ---------------------- | ------------------------------------ |
-| `search_papers`        | Search papers with advanced filters  |
-| `get_paper`            | Get detailed paper information       |
-| `get_paper_citations`  | Retrieve papers citing a given paper |
-| `get_paper_references` | Get references from a paper          |
-| `search_authors`       | Search for researchers               |
-| `get_author`           | Get author profile details           |
-| `get_author_papers`    | List papers by an author             |
-| `get_recommendations`  | Get AI-powered paper recommendations |
-| `batch_get_papers`     | Fetch multiple papers efficiently    |
+### 📄 Paper Tools
+
+| Tool                   | Description                     | Example                                            |
+| ---------------------- | ------------------------------- | -------------------------------------------------- |
+| `search_papers`        | Search papers with filters      | *"Search for deep learning papers from 2023"*      |
+| `get_paper`            | Get detailed paper info         | *"Get full details for paper ID abc123"*           |
+| `get_paper_citations`  | Get papers citing this paper    | *"Find papers that cite the attention paper"*      |
+| `get_paper_references` | Get papers this paper cites     | *"Show references from the BERT paper"*            |
+| `get_paper_authors`    | Get detailed author info for paper | *"Show authors of paper abc123"*               |
+| `batch_get_papers`     | Get multiple papers efficiently | *"Get details for papers: abc123, def456, ghi789"* |
+| `bulk_search_papers`   | Advanced search with filters    | *"Search ML papers from 2020-2023 with 50+ citations"* |
+| `search_papers_by_title` | Search by exact title match   | *"Find paper with title 'Attention Is All You Need'"* |
+
+### 👤 Author Tools
+
+| Tool                | Description                | Example                                     |
+| ------------------- | -------------------------- | ------------------------------------------- |
+| `search_authors`    | Search for researchers     | *"Find authors working on computer vision"* |
+| `get_author`        | Get author profile         | *"Get profile for author ID 12345"*         |
+| `get_author_papers` | List author's publications | *"Show papers by Geoffrey Hinton"*          |
+| `batch_get_authors` | Get multiple authors efficiently | *"Get details for authors: 123, 456, 789"* |
+
+### 🤖 AI Tools
+
+| Tool                  | Description                      | Example                               |
+| --------------------- | -------------------------------- | ------------------------------------- |
+| `get_recommendations` | AI-powered paper recommendations | *"Recommend papers similar to GPT-3"* |
+| `get_advanced_recommendations` | Advanced ML recommendations | *"Get recommendations from positive/negative examples"* |
+
+### 🔍 Advanced Search Tools
+
+| Tool                | Description                | Example                                     |
+| ------------------- | -------------------------- | ------------------------------------------- |
+| `autocomplete_query` | Get search suggestions    | *"Complete query 'machine lear...'"*       |
+| `search_snippets`   | Search text snippets      | *"Find papers mentioning 'transformer architecture'"* |
+
+### 🧠 Semantic Analysis Tools
+
+| Tool                | Description                | Example                                     |
+| ------------------- | -------------------------- | ------------------------------------------- |
+| `get_paper_with_embeddings` | Get paper with vector embeddings | *"Get paper with SPECTER embeddings"* |
+| `search_papers_with_embeddings` | Search with semantic vectors | *"Find semantically similar papers"* |
+
+### 📊 Dataset Tools
+
+| Tool                | Description                | Example                                     |
+| ------------------- | -------------------------- | ------------------------------------------- |
+| `get_dataset_releases` | List available datasets | *"Show available dataset releases"*       |
+| `get_dataset_info`  | Get dataset information   | *"Get info for dataset release 2023-01"*   |
+| `get_dataset_download_links` | Get download links | *"Get download links for papers dataset"* |
+| `get_incremental_dataset_updates` | Get dataset updates | *"Get updates between releases"* |
 
 ## Advanced Features
 
-### Resources
-- `papers/{paper_id}` - Direct access to paper data
-- `authors/{author_id}` - Direct access to author profiles
+### 📚 Resources (Direct Access)
 
-### AI Prompts
-- `literature_review` - Generate comprehensive literature reviews
-- `citation_analysis` - Analyze citation networks and impact
-- `research_trend_analysis` - Identify emerging research trends
+| Resource              | Description                  | Usage                           |
+| --------------------- | ---------------------------- | ------------------------------- |
+| `papers/{paper_id}`   | Direct paper data access     | Auto-populated in conversations |
+| `authors/{author_id}` | Direct author profile access | Auto-populated in conversations |
+
+### 🎯 AI Prompts (Smart Templates)
+
+| Prompt                    | Description                               | Usage                                              |
+| ------------------------- | ----------------------------------------- | -------------------------------------------------- |
+| `literature_review`       | Generate comprehensive literature reviews | *"Create a literature review on machine learning"* |
+| `citation_analysis`       | Analyze citation networks and impact      | *"Analyze citations for the transformer paper"*    |
+| `research_trend_analysis` | Identify emerging research trends         | *"Analyze trends in NLP over the last 5 years"*    |
+
+## Practical Examples
+
+### Search and Explore
+```
+"Find recent papers on graph neural networks published after 2022"
+"Show me the most cited papers in computer vision from 2023"
+"Search for papers about attention mechanisms with more than 100 citations"
+```
+
+### Deep Analysis
+```
+"Get full details including citations and references for paper DOI 10.1038/nature14539"
+"Show me all papers by Yann LeCun from the last 3 years"
+"Find papers that cite 'Attention Is All You Need' and analyze their impact"
+```
+
+### AI-Powered Research
+```
+"Based on the GPT-4 paper, recommend 5 related papers I should read"
+"Create a literature review covering the evolution of transformer architectures"
+"Analyze citation patterns for deep learning papers in the last decade"
+```
 
 ## Development
 
@@ -117,13 +186,13 @@ uv sync
 ### Testing
 
 ```bash
-# Run tests
+# Run all tests
 uv run pytest
 
-# Test MCP server
+# Test specific functionality
 uv run python test_simple_search.py
 
-# Use MCP Inspector
+# Use MCP Inspector for debugging
 uv run mcp dev server_standalone.py
 ```
 
@@ -136,11 +205,15 @@ uv build
 ## Architecture
 
 Built with enterprise-grade patterns:
+- **Complete API Coverage**: All 18 Semantic Scholar API endpoints implemented
 - **Resilience**: Circuit breaker pattern for fault tolerance
 - **Performance**: In-memory LRU caching with TTL
 - **Reliability**: Exponential backoff with jitter for retries
 - **Observability**: Structured logging with correlation IDs
 - **Type Safety**: Full type hints with Pydantic models
+- **Semantic Analysis**: SPECTER v1/v2 embeddings for similarity search
+- **Advanced Filtering**: Publication types, venues, date ranges, citation counts
+- **Batch Operations**: Efficient bulk processing for large datasets
 
 ## License
 
@@ -154,4 +227,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-Built for researchers worldwide
+Built for researchers worldwide 🌍

@@ -90,8 +90,14 @@ class SemanticScholarConfig(BaseModel):
     max_keepalive_connections: int = Field(default=20, ge=1)
     default_fields: list[str] = Field(
         default_factory=lambda: [
-            "paperId", "title", "abstract", "year", "authors",
-            "venue", "citationCount", "influentialCitationCount"
+            "paperId",
+            "title",
+            "abstract",
+            "year",
+            "authors",
+            "venue",
+            "citationCount",
+            "influentialCitationCount",
         ]
     )
 
@@ -118,13 +124,15 @@ class LoggingConfig(BaseModel):
     file_path: Path | None = None
     max_file_size: int = Field(default=10 * 1024 * 1024, ge=1)  # 10MB
     backup_count: int = Field(default=5, ge=0)
-    
+
     # MCP-specific debug configuration
     debug_mcp_mode: bool = Field(default=False, env="DEBUG_MCP_MODE")
     log_mcp_messages: bool = Field(default=False, env="LOG_MCP_MESSAGES")
     log_api_payloads: bool = Field(default=False, env="LOG_API_PAYLOADS")
     log_performance_metrics: bool = Field(default=False, env="LOG_PERFORMANCE_METRICS")
-    debug_level_override: LogLevel | None = Field(default=None, env="DEBUG_LEVEL_OVERRIDE")
+    debug_level_override: LogLevel | None = Field(
+        default=None, env="DEBUG_LEVEL_OVERRIDE"
+    )
 
 
 class ServerConfig(BaseModel):
@@ -146,18 +154,17 @@ class ApplicationConfig(BaseSettings):
         env_file_encoding="utf-8",
         env_nested_delimiter="__",
         case_sensitive=False,
-        extra="ignore"
+        extra="ignore",
     )
 
     # Environment
-    environment: Environment = Field(
-        default=Environment.DEVELOPMENT,
-        env="ENVIRONMENT"
-    )
+    environment: Environment = Field(default=Environment.DEVELOPMENT, env="ENVIRONMENT")
 
     # Component configurations
     server: ServerConfig = Field(default_factory=ServerConfig)
-    semantic_scholar: SemanticScholarConfig = Field(default_factory=SemanticScholarConfig)
+    semantic_scholar: SemanticScholarConfig = Field(
+        default_factory=SemanticScholarConfig
+    )
     cache: CacheConfig = Field(default_factory=CacheConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
     retry: RetryConfig = Field(default_factory=RetryConfig)
@@ -230,9 +237,7 @@ class ConfigurationManager:
         return self._configs[env]
 
     def _apply_environment_defaults(
-        self,
-        config: ApplicationConfig,
-        env: Environment
+        self, config: ApplicationConfig, env: Environment
     ) -> None:
         """Apply environment-specific defaults."""
         config.environment = env
@@ -268,18 +273,23 @@ class ConfigurationManager:
         errors = []
 
         # Validate Semantic Scholar config
-        if config.semantic_scholar.api_key and config.rate_limit.requests_per_second > 1:
-            if not config.is_production():
-                errors.append(
-                    "High rate limit with API key in non-production environment"
-                )
+        if (
+            config.semantic_scholar.api_key
+            and config.rate_limit.requests_per_second > 1
+        ) and not config.is_production():
+            errors.append(
+                "High rate limit with API key in non-production environment"
+            )
 
         # Validate cache config
         if config.cache.backend == "redis" and not config.cache.redis_url:
             errors.append("Redis URL required when using Redis cache backend")
 
         # Validate metrics config
-        if config.metrics.backend == "prometheus" and config.metrics.prometheus_port < 1024:
+        if (
+            config.metrics.backend == "prometheus"
+            and config.metrics.prometheus_port < 1024
+        ):
             errors.append("Prometheus port should be >= 1024")
 
         return errors

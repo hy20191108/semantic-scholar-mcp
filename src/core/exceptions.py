@@ -88,7 +88,7 @@ class SemanticScholarMCPError(Exception):
         self.details = details or {}
         self.inner_exception = inner_exception
         self.timestamp = datetime.now(timezone.utc)
-        
+
         # Add stack trace if requested
         if include_stack_trace:
             self.details["stack_trace"] = "".join(traceback.format_stack())
@@ -123,7 +123,9 @@ class SemanticScholarMCPError(Exception):
             parts.append(f"Details: {self.details}")
 
         if self.inner_exception:
-            parts.append(f"Caused by: {type(self.inner_exception).__name__}: {self.inner_exception}")
+            parts.append(
+                f"Caused by: {type(self.inner_exception).__name__}: {self.inner_exception}"
+            )
 
         return " | ".join(parts)
 
@@ -240,7 +242,7 @@ class RateLimitError(SemanticScholarMCPError):
             message=message,
             details=details,
             error_code=ErrorCode.RATE_LIMIT_EXCEEDED,
-            **kwargs
+            **kwargs,
         )
 
 
@@ -494,3 +496,341 @@ class ServiceUnavailableError(APIError):
 
         kwargs["error_code"] = ErrorCode.SERVICE_UNAVAILABLE
         super().__init__(message=message, details=details, **kwargs)
+
+
+class TimeoutError(SemanticScholarMCPError):
+    """Raised when operations time out."""
+
+    def __init__(
+        self,
+        message: str = "Operation timed out",
+        timeout_duration: float | None = None,
+        operation_type: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Initialize timeout error.
+
+        Args:
+            message: Error message
+            timeout_duration: Timeout duration in seconds
+            operation_type: Type of operation that timed out
+            **kwargs: Additional arguments for base exception
+        """
+        details = kwargs.pop("details", {})
+
+        if timeout_duration is not None:
+            details["timeout_duration"] = timeout_duration
+        if operation_type:
+            details["operation_type"] = operation_type
+
+        kwargs["error_code"] = ErrorCode.TIMEOUT_ERROR
+        super().__init__(message=message, details=details, **kwargs)
+
+
+class CircuitBreakerError(SemanticScholarMCPError):
+    """Raised when circuit breaker is open."""
+
+    def __init__(
+        self,
+        message: str = "Circuit breaker is open",
+        failure_count: int | None = None,
+        failure_threshold: int | None = None,
+        reset_timeout: float | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Initialize circuit breaker error.
+
+        Args:
+            message: Error message
+            failure_count: Current failure count
+            failure_threshold: Threshold for opening circuit
+            reset_timeout: Time until circuit reset attempt
+            **kwargs: Additional arguments for base exception
+        """
+        details = kwargs.pop("details", {})
+
+        if failure_count is not None:
+            details["failure_count"] = failure_count
+        if failure_threshold is not None:
+            details["failure_threshold"] = failure_threshold
+        if reset_timeout is not None:
+            details["reset_timeout"] = reset_timeout
+
+        super().__init__(
+            message=message,
+            error_code=ErrorCode.SERVICE_UNAVAILABLE,
+            details=details,
+            **kwargs,
+        )
+
+
+class RetryExhaustedError(SemanticScholarMCPError):
+    """Raised when retry attempts are exhausted."""
+
+    def __init__(
+        self,
+        message: str = "Retry attempts exhausted",
+        max_retries: int | None = None,
+        last_error: Exception | None = None,
+        retry_history: list[dict[str, Any]] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Initialize retry exhausted error.
+
+        Args:
+            message: Error message
+            max_retries: Maximum number of retries attempted
+            last_error: Last error that occurred
+            retry_history: History of retry attempts
+            **kwargs: Additional arguments for base exception
+        """
+        details = kwargs.pop("details", {})
+
+        if max_retries is not None:
+            details["max_retries"] = max_retries
+        if last_error:
+            details["last_error"] = {
+                "type": type(last_error).__name__,
+                "message": str(last_error),
+            }
+        if retry_history:
+            details["retry_history"] = retry_history
+
+        super().__init__(
+            message=message,
+            error_code=ErrorCode.INTERNAL_ERROR,
+            details=details,
+            inner_exception=last_error,
+            **kwargs,
+        )
+
+
+class MCPToolError(SemanticScholarMCPError):
+    """Raised when MCP tool execution fails."""
+
+    def __init__(
+        self,
+        message: str,
+        tool_name: str,
+        arguments: dict[str, Any] | None = None,
+        execution_id: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Initialize MCP tool error.
+
+        Args:
+            message: Error message
+            tool_name: Name of the tool that failed
+            arguments: Arguments passed to the tool
+            execution_id: Unique execution identifier
+            **kwargs: Additional arguments for base exception
+        """
+        details = kwargs.pop("details", {})
+
+        details["tool_name"] = tool_name
+        if arguments:
+            details["arguments"] = arguments
+        if execution_id:
+            details["execution_id"] = execution_id
+
+        super().__init__(
+            message=message,
+            error_code=ErrorCode.INTERNAL_ERROR,
+            details=details,
+            **kwargs,
+        )
+
+
+class MCPResourceError(SemanticScholarMCPError):
+    """Raised when MCP resource operations fail."""
+
+    def __init__(
+        self,
+        message: str,
+        resource_uri: str,
+        resource_type: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Initialize MCP resource error.
+
+        Args:
+            message: Error message
+            resource_uri: URI of the resource
+            resource_type: Type of resource
+            **kwargs: Additional arguments for base exception
+        """
+        details = kwargs.pop("details", {})
+
+        details["resource_uri"] = resource_uri
+        if resource_type:
+            details["resource_type"] = resource_type
+
+        super().__init__(
+            message=message,
+            error_code=ErrorCode.NOT_FOUND,
+            details=details,
+            **kwargs,
+        )
+
+
+class MCPPromptError(SemanticScholarMCPError):
+    """Raised when MCP prompt operations fail."""
+
+    def __init__(
+        self,
+        message: str,
+        prompt_name: str,
+        prompt_args: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Initialize MCP prompt error.
+
+        Args:
+            message: Error message
+            prompt_name: Name of the prompt
+            prompt_args: Arguments passed to the prompt
+            **kwargs: Additional arguments for base exception
+        """
+        details = kwargs.pop("details", {})
+
+        details["prompt_name"] = prompt_name
+        if prompt_args:
+            details["prompt_args"] = prompt_args
+
+        super().__init__(
+            message=message,
+            error_code=ErrorCode.VALIDATION_ERROR,
+            details=details,
+            **kwargs,
+        )
+
+
+class DataProcessingError(SemanticScholarMCPError):
+    """Raised when data processing operations fail."""
+
+    def __init__(
+        self,
+        message: str,
+        data_type: str | None = None,
+        processing_step: str | None = None,
+        data_sample: Any | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Initialize data processing error.
+
+        Args:
+            message: Error message
+            data_type: Type of data being processed
+            processing_step: Step in processing that failed
+            data_sample: Sample of problematic data
+            **kwargs: Additional arguments for base exception
+        """
+        details = kwargs.pop("details", {})
+
+        if data_type:
+            details["data_type"] = data_type
+        if processing_step:
+            details["processing_step"] = processing_step
+        if data_sample is not None:
+            details["data_sample"] = str(data_sample)[:1000]  # Truncate long samples
+
+        super().__init__(
+            message=message,
+            error_code=ErrorCode.INTERNAL_ERROR,
+            details=details,
+            **kwargs,
+        )
+
+
+class ExternalServiceError(APIError):
+    """Raised when external service integration fails."""
+
+    def __init__(
+        self,
+        message: str,
+        service_name: str,
+        service_endpoint: str | None = None,
+        service_version: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Initialize external service error.
+
+        Args:
+            message: Error message
+            service_name: Name of external service
+            service_endpoint: Service endpoint URL
+            service_version: Service version
+            **kwargs: Additional arguments for base exception
+        """
+        details = kwargs.pop("details", {})
+
+        details["service_name"] = service_name
+        if service_endpoint:
+            details["service_endpoint"] = service_endpoint
+        if service_version:
+            details["service_version"] = service_version
+
+        super().__init__(message=message, details=details, **kwargs)
+
+
+def wrap_exception(
+    exception: Exception,
+    context: dict[str, Any] | None = None,
+    error_code: ErrorCode | None = None,
+    include_stack_trace: bool = True,
+) -> SemanticScholarMCPError:
+    """Wrap any exception into a SemanticScholarMCPError.
+
+    Args:
+        exception: Original exception
+        context: Additional context information
+        error_code: Error code to use
+        include_stack_trace: Whether to include stack trace
+
+    Returns:
+        Wrapped exception
+    """
+    if isinstance(exception, SemanticScholarMCPError):
+        return exception
+
+    message = str(exception)
+    error_code = error_code or ErrorCode.INTERNAL_ERROR
+    details = context or {}
+    details["original_exception"] = type(exception).__name__
+
+    return SemanticScholarMCPError(
+        message=message,
+        error_code=error_code,
+        details=details,
+        inner_exception=exception,
+        include_stack_trace=include_stack_trace,
+    )
+
+
+def create_error_response(
+    exception: Exception,
+    include_internal_details: bool = False,
+) -> dict[str, Any]:
+    """Create standardized error response from exception.
+
+    Args:
+        exception: Exception to convert
+        include_internal_details: Whether to include internal details
+
+    Returns:
+        Error response dictionary
+    """
+    if isinstance(exception, SemanticScholarMCPError):
+        response = exception.to_dict()
+    else:
+        wrapped = wrap_exception(exception)
+        response = wrapped.to_dict()
+
+    if not include_internal_details:
+        # Remove sensitive internal details in production
+        if "error" in response and "details" in response["error"]:
+            sensitive_keys = ["stack_trace", "query", "internal_state"]
+            for key in sensitive_keys:
+                response["error"]["details"].pop(key, None)
+
+    return response

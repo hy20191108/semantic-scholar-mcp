@@ -15,8 +15,8 @@ class ServiceLifetime(Enum):
     """Service lifetime enumeration."""
 
     TRANSIENT = "transient"  # New instance each time
-    SCOPED = "scoped"      # New instance per scope
-    SINGLETON = "singleton" # Single instance for app lifetime
+    SCOPED = "scoped"  # New instance per scope
+    SINGLETON = "singleton"  # Single instance for app lifetime
 
 
 class ServiceDescriptor:
@@ -27,7 +27,7 @@ class ServiceDescriptor:
         service_type: type[T],
         implementation: type[T] | Callable[..., T] | T,
         lifetime: ServiceLifetime = ServiceLifetime.TRANSIENT,
-        factory: Callable[..., T] | None = None
+        factory: Callable[..., T] | None = None,
     ):
         self.service_type = service_type
         self.implementation = implementation
@@ -73,7 +73,9 @@ class IServiceScope(Protocol):
 class ServiceScope:
     """Implementation of service scope."""
 
-    def __init__(self, provider: "ServiceProvider", parent: Optional["ServiceProvider"] = None):
+    def __init__(
+        self, provider: "ServiceProvider", parent: Optional["ServiceProvider"] = None
+    ):
         self._provider = provider
         self._parent = parent
         self._instances: dict[type, Any] = {}
@@ -168,8 +170,7 @@ class ServiceProvider:
 
     def create_scope(self) -> ServiceScope:
         """Create new service scope."""
-        scope = ServiceScope(self, self)
-        return scope
+        return ServiceScope(self, self)
 
     def _resolve_service(self, descriptor: ServiceDescriptor) -> Any:
         """Resolve service instance."""
@@ -243,7 +244,7 @@ class ServiceCollection:
     def add_transient(
         self,
         service_type: type[T],
-        implementation: type[T] | Callable[..., T] | None = None
+        implementation: type[T] | Callable[..., T] | None = None,
     ) -> "ServiceCollection":
         """Add transient service."""
         impl = implementation or service_type
@@ -255,7 +256,7 @@ class ServiceCollection:
     def add_scoped(
         self,
         service_type: type[T],
-        implementation: type[T] | Callable[..., T] | None = None
+        implementation: type[T] | Callable[..., T] | None = None,
     ) -> "ServiceCollection":
         """Add scoped service."""
         impl = implementation or service_type
@@ -267,7 +268,7 @@ class ServiceCollection:
     def add_singleton(
         self,
         service_type: type[T],
-        implementation: type[T] | Callable[..., T] | T | None = None
+        implementation: type[T] | Callable[..., T] | T | None = None,
     ) -> "ServiceCollection":
         """Add singleton service."""
         impl = implementation or service_type
@@ -276,7 +277,9 @@ class ServiceCollection:
         )
         return self
 
-    def add_singleton_instance(self, service_type: type[T], instance: T) -> "ServiceCollection":
+    def add_singleton_instance(
+        self, service_type: type[T], instance: T
+    ) -> "ServiceCollection":
         """Add singleton instance."""
         self._services.append(
             ServiceDescriptor(service_type, instance, ServiceLifetime.SINGLETON)
@@ -287,7 +290,7 @@ class ServiceCollection:
         self,
         service_type: type[T],
         factory: Callable[[ServiceProvider], T],
-        lifetime: ServiceLifetime = ServiceLifetime.TRANSIENT
+        lifetime: ServiceLifetime = ServiceLifetime.TRANSIENT,
     ) -> "ServiceCollection":
         """Add service with factory."""
         descriptor = ServiceDescriptor(service_type, factory, lifetime)
@@ -322,7 +325,7 @@ def inject(func: Callable[..., T]) -> Callable[..., T]:
 
         # Inject dependencies
         sig = inspect.signature(func)
-        for param_name, param in sig.parameters.items():
+        for param_name, _param in sig.parameters.items():
             if param_name in kwargs or param_name == "self":
                 continue
 

@@ -79,10 +79,7 @@ class InMemoryCache(ICache[str, Any]):
     def _cleanup_expired(self) -> None:
         """Remove expired entries."""
         now = datetime.now(timezone.utc)
-        expired_keys = [
-            key for key, (_, expiry) in self._cache.items()
-            if now > expiry
-        ]
+        expired_keys = [key for key, (_, expiry) in self._cache.items() if now > expiry]
         for key in expired_keys:
             del self._cache[key]
 

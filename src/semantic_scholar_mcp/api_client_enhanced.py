@@ -11,13 +11,18 @@ import httpx
 
 from core.config import SemanticScholarConfig
 from core.exceptions import (
+    CircuitBreakerError,
     NetworkError,
     NotFoundError,
     RateLimitError,
     ServiceUnavailableError,
     ValidationError,
 )
-from core.logging import RequestContext, get_logger, log_performance
+from core.logging import (
+    RequestContext,
+    get_logger,
+    log_performance,
+)
 from core.protocols import (
     ICache,
     ILogger,
@@ -55,14 +60,14 @@ class CircuitBreaker:
         failure_threshold: int = 5,
         recovery_timeout: float = 60.0,
         expected_exception_types: list[type[Exception]] | None = None,
-        logger: ILogger | None = None
+        logger: ILogger | None = None,
     ):
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.expected_exception_types = expected_exception_types or [
             httpx.HTTPStatusError,
             httpx.TimeoutException,
-            NetworkError
+            NetworkError,
         ]
         self.logger = logger or get_logger("circuit_breaker")
 
@@ -77,15 +82,18 @@ class CircuitBreaker:
         if self._state == CircuitBreakerState.OPEN:
             # Check if recovery timeout has passed
             if (
-                self._last_failure_time and
-                (datetime.now(timezone.utc) - self._last_failure_time).total_seconds() > self.recovery_timeout
+                self._last_failure_time
+                and (
+                    datetime.now(timezone.utc) - self._last_failure_time
+                ).total_seconds()
+                > self.recovery_timeout
             ):
                 self._state = CircuitBreakerState.HALF_OPEN
                 self._half_open_attempts = 0
                 self.logger.log_circuit_breaker_state(
                     "half_open",
                     recovery_timeout=self.recovery_timeout,
-                    failure_count=self._failure_count
+                    failure_count=self._failure_count,
                 )
 
         return self._state
@@ -93,19 +101,51 @@ class CircuitBreaker:
     async def call(self, func, *args, **kwargs):
         """Execute function through circuit breaker."""
         if self.state == CircuitBreakerState.OPEN:
-            raise ServiceUnavailableError(
+            error = CircuitBreakerError(
                 "Circuit breaker is open",
-                service_name="SemanticScholar",
-                retry_after=int(self.recovery_timeout)
+                failure_count=self._failure_count,
+                failure_threshold=self.failure_threshold,
+                reset_timeout=self.recovery_timeout,
             )
+
+            # Log circuit breaker error with context
+            self.logger.log_error_with_context(
+                error,
+                context={
+                    "circuit_breaker_state": self.state.value,
+                    "failure_count": self._failure_count,
+                    "failure_threshold": self.failure_threshold,
+                    "recovery_timeout": self.recovery_timeout,
+                    "last_failure_time": self._last_failure_time.isoformat()
+                    if self._last_failure_time
+                    else None,
+                },
+                recovery_actions=["wait_for_reset", "manual_reset"],
+            )
+
+            raise error
 
         try:
             result = await func(*args, **kwargs)
             self._on_success()
             return result
         except Exception as e:
-            if any(isinstance(e, exc_type) for exc_type in self.expected_exception_types):
+            if any(
+                isinstance(e, exc_type) for exc_type in self.expected_exception_types
+            ):
                 self._on_failure()
+
+                # Log circuit breaker failure
+                self.logger.log_error_with_context(
+                    e,
+                    context={
+                        "circuit_breaker_failure": True,
+                        "failure_count": self._failure_count,
+                        "circuit_breaker_state": self.state.value,
+                    },
+                    recovery_actions=["retry", "circuit_breaker_open"],
+                )
+
             raise
 
     def _on_success(self):
@@ -118,7 +158,7 @@ class CircuitBreaker:
                 self.logger.log_circuit_breaker_state(
                     "closed",
                     half_open_attempts=self._half_open_attempts,
-                    reason="recovery_successful"
+                    reason="recovery_successful",
                 )
         else:
             self._failure_count = 0
@@ -129,7 +169,10 @@ class CircuitBreaker:
         self._failure_count += 1
         self._last_failure_time = datetime.now(timezone.utc)
 
-        if self._failure_count >= self.failure_threshold or self._state == CircuitBreakerState.HALF_OPEN:
+        if (
+            self._failure_count >= self.failure_threshold
+            or self._state == CircuitBreakerState.HALF_OPEN
+        ):
             self._state = CircuitBreakerState.OPEN
             if previous_state != CircuitBreakerState.OPEN:
                 self.logger.log_circuit_breaker_state(
@@ -137,7 +180,9 @@ class CircuitBreaker:
                     failure_count=self._failure_count,
                     failure_threshold=self.failure_threshold,
                     recovery_timeout=self.recovery_timeout,
-                    reason="failure_threshold_exceeded" if self._failure_count >= self.failure_threshold else "half_open_failure"
+                    reason="failure_threshold_exceeded"
+                    if self._failure_count >= self.failure_threshold
+                    else "half_open_failure",
                 )
 
     def reset(self):
@@ -179,13 +224,18 @@ class TokenBucketRateLimiter:
         """Wait if rate limit would be exceeded."""
         while not await self.acquire(tokens):
             wait_time = (tokens - self._tokens) / self.rate
-            self.logger.debug_mcp(
-                "Rate limit reached, waiting",
+
+            # Log rate limit warning
+            self.logger.log_resource_usage(
+                resource_type="rate_limit_tokens",
+                current_usage=self.burst - self._tokens,
+                limit=self.burst,
+                unit="tokens",
                 wait_time_seconds=wait_time,
-                available_tokens=self._tokens,
                 requested_tokens=tokens,
-                rate_per_second=self.rate
+                rate_per_second=self.rate,
             )
+
             await asyncio.sleep(wait_time)
 
     @property
@@ -204,7 +254,7 @@ class ExponentialBackoffRetryStrategy:
         initial_delay: float = 1.0,
         max_delay: float = 60.0,
         exponential_base: float = 2.0,
-        jitter: bool = True
+        jitter: bool = True,
     ):
         self.initial_delay = initial_delay
         self.max_delay = max_delay
@@ -215,7 +265,7 @@ class ExponentialBackoffRetryStrategy:
         """Calculate delay for attempt."""
         delay = min(
             self.initial_delay * (self.exponential_base ** (attempt - 1)),
-            self.max_delay
+            self.max_delay,
         )
 
         if self.jitter:
@@ -228,12 +278,17 @@ class ExponentialBackoffRetryStrategy:
 class SemanticScholarClient:
     """Enterprise-grade Semantic Scholar API client."""
 
+    # API endpoints
+    GRAPH_URL = "https://api.semanticscholar.org/graph/v1"
+    RECOMMENDATIONS_URL = "https://api.semanticscholar.org/recommendations/v1"
+    DATASETS_URL = "https://api.semanticscholar.org/datasets/v1"
+
     def __init__(
         self,
         config: SemanticScholarConfig,
         logger: ILogger | None = None,
         cache: ICache | None = None,
-        metrics: IMetricsCollector | None = None
+        metrics: IMetricsCollector | None = None,
     ):
         self.config = config
         self.logger = logger or get_logger(__name__)
@@ -242,22 +297,32 @@ class SemanticScholarClient:
 
         # Initialize resilience components
         self.circuit_breaker = CircuitBreaker(
-            failure_threshold=config.circuit_breaker.failure_threshold if hasattr(config, 'circuit_breaker') else 5,
-            recovery_timeout=config.circuit_breaker.recovery_timeout if hasattr(config, 'circuit_breaker') else 60.0,
-            logger=self.logger.with_context(component="circuit_breaker")
+            failure_threshold=getattr(
+                getattr(config, "circuit_breaker", None), "failure_threshold", 5
+            ),
+            recovery_timeout=getattr(
+                getattr(config, "circuit_breaker", None), "recovery_timeout", 60.0
+            ),
+            logger=self.logger.with_context(component="circuit_breaker"),
         )
 
         self.rate_limiter = TokenBucketRateLimiter(
-            rate=config.rate_limit.requests_per_second if hasattr(config, 'rate_limit') else 1.0,
-            burst=config.rate_limit.burst_size if hasattr(config, 'rate_limit') else 10,
-            logger=self.logger.with_context(component="rate_limiter")
+            rate=config.rate_limit.requests_per_second
+            if hasattr(config, "rate_limit")
+            else 1.0,
+            burst=config.rate_limit.burst_size if hasattr(config, "rate_limit") else 10,
+            logger=self.logger.with_context(component="rate_limiter"),
         )
 
         self.retry_strategy = ExponentialBackoffRetryStrategy(
-            initial_delay=config.retry.initial_delay if hasattr(config, 'retry') else 1.0,
-            max_delay=config.retry.max_delay if hasattr(config, 'retry') else 60.0,
-            exponential_base=config.retry.exponential_base if hasattr(config, 'retry') else 2.0,
-            jitter=config.retry.jitter if hasattr(config, 'retry') else True
+            initial_delay=config.retry.initial_delay
+            if hasattr(config, "retry")
+            else 1.0,
+            max_delay=config.retry.max_delay if hasattr(config, "retry") else 60.0,
+            exponential_base=config.retry.exponential_base
+            if hasattr(config, "retry")
+            else 2.0,
+            jitter=config.retry.jitter if hasattr(config, "retry") else True,
         )
 
         self._client: httpx.AsyncClient | None = None
@@ -270,8 +335,8 @@ class SemanticScholarClient:
             timeout=self.config.timeout,
             limits=httpx.Limits(
                 max_connections=self.config.max_connections,
-                max_keepalive_connections=self.config.max_keepalive_connections
-            )
+                max_keepalive_connections=self.config.max_keepalive_connections,
+            ),
         )
         return self
 
@@ -283,7 +348,9 @@ class SemanticScholarClient:
     def _build_headers(self) -> dict[str, str]:
         """Build request headers."""
         headers = {
-            "User-Agent": f"{self.config.server.name}/{self.config.server.version}" if hasattr(self.config, 'server') else "semantic-scholar-mcp/0.1.0",
+            "User-Agent": f"{self.config.server.name}/{self.config.server.version}"
+            if hasattr(self.config, "server")
+            else "semantic-scholar-mcp/0.1.0",
             "Accept": "application/json",
         }
 
@@ -299,7 +366,7 @@ class SemanticScholarClient:
         path: str,
         params: dict[str, Any] | None = None,
         json: dict[str, Any] | None = None,
-        retry_count: int = 0
+        retry_count: int = 0,
     ) -> dict[str, Any]:
         """Make HTTP request with resilience patterns."""
         if not self._client:
@@ -314,33 +381,43 @@ class SemanticScholarClient:
         async def _execute_request():
             """Execute the actual request."""
             start_time = time.time()
-            
+
             with RequestContext(request_id=request_id):
+                # Determine base URL based on path
+                if path.startswith("/recommendations"):
+                    base_url = self.RECOMMENDATIONS_URL
+                    actual_path = path.replace("/recommendations/v1", "")
+                elif path.startswith("/datasets"):
+                    base_url = self.DATASETS_URL
+                    actual_path = path.replace("/datasets/v1", "")
+                else:
+                    base_url = self.GRAPH_URL
+                    actual_path = path
+
+                full_url = f"{base_url}{actual_path}"
+
                 # Log request details
                 self.logger.log_api_request(
                     method=method,
-                    url=f"{self.config.base_url}{path}",
+                    url=full_url,
                     params=params,
                     retry_attempt=retry_count,
-                    rate_limit_tokens=self.rate_limiter.available_tokens
+                    rate_limit_tokens=self.rate_limiter.available_tokens,
                 )
 
                 try:
                     response = await self._client.request(
-                        method=method,
-                        url=path,
-                        params=params,
-                        json=json
+                        method=method, url=full_url, params=params, json=json
                     )
-                    
+
                     response_time = time.time() - start_time
-                    
+
                     # Log response details
                     self.logger.log_api_response(
                         status_code=response.status_code,
                         response_time=response_time,
                         retry_attempt=retry_count,
-                        content_length=len(response.content) if response.content else 0
+                        content_length=len(response.content) if response.content else 0,
                     )
 
                     # Handle rate limiting
@@ -350,7 +427,7 @@ class SemanticScholarClient:
                             "Rate limit exceeded",
                             retry_after=retry_after,
                             limit=response.headers.get("X-RateLimit-Limit"),
-                            remaining=response.headers.get("X-RateLimit-Remaining")
+                            remaining=response.headers.get("X-RateLimit-Remaining"),
                         )
 
                     # Handle not found
@@ -358,14 +435,14 @@ class SemanticScholarClient:
                         raise NotFoundError(
                             "Resource not found",
                             resource_type="API endpoint",
-                            resource_id=path
+                            resource_id=path,
                         )
 
                     # Handle server errors
                     if response.status_code >= 500:
                         raise ServiceUnavailableError(
                             f"Server error: {response.status_code}",
-                            service_name="SemanticScholar"
+                            service_name="SemanticScholar",
                         )
 
                     response.raise_for_status()
@@ -376,7 +453,7 @@ class SemanticScholarClient:
                     if self.metrics:
                         self.metrics.increment(
                             "api_requests_total",
-                            tags={"method": method, "status": "success"}
+                            tags={"method": method, "status": "success"},
                         )
 
                     return data
@@ -385,40 +462,34 @@ class SemanticScholarClient:
                     self.logger.error(
                         "Request timeout",
                         url=str(e.request.url) if e.request else None,
-                        timeout=self.config.timeout
+                        timeout=self.config.timeout,
                     )
                     if self.metrics:
                         self.metrics.increment(
                             "api_requests_total",
-                            tags={"method": method, "status": "timeout"}
+                            tags={"method": method, "status": "timeout"},
                         )
                     raise NetworkError(
-                        "Request timed out",
-                        url=path,
-                        timeout=self.config.timeout
+                        "Request timed out", url=path, timeout=self.config.timeout
                     )
 
                 except httpx.NetworkError as e:
-                    self.logger.error(
-                        "Network error",
-                        exception=e
-                    )
+                    self.logger.error("Network error", exception=e)
                     if self.metrics:
                         self.metrics.increment(
                             "api_requests_total",
-                            tags={"method": method, "status": "network_error"}
+                            tags={"method": method, "status": "network_error"},
                         )
-                    raise NetworkError(
-                        "Network error occurred",
-                        url=path
-                    )
+                    raise NetworkError("Network error occurred", url=path)
 
         # Execute with circuit breaker
         try:
             return await self.circuit_breaker.call(_execute_request)
         except (RateLimitError, ServiceUnavailableError, NetworkError) as e:
             # Retry with exponential backoff
-            max_attempts = self.config.retry.max_attempts if hasattr(self.config, 'retry') else 3
+            max_attempts = (
+                self.config.retry.max_attempts if hasattr(self.config, "retry") else 3
+            )
             if retry_count < max_attempts:
                 delay = self.retry_strategy.get_delay(retry_count + 1)
                 self.logger.debug_mcp(
@@ -431,7 +502,7 @@ class SemanticScholarClient:
                     method=method,
                     path=path,
                     exponential_base=self.retry_strategy.exponential_base,
-                    max_delay=self.retry_strategy.max_delay
+                    max_delay=self.retry_strategy.max_delay,
                 )
                 await asyncio.sleep(delay)
                 return await self._make_request(
@@ -440,9 +511,7 @@ class SemanticScholarClient:
             raise
 
     async def search_papers(
-        self,
-        query: SearchQuery,
-        fields: Fields | None = None
+        self, query: SearchQuery, fields: Fields | None = None
     ) -> PaginatedResponse[Paper]:
         """Search for papers with advanced query support."""
         # Validate query
@@ -463,7 +532,7 @@ class SemanticScholarClient:
             "query": query.query,
             "fields": ",".join(fields),
             "limit": query.limit,
-            "offset": query.offset
+            "offset": query.offset,
         }
 
         if query.sort:
@@ -485,7 +554,7 @@ class SemanticScholarClient:
             items=papers,
             total=data.get("total", 0),
             offset=query.offset,
-            limit=query.limit
+            limit=query.limit,
         )
 
         # Cache result
@@ -499,7 +568,7 @@ class SemanticScholarClient:
         paper_id: PaperId,
         fields: Fields | None = None,
         include_citations: bool = False,
-        include_references: bool = False
+        include_references: bool = False,
     ) -> Paper:
         """Get paper details with optional citations and references."""
         # Validate paper ID
@@ -543,20 +612,14 @@ class SemanticScholarClient:
         paper_id: PaperId,
         fields: Fields | None = None,
         offset: int = 0,
-        limit: int = 100
+        limit: int = 100,
     ) -> list[Citation]:
         """Get citations for a paper."""
         fields = fields or CITATION_FIELDS
-        params = {
-            "fields": ",".join(fields),
-            "offset": offset,
-            "limit": limit
-        }
+        params = {"fields": ",".join(fields), "offset": offset, "limit": limit}
 
         data = await self._make_request(
-            "GET",
-            f"/paper/{paper_id}/citations",
-            params=params
+            "GET", f"/paper/{paper_id}/citations", params=params
         )
 
         return [Citation(**cite) for cite in data.get("data", [])]
@@ -566,38 +629,56 @@ class SemanticScholarClient:
         paper_id: PaperId,
         fields: Fields | None = None,
         offset: int = 0,
-        limit: int = 100
+        limit: int = 100,
     ) -> list[Reference]:
         """Get references for a paper."""
         fields = fields or CITATION_FIELDS
-        params = {
-            "fields": ",".join(fields),
-            "offset": offset,
-            "limit": limit
-        }
+        params = {"fields": ",".join(fields), "offset": offset, "limit": limit}
 
         data = await self._make_request(
-            "GET",
-            f"/paper/{paper_id}/references",
-            params=params
+            "GET", f"/paper/{paper_id}/references", params=params
         )
 
         return [Reference(**ref) for ref in data.get("data", [])]
 
-    async def batch_get_papers(
+    async def get_paper_authors(
         self,
-        paper_ids: list[PaperId],
-        fields: Fields | None = None
+        paper_id: PaperId,
+        fields: Fields | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> PaginatedResponse[Author]:
+        """Get paper authors with pagination support."""
+        fields = fields or AUTHOR_FIELDS
+        params = {
+            "fields": ",".join(fields),
+            "limit": limit,
+            "offset": offset,
+        }
+
+        data = await self._make_request(
+            "GET", f"/paper/{paper_id}/authors", params=params
+        )
+
+        authors = [Author(**author_data) for author_data in data.get("data", [])]
+
+        return PaginatedResponse[Author](
+            items=authors,
+            total=data.get("total", 0),
+            offset=offset,
+            limit=limit,
+        )
+
+    async def batch_get_papers(
+        self, paper_ids: list[PaperId], fields: Fields | None = None
     ) -> list[Paper]:
-        """Get multiple papers in a single request."""
+        """Get multiple papers in a single request with improved response handling."""
         if not paper_ids:
             return []
 
         if len(paper_ids) > 500:
             raise ValidationError(
-                "Too many paper IDs",
-                field="paper_ids",
-                value=len(paper_ids)
+                "Too many paper IDs", field="paper_ids", value=len(paper_ids)
             )
 
         fields = fields or BASIC_PAPER_FIELDS
@@ -611,15 +692,35 @@ class SemanticScholarClient:
             "POST",
             "/paper/batch",
             json={"ids": paper_ids},
-            params={"fields": ",".join(fields)} if fields else {}
+            params={"fields": ",".join(fields)} if fields else {},
         )
 
-        return [Paper(**paper_data) for paper_data in data if paper_data]
+        # Handle response format variations
+        papers = []
+        if isinstance(data, dict) and "data" in data:
+            paper_list = data["data"]
+        elif isinstance(data, list):
+            paper_list = data
+        else:
+            paper_list = []
+
+        # Parse papers, handling None values and validation errors
+        for paper_data in paper_list:
+            if paper_data:  # Skip None entries
+                try:
+                    papers.append(Paper(**paper_data))
+                except Exception as e:
+                    self.logger.warning(
+                        "Failed to parse paper data in batch",
+                        paper_data=paper_data,
+                        error=str(e),
+                    )
+                    continue
+
+        return papers
 
     async def get_author(
-        self,
-        author_id: AuthorId,
-        fields: Fields | None = None
+        self, author_id: AuthorId, fields: Fields | None = None
     ) -> Author:
         """Get author details."""
         # Validate author ID
@@ -654,37 +755,24 @@ class SemanticScholarClient:
         author_id: AuthorId,
         fields: Fields | None = None,
         offset: int = 0,
-        limit: int = 100
+        limit: int = 100,
     ) -> PaginatedResponse[Paper]:
         """Get papers by an author."""
         fields = fields or BASIC_PAPER_FIELDS
-        params = {
-            "fields": ",".join(fields),
-            "offset": offset,
-            "limit": limit
-        }
+        params = {"fields": ",".join(fields), "offset": offset, "limit": limit}
 
         data = await self._make_request(
-            "GET",
-            f"/author/{author_id}/papers",
-            params=params
+            "GET", f"/author/{author_id}/papers", params=params
         )
 
         papers = [Paper(**paper_data) for paper_data in data.get("data", [])]
 
         return PaginatedResponse[Paper](
-            items=papers,
-            total=data.get("total", 0),
-            offset=offset,
-            limit=limit
+            items=papers, total=data.get("total", 0), offset=offset, limit=limit
         )
 
     async def search_authors(
-        self,
-        query: str,
-        fields: Fields | None = None,
-        offset: int = 0,
-        limit: int = 10
+        self, query: str, fields: Fields | None = None, offset: int = 0, limit: int = 10
     ) -> PaginatedResponse[Author]:
         """Search for authors."""
         if not query.strip():
@@ -695,7 +783,7 @@ class SemanticScholarClient:
             "query": query,
             "fields": ",".join(fields),
             "offset": offset,
-            "limit": limit
+            "limit": limit,
         }
 
         data = await self._make_request("GET", "/author/search", params=params)
@@ -703,42 +791,59 @@ class SemanticScholarClient:
         authors = [Author(**author_data) for author_data in data.get("data", [])]
 
         return PaginatedResponse[Author](
-            items=authors,
-            total=data.get("total", 0),
-            offset=offset,
-            limit=limit
+            items=authors, total=data.get("total", 0), offset=offset, limit=limit
         )
 
     async def get_recommendations(
-        self,
-        paper_id: PaperId,
-        fields: Fields | None = None,
-        limit: int = 10
+        self, paper_id: PaperId, fields: Fields | None = None, limit: int = 10
     ) -> list[Paper]:
-        """Get paper recommendations based on a paper."""
+        """Get paper recommendations based on a paper with improved response handling."""
         fields = fields or BASIC_PAPER_FIELDS
         params = {
             "fields": ",".join(fields),
-            "limit": limit
+            "limit": min(limit, 100),  # Max 100 recommendations
         }
 
         try:
-            # Try the recommendations endpoint
+            # Use recommendations API endpoint
             data = await self._make_request(
-                "GET",
-                f"/recommendations/v1/papers/forpaper/{paper_id}",
-                params=params
+                "GET", f"/recommendations/v1/papers/forpaper/{paper_id}", params=params
             )
-            
-            # Handle different response formats
-            papers_data = data.get("recommendedPapers", data.get("papers", data.get("data", [])))
-            return [Paper(**paper_data) for paper_data in papers_data]
+
+            # Handle response format variations
+            papers_data = []
+            if isinstance(data, dict):
+                # Try different possible keys for recommendations
+                for key in ["recommendedPapers", "papers", "data"]:
+                    if key in data:
+                        papers_data = data[key]
+                        break
+            elif isinstance(data, list):
+                papers_data = data
+
+            # Parse papers with error handling
+            papers = []
+            for paper_data in papers_data:
+                if paper_data:  # Skip None entries
+                    try:
+                        papers.append(Paper(**paper_data))
+                    except Exception as e:
+                        self.logger.warning(
+                            "Failed to parse recommendation paper data",
+                            paper_data=paper_data,
+                            error=str(e),
+                        )
+                        continue
+
+            return papers
+
         except Exception as e:
             # If recommendations endpoint fails, return empty list with warning
             self.logger.warning(
                 "Recommendations endpoint failed, returning empty list",
                 paper_id=paper_id,
-                error=str(e)
+                error=str(e),
+                error_type=type(e).__name__,
             )
             return []
 
@@ -751,22 +856,270 @@ class SemanticScholarClient:
         return {
             "available_tokens": self.rate_limiter.available_tokens,
             "rate": self.rate_limiter.rate,
-            "burst": self.rate_limiter.burst
+            "burst": self.rate_limiter.burst,
         }
+
+    async def bulk_search_papers(
+        self,
+        query: str,
+        fields: Fields | None = None,
+        publication_types: list[str] | None = None,
+        fields_of_study: list[str] | None = None,
+        year_range: str | None = None,
+        venue: str | None = None,
+        min_citation_count: int | None = None,
+        open_access_pdf: bool | None = None,
+        sort: str | None = None,
+        **kwargs,
+    ) -> list[Paper]:
+        """Bulk search papers with advanced filtering (unlimited results)."""
+        fields = fields or BASIC_PAPER_FIELDS
+        params = {
+            "query": query,
+            "fields": ",".join(fields),
+        }
+
+        # Map filter parameters correctly
+        if publication_types:
+            params["publicationTypes"] = (
+                ",".join(publication_types)
+                if isinstance(publication_types, list)
+                else publication_types
+            )
+        if fields_of_study:
+            params["fieldsOfStudy"] = (
+                ",".join(fields_of_study)
+                if isinstance(fields_of_study, list)
+                else fields_of_study
+            )
+        if year_range:
+            params["year"] = year_range
+        if venue:
+            params["venue"] = venue
+        if min_citation_count:
+            params["minCitationCount"] = str(min_citation_count)
+        if open_access_pdf is not None:
+            params["openAccessPdf"] = str(open_access_pdf).lower()
+        if sort:
+            params["sort"] = sort
+
+        # Handle additional kwargs but skip 'limit' as it's not supported by bulk endpoint
+        for key, value in kwargs.items():
+            if key != "limit" and value is not None:
+                params[key] = value
+
+        data = await self._make_request("GET", "/paper/search/bulk", params=params)
+
+        # Handle response format variations
+        if isinstance(data, dict) and "data" in data:
+            return [Paper(**paper_data) for paper_data in data["data"]]
+        if isinstance(data, list):
+            return [Paper(**paper_data) for paper_data in data]
+        return []
+
+    async def search_papers_by_title(
+        self, title: str, fields: Fields | None = None
+    ) -> list[Paper]:
+        """Search papers by title matching."""
+        fields = fields or BASIC_PAPER_FIELDS
+        params = {"query": title, "fields": ",".join(fields)}
+
+        data = await self._make_request("GET", "/paper/search/match", params=params)
+
+        # Convert raw data to Paper objects, handling matchScore field
+        papers = []
+        for paper_data in data.get("data", []):
+            # Extract matchScore if present
+            match_score = paper_data.pop("matchScore", None)
+
+            # Create Paper object using model_validate to bypass constructor validation
+            paper = Paper.model_validate(paper_data)
+
+            # Add matchScore as a dynamic attribute
+            if match_score is not None:
+                paper.matchScore = match_score
+
+            papers.append(paper)
+
+        return papers
+
+    async def autocomplete_query(self, query: str, limit: int = 10) -> list[str]:
+        """Get query autocompletion suggestions."""
+        params = {"query": query, "limit": limit}
+
+        data = await self._make_request("GET", "/paper/autocomplete", params=params)
+        return data.get("suggestions", [])
+
+    async def search_snippets(
+        self,
+        query: str,
+        fields: Fields | None = None,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> PaginatedResponse[dict[str, Any]]:
+        """Search text snippets in papers."""
+        fields = fields or BASIC_PAPER_FIELDS
+        params = {
+            "query": query,
+            "fields": ",".join(fields),
+            "limit": limit,
+            "offset": offset,
+        }
+
+        data = await self._make_request("GET", "/snippet/search", params=params)
+        snippets = data.get("data", [])
+
+        return PaginatedResponse[dict[str, Any]](
+            items=snippets, total=data.get("total", 0), offset=offset, limit=limit
+        )
+
+    async def batch_get_authors(
+        self, author_ids: list[AuthorId], fields: Fields | None = None
+    ) -> list[Author]:
+        """Get multiple authors by their IDs."""
+        fields = fields or AUTHOR_FIELDS
+        data = {
+            "ids": author_ids,
+            "fields": ",".join(fields),
+        }
+
+        response = await self._make_request("POST", "/author/batch", json=data)
+        # Handle response format: batch endpoint returns a list directly
+        if isinstance(response, list):
+            return [Author(**author_data) for author_data in response]
+        # Fallback to dict format with "data" key if needed
+        return [Author(**author_data) for author_data in response.get("data", [])]
+
+    async def get_advanced_recommendations(
+        self,
+        positive_paper_ids: list[PaperId],
+        negative_paper_ids: list[PaperId] | None = None,
+        fields: Fields | None = None,
+        limit: int = 10,
+    ) -> list[Paper]:
+        """Get recommendations based on positive and negative examples."""
+        fields = fields or BASIC_PAPER_FIELDS
+        data = {
+            "positivePaperIds": positive_paper_ids,
+            "negativePaperIds": negative_paper_ids or [],
+            "fields": ",".join(fields),
+            "limit": limit,
+        }
+
+        try:
+            response = await self._make_request(
+                "POST", "/recommendations/v1/papers/", json=data
+            )
+            papers_data = response.get("recommendedPapers", [])
+            return [Paper(**paper_data) for paper_data in papers_data]
+        except Exception as e:
+            self.logger.warning(
+                "Advanced recommendations endpoint failed",
+                positive_papers=len(positive_paper_ids),
+                negative_papers=len(negative_paper_ids or []),
+                error=str(e),
+            )
+            return []
+
+    async def get_dataset_releases(self) -> list[dict[str, Any]]:
+        """Get available dataset releases."""
+        data = await self._make_request("GET", "/datasets/v1/release/")
+        # API returns a list directly, not a dict with "releases" key
+        return data if isinstance(data, list) else []
+
+    async def get_dataset_info(self, release_id: str) -> dict[str, Any]:
+        """Get dataset release information."""
+        return await self._make_request("GET", f"/datasets/v1/release/{release_id}")
+
+    async def get_dataset_download_links(
+        self, release_id: str, dataset_name: str
+    ) -> dict[str, Any]:
+        """Get download links for a specific dataset."""
+        return await self._make_request(
+            "GET", f"/datasets/v1/release/{release_id}/dataset/{dataset_name}"
+        )
+
+    async def get_paper_with_embeddings(
+        self,
+        paper_id: PaperId,
+        embedding_type: str = "specter_v2",
+        fields: Fields | None = None,
+    ) -> Paper:
+        """Get paper with embedding vectors."""
+        base_fields = fields or DETAILED_PAPER_FIELDS
+        embedding_fields = [f"embedding.{embedding_type}"]
+        all_fields = list(base_fields) + embedding_fields
+
+        params = {"fields": ",".join(all_fields)}
+
+        data = await self._make_request("GET", f"/paper/{paper_id}", params=params)
+        return Paper(**data)
+
+    async def search_papers_with_embeddings(
+        self,
+        query: SearchQuery,
+        embedding_type: str = "specter_v2",
+        fields: Fields | None = None,
+    ) -> PaginatedResponse[Paper]:
+        """Search papers with embedding vectors."""
+        base_fields = fields or BASIC_PAPER_FIELDS
+        embedding_fields = [f"embedding.{embedding_type}"]
+        all_fields = list(base_fields) + embedding_fields
+
+        params = {
+            "query": query.query,
+            "fields": ",".join(all_fields),
+            "limit": query.limit,
+            "offset": query.offset,
+        }
+
+        if query.filters:
+            if query.filters.publication_types:
+                params["publicationTypes"] = ",".join(
+                    [pt.value for pt in query.filters.publication_types]
+                )
+            if query.filters.fields_of_study:
+                params["fieldsOfStudy"] = ",".join(query.filters.fields_of_study)
+            if query.filters.year:
+                params["year"] = str(query.filters.year)
+            if query.filters.year_range:
+                start, end = query.filters.year_range
+                params["year"] = f"{start}-{end}"
+            if query.filters.min_citation_count:
+                params["minCitationCount"] = str(query.filters.min_citation_count)
+            if query.filters.open_access_only:
+                params["openAccessPdf"] = "true"
+
+        data = await self._make_request("GET", "/paper/search", params=params)
+        papers = [Paper(**paper_data) for paper_data in data.get("data", [])]
+
+        return PaginatedResponse[Paper](
+            items=papers,
+            total=data.get("total", 0),
+            offset=query.offset,
+            limit=query.limit,
+        )
+
+    async def get_incremental_dataset_updates(
+        self, start_release_id: str, end_release_id: str, dataset_name: str
+    ) -> dict[str, Any]:
+        """Get incremental dataset updates between releases."""
+        return await self._make_request(
+            "GET",
+            f"/datasets/v1/diffs/{start_release_id}/to/{end_release_id}/{dataset_name}",
+        )
 
     async def health_check(self) -> dict[str, Any]:
         """Perform health check."""
         try:
             # Try a simple search
-            await self.search_papers(
-                SearchQuery(query="test", limit=1)
-            )
+            await self.search_papers(SearchQuery(query="test", limit=1))
 
             return {
                 "status": "healthy",
                 "circuit_breaker": self.get_circuit_breaker_state(),
                 "rate_limiter": self.get_rate_limiter_status(),
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
         except Exception as e:
             return {
@@ -774,5 +1127,5 @@ class SemanticScholarClient:
                 "error": str(e),
                 "circuit_breaker": self.get_circuit_breaker_state(),
                 "rate_limiter": self.get_rate_limiter_status(),
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }

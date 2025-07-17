@@ -11,64 +11,88 @@ from pydantic import Field
 
 from core.cache import InMemoryCache
 from core.config import ApplicationConfig, get_config
+from core.error_handler import MCPErrorHandler, mcp_error_handler
 from core.exceptions import ValidationError
 from core.logging import MCPToolContext, RequestContext, get_logger, initialize_logging
+from core.metrics_collector import MetricsCollector
 
 from .api_client_enhanced import SemanticScholarClient
 from .domain_models import (
     SearchFilters,
     SearchQuery,
 )
+from .utils import (
+    apply_field_selection,
+    extract_field_value,
+    format_error_response,
+    format_success_response,
+    parse_year_range,
+    validate_batch_size,
+)
 
 # Initialize FastMCP server
 mcp = FastMCP(
     name="semantic-scholar-mcp",
-    description="MCP server for accessing Semantic Scholar academic database"
+    description="MCP server for accessing Semantic Scholar academic database",
 )
 
 # Global instances
 logger = get_logger(__name__)
 config: ApplicationConfig | None = None
 api_client: SemanticScholarClient | None = None
+error_handler: MCPErrorHandler | None = None
+metrics_collector: MetricsCollector | None = None
 
 
 async def initialize_server():
     """Initialize server components."""
-    global config, api_client
+    global config, api_client, error_handler, metrics_collector
 
     # Load configuration
     config = get_config()
 
     # Initialize logging with MCP-safe settings
     import os
-    
+
     # Handle MCP mode logging configuration
     if os.getenv("MCP_MODE", "false").lower() == "true":
         # Standard MCP compatibility mode
         if not config.logging.debug_mcp_mode:
             config.logging.level = "ERROR"
-    
+
     # Override log level for debug mode
     if config.logging.debug_mcp_mode and config.logging.debug_level_override:
         config.logging.level = config.logging.debug_level_override
     elif config.logging.debug_mcp_mode:
         # Enable debug logging when MCP debug mode is active
         config.logging.level = "DEBUG"
-    
+
     initialize_logging(config.logging)
 
     # Create cache
-    cache = InMemoryCache(
-        max_size=config.cache.max_size,
-        default_ttl=config.cache.ttl_seconds
-    ) if config.cache.enabled else None
+    cache = (
+        InMemoryCache(
+            max_size=config.cache.max_size, default_ttl=config.cache.ttl_seconds
+        )
+        if config.cache.enabled
+        else None
+    )
 
     # Create API client
     api_client = SemanticScholarClient(
-        config=config.semantic_scholar,
-        logger=logger,
-        cache=cache
+        config=config.semantic_scholar, logger=logger, cache=cache
     )
+
+    # Initialize error handler and metrics collector
+    metrics_collector = MetricsCollector(max_history=1000)
+    error_handler = MCPErrorHandler()
+
+    # Set global instances for decorators
+    from core.error_handler import set_global_error_handler
+    from core.metrics_collector import set_global_metrics_collector
+
+    set_global_metrics_collector(metrics_collector)
+    set_global_error_handler(error_handler)
 
     # Log server initialization details
     logger.info(
@@ -76,51 +100,78 @@ async def initialize_server():
         version=config.server.version,
         environment=config.environment.value,
         debug_mcp_mode=config.logging.debug_mcp_mode,
-        log_level=config.logging.level.value if hasattr(config.logging.level, 'value') else str(config.logging.level),
-        performance_metrics_enabled=config.logging.log_performance_metrics
+        log_level=config.logging.level.value
+        if hasattr(config.logging.level, "value")
+        else str(config.logging.level),
+        performance_metrics_enabled=config.logging.log_performance_metrics,
     )
-    
+
     # Log MCP tools and resources if debug mode is enabled
     if config.logging.debug_mcp_mode:
         logger.debug_mcp(
             "MCP server configuration details",
             mcp_tools=[
-                "search_papers", "get_paper", "get_paper_citations", "get_paper_references",
-                "get_author", "get_author_papers", "search_authors", "get_recommendations", "batch_get_papers"
+                "search_papers",
+                "get_paper",
+                "get_paper_citations",
+                "get_paper_references",
+                "get_paper_authors",
+                "get_author",
+                "get_author_papers",
+                "search_authors",
+                "get_recommendations",
+                "batch_get_papers",
+                "bulk_search_papers",
+                "search_papers_by_title",
+                "autocomplete_query",
+                "search_snippets",
+                "batch_get_authors",
+                "get_advanced_recommendations",
+                "get_dataset_releases",
+                "get_dataset_info",
+                "get_dataset_download_links",
+                "get_paper_with_embeddings",
+                "search_papers_with_embeddings",
+                "get_incremental_dataset_updates",
             ],
-            mcp_resources=[
-                "papers/{paper_id}", "authors/{author_id}"
-            ],
+            mcp_resources=["papers/{paper_id}", "authors/{author_id}"],
             mcp_prompts=[
-                "literature_review", "citation_analysis", "research_trend_analysis"
+                "literature_review",
+                "citation_analysis",
+                "research_trend_analysis",
             ],
             cache_enabled=config.cache.enabled,
             rate_limit_enabled=config.rate_limit.enabled,
-            circuit_breaker_enabled=config.circuit_breaker.enabled
+            circuit_breaker_enabled=config.circuit_breaker.enabled,
         )
-
-
-def extract_field_value(value: Any) -> Any:
-    """Extract actual value from Pydantic Field objects."""
-    if hasattr(value, 'default'):
-        return getattr(value, 'default', value)
-    return value
 
 
 # Tool implementations
 
+
 @mcp.tool()
+@mcp_error_handler(tool_name="search_papers")
 async def search_papers(
     query: str,
-    limit: int = Field(default=10, ge=1, le=100, description="Number of results to return"),
+    limit: int = Field(
+        default=10, ge=1, le=100, description="Number of results to return"
+    ),
     offset: int = Field(default=0, ge=0, description="Offset for pagination"),
     year: int | None = Field(default=None, description="Filter by publication year"),
-    fields_of_study: list[str] | None = Field(default=None, description="Filter by fields of study"),
-    sort: str | None = Field(default=None, description="Sort order (relevance, citationCount, year)")
+    fields_of_study: list[str] | None = Field(
+        default=None, description="Filter by fields of study"
+    ),
+    sort: str | None = Field(
+        default=None, description="Sort order (relevance, citationCount, year)"
+    ),
+    fields: list[str] | None = Field(
+        default=None,
+        description="Fields to include in response (supports dot notation)",
+    ),
 ) -> dict[str, Any]:
     """
     Search for academic papers in Semantic Scholar.
-    
+
     Args:
         query: Search query string
         limit: Maximum number of results (1-100)
@@ -128,7 +179,7 @@ async def search_papers(
         year: Filter by publication year
         fields_of_study: Filter by fields of study
         sort: Sort order
-        
+
     Returns:
         Dictionary containing search results with papers and metadata
     """
@@ -141,15 +192,16 @@ async def search_papers(
                 offset=offset,
                 year=year,
                 fields_of_study=fields_of_study,
-                sort=sort
+                sort=sort,
             )
-            
+
             # Extract actual values from Field objects
             actual_limit = extract_field_value(limit)
             actual_offset = extract_field_value(offset)
             actual_sort = extract_field_value(sort)
             actual_year = extract_field_value(year)
             actual_fields_of_study = extract_field_value(fields_of_study)
+            actual_fields = extract_field_value(fields)
 
             logger.debug_mcp(
                 "Extracted field values",
@@ -157,7 +209,7 @@ async def search_papers(
                 actual_offset=actual_offset,
                 actual_sort=actual_sort,
                 actual_year=actual_year,
-                actual_fields_of_study=actual_fields_of_study
+                actual_fields_of_study=actual_fields_of_study,
             )
 
             # Build search query
@@ -165,19 +217,26 @@ async def search_papers(
                 query=query,
                 limit=actual_limit,
                 offset=actual_offset,
-                sort=actual_sort
+                sort=actual_sort,
+                fields=actual_fields,
             )
 
             # Apply filters if provided
             if actual_year or actual_fields_of_study:
                 search_query.filters = SearchFilters(
-                    year=actual_year,
-                    fields_of_study=actual_fields_of_study
+                    year=actual_year, fields_of_study=actual_fields_of_study
                 )
-                logger.debug_mcp("Applied search filters", filters=search_query.filters.model_dump() if search_query.filters else None)
+                logger.debug_mcp(
+                    "Applied search filters",
+                    filters=search_query.filters.model_dump()
+                    if search_query.filters
+                    else None,
+                )
 
             # Execute search
-            logger.debug_mcp("Executing API search", search_query=search_query.model_dump())
+            logger.debug_mcp(
+                "Executing API search", search_query=search_query.model_dump()
+            )
             async with api_client:
                 result = await api_client.search_papers(search_query)
 
@@ -185,19 +244,27 @@ async def search_papers(
                 "Search completed successfully",
                 result_count=len(result.items),
                 total=result.total,
-                has_more=result.has_more
+                has_more=result.has_more,
             )
 
             # Format response
+            papers_data = []
+            for paper in result.items:
+                paper_dict = paper.model_dump(exclude_none=True)
+                # Apply field selection if requested
+                if actual_fields:
+                    paper_dict = apply_field_selection(paper_dict, actual_fields)
+                papers_data.append(paper_dict)
+
             return {
                 "success": True,
                 "data": {
-                    "papers": [paper.model_dump(exclude_none=True) for paper in result.items],
+                    "papers": papers_data,
                     "total": result.total,
                     "offset": result.offset,
                     "limit": result.limit,
-                    "has_more": result.has_more
-                }
+                    "has_more": result.has_more,
+                },
             }
 
         except ValidationError as e:
@@ -207,15 +274,15 @@ async def search_papers(
                 exception=e,
                 tool_name="search_papers",
                 query=query,
-                validation_details=e.details
+                validation_details=e.details,
             )
             return {
                 "success": False,
                 "error": {
                     "type": "validation_error",
                     "message": str(e),
-                    "details": e.details
-                }
+                    "details": e.details,
+                },
             }
         except Exception as e:
             logger.log_with_stack_trace(
@@ -224,47 +291,58 @@ async def search_papers(
                 exception=e,
                 tool_name="search_papers",
                 query=query,
-                exception_type=type(e).__name__
+                exception_type=type(e).__name__,
             )
-            return {
-                "success": False,
-                "error": {
-                    "type": "error",
-                    "message": str(e)
-                }
-            }
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
 @mcp.tool()
+@mcp_error_handler(tool_name="get_paper")
 async def get_paper(
     paper_id: str,
-    include_citations: bool = Field(default=False, description="Include citation details"),
-    include_references: bool = Field(default=False, description="Include reference details")
+    fields: list[str] | None = Field(
+        default=None,
+        description="Fields to include in response (supports dot notation)",
+    ),
+    include_citations: bool = Field(
+        default=False, description="Include citation details"
+    ),
+    include_references: bool = Field(
+        default=False, description="Include reference details"
+    ),
 ) -> dict[str, Any]:
     """
     Get detailed information about a specific paper.
-    
+
     Args:
         paper_id: Paper ID (Semantic Scholar ID, DOI, or ArXiv ID)
+        fields: Optional list of fields to include (supports dot notation)
         include_citations: Whether to include citation details
         include_references: Whether to include reference details
-        
+
     Returns:
         Dictionary containing paper details
     """
     with RequestContext():
         try:
+            # Extract actual field value
+            actual_fields = extract_field_value(fields)
+
             async with api_client:
                 paper = await api_client.get_paper(
                     paper_id=paper_id,
+                    fields=actual_fields,
                     include_citations=include_citations,
-                    include_references=include_references
+                    include_references=include_references,
                 )
 
-            return {
-                "success": True,
-                "data": paper.model_dump(exclude_none=True)
-            }
+            paper_dict = paper.model_dump(exclude_none=True)
+
+            # Apply field selection if requested
+            if actual_fields:
+                paper_dict = apply_field_selection(paper_dict, actual_fields)
+
+            return {"success": True, "data": paper_dict}
 
         except ValidationError as e:
             logger.error("Validation error in get_paper", exception=e)
@@ -273,34 +351,33 @@ async def get_paper(
                 "error": {
                     "type": "validation_error",
                     "message": str(e),
-                    "details": e.details
-                }
+                    "details": e.details,
+                },
             }
         except Exception as e:
             logger.error("Error getting paper", exception=e)
-            return {
-                "success": False,
-                "error": {
-                    "type": "error",
-                    "message": str(e)
-                }
-            }
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
 @mcp.tool()
 async def get_paper_citations(
     paper_id: str,
-    limit: int = Field(default=100, ge=1, le=1000, description="Number of citations to return"),
-    offset: int = Field(default=0, ge=0, description="Offset for pagination")
+    limit: int = Field(
+        default=100,
+        ge=1,
+        le=9999,
+        description="Number of citations to return (max 9999)",
+    ),
+    offset: int = Field(default=0, ge=0, description="Offset for pagination"),
 ) -> dict[str, Any]:
     """
     Get citations for a specific paper.
-    
+
     Args:
         paper_id: Paper ID
         limit: Maximum number of citations
         offset: Pagination offset
-        
+
     Returns:
         Dictionary containing citation list
     """
@@ -308,44 +385,40 @@ async def get_paper_citations(
         try:
             async with api_client:
                 citations = await api_client.get_paper_citations(
-                    paper_id=paper_id,
-                    limit=limit,
-                    offset=offset
+                    paper_id=paper_id, limit=limit, offset=offset
                 )
 
             return {
                 "success": True,
                 "data": {
-                    "citations": [cite.model_dump(exclude_none=True) for cite in citations],
-                    "count": len(citations)
-                }
+                    "citations": [
+                        cite.model_dump(exclude_none=True) for cite in citations
+                    ],
+                    "count": len(citations),
+                },
             }
 
         except Exception as e:
             logger.error("Error getting citations", exception=e)
-            return {
-                "success": False,
-                "error": {
-                    "type": "error",
-                    "message": str(e)
-                }
-            }
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
 @mcp.tool()
 async def get_paper_references(
     paper_id: str,
-    limit: int = Field(default=100, ge=1, le=1000, description="Number of references to return"),
-    offset: int = Field(default=0, ge=0, description="Offset for pagination")
+    limit: int = Field(
+        default=100, ge=1, le=1000, description="Number of references to return"
+    ),
+    offset: int = Field(default=0, ge=0, description="Offset for pagination"),
 ) -> dict[str, Any]:
     """
     Get references for a specific paper.
-    
+
     Args:
         paper_id: Paper ID
         limit: Maximum number of references
         offset: Pagination offset
-        
+
     Returns:
         Dictionary containing reference list
     """
@@ -353,40 +426,78 @@ async def get_paper_references(
         try:
             async with api_client:
                 references = await api_client.get_paper_references(
-                    paper_id=paper_id,
-                    limit=limit,
-                    offset=offset
+                    paper_id=paper_id, limit=limit, offset=offset
                 )
 
             return {
                 "success": True,
                 "data": {
-                    "references": [ref.model_dump(exclude_none=True) for ref in references],
-                    "count": len(references)
-                }
+                    "references": [
+                        ref.model_dump(exclude_none=True) for ref in references
+                    ],
+                    "count": len(references),
+                },
             }
 
         except Exception as e:
             logger.error("Error getting references", exception=e)
-            return {
-                "success": False,
-                "error": {
-                    "type": "error",
-                    "message": str(e)
-                }
-            }
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
 @mcp.tool()
-async def get_author(
-    author_id: str
+async def get_paper_authors(
+    paper_id: str,
+    limit: int = Field(
+        default=100, ge=1, le=1000, description="Number of authors to return"
+    ),
+    offset: int = Field(default=0, ge=0, description="Offset for pagination"),
 ) -> dict[str, Any]:
     """
+    Get detailed author information for a specific paper.
+
+    Args:
+        paper_id: Paper ID
+        limit: Maximum number of authors to return
+        offset: Pagination offset
+
+    Returns:
+        Dictionary containing paper authors
+    """
+    with RequestContext():
+        try:
+            async with api_client:
+                result = await api_client.get_paper_authors(
+                    paper_id=paper_id,
+                    limit=limit,
+                    offset=offset,
+                )
+
+            return {
+                "success": True,
+                "data": {
+                    "authors": [
+                        author.model_dump(exclude_none=True) for author in result.items
+                    ],
+                    "total": result.total,
+                    "offset": result.offset,
+                    "limit": result.limit,
+                    "has_more": result.has_more,
+                },
+            }
+
+        except Exception as e:
+            logger.error("Error getting paper authors", exception=e)
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
+
+
+@mcp.tool()
+async def get_author(author_id: str) -> dict[str, Any]:
+    """
     Get detailed information about an author.
-    
+
     Args:
         author_id: Author ID
-        
+
     Returns:
         Dictionary containing author details
     """
@@ -395,36 +506,29 @@ async def get_author(
             async with api_client:
                 author = await api_client.get_author(author_id=author_id)
 
-            return {
-                "success": True,
-                "data": author.model_dump(exclude_none=True)
-            }
+            return {"success": True, "data": author.model_dump(exclude_none=True)}
 
         except Exception as e:
             logger.error("Error getting author", exception=e)
-            return {
-                "success": False,
-                "error": {
-                    "type": "error",
-                    "message": str(e)
-                }
-            }
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
 @mcp.tool()
 async def get_author_papers(
     author_id: str,
-    limit: int = Field(default=100, ge=1, le=1000, description="Number of papers to return"),
-    offset: int = Field(default=0, ge=0, description="Offset for pagination")
+    limit: int = Field(
+        default=100, ge=1, le=1000, description="Number of papers to return"
+    ),
+    offset: int = Field(default=0, ge=0, description="Offset for pagination"),
 ) -> dict[str, Any]:
     """
     Get papers by a specific author.
-    
+
     Args:
         author_id: Author ID
         limit: Maximum number of papers
         offset: Pagination offset
-        
+
     Returns:
         Dictionary containing author's papers
     """
@@ -432,47 +536,43 @@ async def get_author_papers(
         try:
             async with api_client:
                 result = await api_client.get_author_papers(
-                    author_id=author_id,
-                    limit=limit,
-                    offset=offset
+                    author_id=author_id, limit=limit, offset=offset
                 )
 
             return {
                 "success": True,
                 "data": {
-                    "papers": [paper.model_dump(exclude_none=True) for paper in result.items],
+                    "papers": [
+                        paper.model_dump(exclude_none=True) for paper in result.items
+                    ],
                     "total": result.total,
                     "offset": result.offset,
                     "limit": result.limit,
-                    "has_more": result.has_more
-                }
+                    "has_more": result.has_more,
+                },
             }
 
         except Exception as e:
             logger.error("Error getting author papers", exception=e)
-            return {
-                "success": False,
-                "error": {
-                    "type": "error",
-                    "message": str(e)
-                }
-            }
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
 @mcp.tool()
 async def search_authors(
     query: str,
-    limit: int = Field(default=10, ge=1, le=100, description="Number of results to return"),
-    offset: int = Field(default=0, ge=0, description="Offset for pagination")
+    limit: int = Field(
+        default=10, ge=1, le=100, description="Number of results to return"
+    ),
+    offset: int = Field(default=0, ge=0, description="Offset for pagination"),
 ) -> dict[str, Any]:
     """
     Search for authors by name.
-    
+
     Args:
         query: Author name search query
         limit: Maximum number of results
         offset: Pagination offset
-        
+
     Returns:
         Dictionary containing search results
     """
@@ -483,45 +583,45 @@ async def search_authors(
 
             async with api_client:
                 result = await api_client.search_authors(
-                    query=query,
-                    limit=limit,
-                    offset=actual_offset
+                    query=query, limit=limit, offset=actual_offset
                 )
 
             return {
                 "success": True,
                 "data": {
-                    "authors": [author.model_dump(exclude_none=True) for author in result.items],
+                    "authors": [
+                        author.model_dump(exclude_none=True) for author in result.items
+                    ],
                     "total": result.total,
                     "offset": result.offset,
                     "limit": result.limit,
-                    "has_more": result.has_more
-                }
+                    "has_more": result.has_more,
+                },
             }
 
         except Exception as e:
             logger.error("Error searching authors", exception=e)
-            return {
-                "success": False,
-                "error": {
-                    "type": "error",
-                    "message": str(e)
-                }
-            }
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
 @mcp.tool()
 async def get_recommendations(
     paper_id: str,
-    limit: int = Field(default=10, ge=1, le=100, description="Number of recommendations")
+    limit: int = Field(
+        default=10, ge=1, le=100, description="Number of recommendations"
+    ),
+    fields: list[str] | None = Field(
+        default=None, description="Fields to include in response"
+    ),
 ) -> dict[str, Any]:
     """
     Get paper recommendations based on a given paper.
-    
+
     Args:
         paper_id: Paper ID to base recommendations on
         limit: Maximum number of recommendations
-        
+        fields: Fields to include in response
+
     Returns:
         Dictionary containing recommended papers
     """
@@ -529,103 +629,628 @@ async def get_recommendations(
         try:
             async with api_client:
                 papers = await api_client.get_recommendations(
-                    paper_id=paper_id,
-                    limit=limit
+                    paper_id=paper_id, limit=limit, fields=fields
                 )
 
             return {
                 "success": True,
                 "data": {
-                    "recommendations": [paper.model_dump(exclude_none=True) for paper in papers],
-                    "count": len(papers)
-                }
+                    "recommendations": [
+                        paper.model_dump(exclude_none=True) for paper in papers
+                    ],
+                    "count": len(papers),
+                },
             }
 
         except Exception as e:
             logger.error("Error getting recommendations", exception=e)
-            return {
-                "success": False,
-                "error": {
-                    "type": "error",
-                    "message": str(e)
-                }
-            }
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
 @mcp.tool()
 async def batch_get_papers(
     paper_ids: list[str],
-    fields: list[str] | None = Field(default=None, description="Fields to include in response")
+    fields: list[str] | None = Field(
+        default=None,
+        description="Fields to include in response (supports dot notation)",
+    ),
 ) -> dict[str, Any]:
     """
     Get multiple papers in a single request.
-    
+
     Args:
         paper_ids: List of paper IDs (max 500)
-        fields: Optional list of fields to include
-        
+        fields: Optional list of fields to include (supports dot notation)
+
     Returns:
         Dictionary containing paper details
     """
     with RequestContext():
         try:
-            if len(paper_ids) > 500:
-                raise ValidationError(
-                    "Too many paper IDs",
-                    field="paper_ids",
-                    value=len(paper_ids)
-                )
+            validate_batch_size(paper_ids, 500)
 
-            # Extract actual values from Field objects if needed
-            actual_fields = None
-            if fields is not None:
-                actual_fields = extract_field_value(fields)
+            # Extract actual field value
+            actual_fields = extract_field_value(fields)
 
             async with api_client:
                 papers = await api_client.batch_get_papers(
-                    paper_ids=paper_ids,
-                    fields=actual_fields
+                    paper_ids=paper_ids, fields=actual_fields
+                )
+
+            # Format response with field selection
+            papers_data = []
+            for paper in papers:
+                paper_dict = paper.model_dump(exclude_none=True)
+                # Apply field selection if requested
+                if actual_fields:
+                    paper_dict = apply_field_selection(paper_dict, actual_fields)
+                papers_data.append(paper_dict)
+
+            return format_success_response(
+                {
+                    "papers": papers_data,
+                    "count": len(papers),
+                }
+            )
+
+        except ValidationError as e:
+            logger.error("Validation error in batch_get_papers", exception=e)
+            return format_error_response(e, "validation_error")
+        except Exception as e:
+            logger.error("Error in batch get papers", exception=e)
+            return format_error_response(e)
+
+
+@mcp.tool()
+async def bulk_search_papers(
+    query: str,
+    fields: list[str] | None = Field(
+        default=None,
+        description="Fields to include in response (supports dot notation)",
+    ),
+    publication_types: list[str] | None = Field(
+        default=None, description="Publication types to filter by"
+    ),
+    fields_of_study: list[str] | None = Field(
+        default=None, description="Fields of study to filter by"
+    ),
+    year_range: str | None = Field(
+        default=None, description="Year range (e.g., '2020-2023', '2020-', '-2023')"
+    ),
+    venue: str | None = Field(default=None, description="Venue to filter by"),
+    min_citation_count: int | None = Field(
+        default=None, description="Minimum citation count"
+    ),
+    open_access_pdf: bool | None = Field(
+        default=None, description="Filter by open access PDF availability"
+    ),
+    sort: str | None = Field(
+        default=None,
+        description="Sort order (relevance, citationCount, publicationDate)",
+    ),
+) -> dict[str, Any]:
+    """
+    Bulk search papers with advanced filtering (unlimited results).
+
+    Args:
+        query: Search query string
+        fields: Optional list of fields to include (supports dot notation)
+        publication_types: Types of publications to include
+        fields_of_study: Academic fields to filter by
+        year_range: Publication year range
+        venue: Publication venue
+        min_citation_count: Minimum citation threshold
+        open_access_pdf: Filter by open access availability
+        sort: Sort order for results
+
+    Returns:
+        Dictionary containing search results
+    """
+    with RequestContext():
+        try:
+            # Extract actual field value
+            actual_fields = extract_field_value(fields)
+
+            async with api_client:
+                papers = await api_client.bulk_search_papers(
+                    query=query,
+                    fields=actual_fields,
+                    publication_types=publication_types,
+                    fields_of_study=fields_of_study,
+                    year_range=year_range,
+                    venue=venue,
+                    min_citation_count=min_citation_count,
+                    open_access_pdf=open_access_pdf,
+                    sort=sort,
+                )
+
+            # Format response with field selection
+            papers_data = []
+            for paper in papers:
+                paper_dict = paper.model_dump(exclude_none=True)
+                # Apply field selection if requested
+                if actual_fields:
+                    paper_dict = apply_field_selection(paper_dict, actual_fields)
+                papers_data.append(paper_dict)
+
+            return {
+                "success": True,
+                "data": {
+                    "papers": papers_data,
+                    "count": len(papers),
+                },
+            }
+
+        except Exception as e:
+            logger.error("Error in bulk paper search", exception=e)
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
+
+
+@mcp.tool()
+async def search_papers_by_title(
+    title: str,
+    fields: list[str] | None = Field(
+        default=None,
+        description="Fields to include in response (supports dot notation)",
+    ),
+) -> dict[str, Any]:
+    """
+    Search papers by title matching.
+
+    Args:
+        title: Paper title to search for
+        fields: Optional list of fields to include (supports dot notation)
+
+    Returns:
+        Dictionary containing matching papers
+    """
+    with RequestContext():
+        try:
+            # Extract actual field value
+            actual_fields = extract_field_value(fields)
+
+            async with api_client:
+                papers = await api_client.search_papers_by_title(
+                    title=title, fields=actual_fields
+                )
+
+            # Format response with field selection
+            papers_data = []
+            for paper in papers:
+                paper_dict = paper.model_dump(exclude_none=True)
+                # Apply field selection if requested
+                if actual_fields:
+                    paper_dict = apply_field_selection(paper_dict, actual_fields)
+                papers_data.append(paper_dict)
+
+            return {
+                "success": True,
+                "data": {
+                    "papers": papers_data,
+                    "count": len(papers),
+                },
+            }
+
+        except Exception as e:
+            logger.error("Error in title search", exception=e)
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
+
+
+@mcp.tool()
+async def autocomplete_query(
+    query: str,
+    limit: int = Field(default=10, ge=1, le=50, description="Number of suggestions"),
+) -> dict[str, Any]:
+    """
+    Get query autocompletion suggestions.
+
+    Args:
+        query: Partial query string
+        limit: Maximum number of suggestions
+
+    Returns:
+        Dictionary containing suggestions
+    """
+    with RequestContext():
+        try:
+            async with api_client:
+                suggestions = await api_client.autocomplete_query(
+                    query=query, limit=limit
                 )
 
             return {
                 "success": True,
                 "data": {
-                    "papers": [paper.model_dump(exclude_none=True) for paper in papers],
-                    "count": len(papers)
-                }
+                    "suggestions": suggestions,
+                    "count": len(suggestions),
+                },
+            }
+
+        except Exception as e:
+            logger.error("Error in query autocomplete", exception=e)
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
+
+
+@mcp.tool()
+async def search_snippets(
+    query: str,
+    limit: int = Field(default=10, ge=1, le=100, description="Number of snippets"),
+    offset: int = Field(default=0, ge=0, description="Offset for pagination"),
+) -> dict[str, Any]:
+    """
+    Search text snippets in papers.
+
+    Args:
+        query: Search query string
+        limit: Maximum number of snippets
+        offset: Pagination offset
+
+    Returns:
+        Dictionary containing snippets
+    """
+    with RequestContext():
+        try:
+            async with api_client:
+                result = await api_client.search_snippets(
+                    query=query, limit=limit, offset=offset
+                )
+
+            return {
+                "success": True,
+                "data": {
+                    "snippets": result.items,
+                    "total": result.total,
+                    "offset": result.offset,
+                    "limit": result.limit,
+                    "has_more": result.has_more,
+                },
+            }
+
+        except Exception as e:
+            logger.error("Error in snippet search", exception=e)
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
+
+
+@mcp.tool()
+async def batch_get_authors(
+    author_ids: list[str],
+) -> dict[str, Any]:
+    """
+    Get multiple authors in a single request.
+
+    Args:
+        author_ids: List of author IDs (max 1000)
+
+    Returns:
+        Dictionary containing author details
+    """
+    with RequestContext():
+        try:
+            validate_batch_size(author_ids, 1000)
+
+            async with api_client:
+                authors = await api_client.batch_get_authors(author_ids=author_ids)
+
+            return {
+                "success": True,
+                "data": {
+                    "authors": [
+                        author.model_dump(exclude_none=True) for author in authors
+                    ],
+                    "count": len(authors),
+                },
             }
 
         except ValidationError as e:
-            logger.error("Validation error in batch_get_papers", exception=e)
+            logger.error("Validation error in batch_get_authors", exception=e)
             return {
                 "success": False,
                 "error": {
                     "type": "validation_error",
                     "message": str(e),
-                    "details": e.details
-                }
+                    "details": e.details,
+                },
             }
         except Exception as e:
-            logger.error("Error in batch get papers", exception=e)
+            logger.error("Error in batch get authors", exception=e)
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
+
+
+@mcp.tool()
+async def get_advanced_recommendations(
+    positive_paper_ids: list[str],
+    negative_paper_ids: list[str] | None = None,
+    limit: int = 10,
+) -> dict[str, Any]:
+    """
+    Get advanced recommendations based on positive and negative examples.
+
+    Args:
+        positive_paper_ids: Paper IDs to use as positive examples
+        negative_paper_ids: Paper IDs to use as negative examples
+        limit: Maximum number of recommendations
+
+    Returns:
+        Dictionary containing recommended papers
+    """
+    with RequestContext():
+        try:
+            async with api_client:
+                papers = await api_client.get_advanced_recommendations(
+                    positive_paper_ids=positive_paper_ids,
+                    negative_paper_ids=negative_paper_ids,
+                    limit=limit,
+                )
+
             return {
-                "success": False,
-                "error": {
-                    "type": "error",
-                    "message": str(e)
-                }
+                "success": True,
+                "data": {
+                    "recommendations": [
+                        paper.model_dump(exclude_none=True) for paper in papers
+                    ],
+                    "count": len(papers),
+                },
             }
+
+        except Exception as e:
+            logger.error("Error getting advanced recommendations", exception=e)
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
+
+
+@mcp.tool()
+async def get_dataset_releases() -> dict[str, Any]:
+    """
+    Get available dataset releases.
+
+    Returns:
+        Dictionary containing dataset release information
+    """
+    with RequestContext():
+        try:
+            async with api_client:
+                releases = await api_client.get_dataset_releases()
+
+            return {
+                "success": True,
+                "data": {
+                    "releases": releases,
+                    "count": len(releases),
+                },
+            }
+
+        except Exception as e:
+            logger.error("Error getting dataset releases", exception=e)
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
+
+
+@mcp.tool()
+async def get_dataset_info(release_id: str) -> dict[str, Any]:
+    """
+    Get dataset release information.
+
+    Args:
+        release_id: Dataset release ID
+
+    Returns:
+        Dictionary containing dataset information
+    """
+    with RequestContext():
+        try:
+            async with api_client:
+                info = await api_client.get_dataset_info(release_id=release_id)
+
+            return {
+                "success": True,
+                "data": info,
+            }
+
+        except Exception as e:
+            logger.error("Error getting dataset info", exception=e)
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
+
+
+@mcp.tool()
+async def get_dataset_download_links(
+    release_id: str, dataset_name: str
+) -> dict[str, Any]:
+    """
+    Get download links for a specific dataset.
+
+    Args:
+        release_id: Dataset release ID
+        dataset_name: Name of the dataset
+
+    Returns:
+        Dictionary containing download links
+    """
+    with RequestContext():
+        try:
+            async with api_client:
+                links = await api_client.get_dataset_download_links(
+                    release_id=release_id, dataset_name=dataset_name
+                )
+
+            return {
+                "success": True,
+                "data": links,
+            }
+
+        except Exception as e:
+            logger.error("Error getting dataset download links", exception=e)
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
+
+
+@mcp.tool()
+async def get_paper_with_embeddings(
+    paper_id: str,
+    embedding_type: str = Field(
+        default="specter_v2",
+        description="Embedding model type (specter_v1 or specter_v2)",
+    ),
+) -> dict[str, Any]:
+    """
+    Get paper with embedding vectors for semantic analysis.
+
+    Args:
+        paper_id: Paper ID
+        embedding_type: Type of embedding model to use
+
+    Returns:
+        Dictionary containing paper with embeddings
+    """
+    with RequestContext():
+        try:
+            async with api_client:
+                paper = await api_client.get_paper_with_embeddings(
+                    paper_id=paper_id, embedding_type=embedding_type
+                )
+
+            return {
+                "success": True,
+                "data": paper.model_dump(exclude_none=True),
+            }
+
+        except Exception as e:
+            logger.error("Error getting paper with embeddings", exception=e)
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
+
+
+@mcp.tool()
+async def search_papers_with_embeddings(
+    query: str,
+    embedding_type: str = Field(
+        default="specter_v2", description="Embedding model type"
+    ),
+    limit: int = Field(default=10, ge=1, le=100, description="Number of results"),
+    offset: int = Field(default=0, ge=0, description="Offset for pagination"),
+    publication_types: list[str] | None = Field(
+        default=None, description="Filter by publication types"
+    ),
+    fields_of_study: list[str] | None = Field(
+        default=None, description="Filter by fields of study"
+    ),
+    year_range: str | None = Field(
+        default=None, description="Year range filter (e.g., '2020-2023')"
+    ),
+    min_citation_count: int | None = Field(
+        default=None, description="Minimum citation count"
+    ),
+) -> dict[str, Any]:
+    """
+    Search papers with embeddings for semantic analysis.
+
+    Args:
+        query: Search query
+        embedding_type: Type of embedding model
+        limit: Number of results
+        offset: Pagination offset
+        publication_types: Publication type filters
+        fields_of_study: Field of study filters
+        year_range: Year range filter
+        min_citation_count: Minimum citation count
+
+    Returns:
+        Dictionary containing search results with embeddings
+    """
+    with RequestContext():
+        try:
+            from semantic_scholar_mcp.domain_models import (
+                PublicationType,
+                SearchFilters,
+                SearchQuery,
+            )
+
+            # Create filters
+            filters = None
+            if any(
+                [publication_types, fields_of_study, year_range, min_citation_count]
+            ):
+                filters = SearchFilters(
+                    publication_types=[
+                        PublicationType(pt) for pt in (publication_types or [])
+                    ],
+                    fields_of_study=fields_of_study,
+                    year_range=parse_year_range(year_range) if year_range else None,
+                    min_citation_count=min_citation_count,
+                )
+
+            search_query = SearchQuery(
+                query=query,
+                limit=extract_field_value(limit),
+                offset=extract_field_value(offset),
+                filters=filters,
+            )
+
+            async with api_client:
+                result = await api_client.search_papers_with_embeddings(
+                    query=search_query, embedding_type=embedding_type
+                )
+
+            return {
+                "success": True,
+                "data": {
+                    "papers": [
+                        paper.model_dump(exclude_none=True) for paper in result.items
+                    ],
+                    "total": result.total,
+                    "offset": result.offset,
+                    "limit": result.limit,
+                    "has_more": result.has_more,
+                },
+            }
+
+        except Exception as e:
+            logger.error("Error searching papers with embeddings", exception=e)
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
+
+
+@mcp.tool()
+async def get_incremental_dataset_updates(
+    start_release_id: str,
+    end_release_id: str,
+    dataset_name: str,
+) -> dict[str, Any]:
+    """
+    Get incremental dataset updates between releases.
+
+    Args:
+        start_release_id: Starting release ID
+        end_release_id: Ending release ID
+        dataset_name: Name of the dataset
+
+    Returns:
+        Dictionary containing incremental updates
+    """
+    with RequestContext():
+        try:
+            async with api_client:
+                updates = await api_client.get_incremental_dataset_updates(
+                    start_release_id=start_release_id,
+                    end_release_id=end_release_id,
+                    dataset_name=dataset_name,
+                )
+
+            return {
+                "success": True,
+                "data": updates,
+            }
+
+        except Exception as e:
+            logger.error("Error getting incremental dataset updates", exception=e)
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
 # Resource implementations
+
 
 @mcp.resource("papers/{paper_id}")
 async def get_paper_resource(paper_id: str) -> str:
     """
     Get paper information as a resource.
-    
+
     Args:
         paper_id: Paper ID
-        
+
     Returns:
         Formatted paper information
     """
@@ -644,7 +1269,7 @@ async def get_paper_resource(paper_id: str) -> str:
             "",
             "## Abstract",
             paper.abstract or "No abstract available.",
-            ""
+            "",
         ]
 
         if paper.url:
@@ -661,10 +1286,10 @@ async def get_paper_resource(paper_id: str) -> str:
 async def get_author_resource(author_id: str) -> str:
     """
     Get author information as a resource.
-    
+
     Args:
         author_id: Author ID
-        
+
     Returns:
         Formatted author information
     """
@@ -679,7 +1304,7 @@ async def get_author_resource(author_id: str) -> str:
             f"**H-Index**: {author.h_index or 'N/A'}",
             f"**Citation Count**: {author.citation_count or 0}",
             f"**Paper Count**: {author.paper_count or 0}",
-            ""
+            "",
         ]
 
         if author.affiliations:
@@ -697,20 +1322,21 @@ async def get_author_resource(author_id: str) -> str:
 
 # Prompt implementations
 
+
 @mcp.prompt()
 def literature_review(
     topic: str,
     max_papers: int = Field(default=20, ge=5, le=50),
-    start_year: int | None = Field(default=None)
+    start_year: int | None = Field(default=None),
 ) -> str:
     """
     Generate a literature review prompt for a given topic.
-    
+
     Args:
         topic: Research topic
         max_papers: Maximum number of papers to include
         start_year: Starting year for paper search
-        
+
     Returns:
         Prompt text for literature review
     """
@@ -739,17 +1365,14 @@ Please structure the review with:
 
 
 @mcp.prompt()
-def citation_analysis(
-    paper_id: str,
-    depth: int = Field(default=1, ge=1, le=3)
-) -> str:
+def citation_analysis(paper_id: str, depth: int = Field(default=1, ge=1, le=3)) -> str:
     """
     Generate a citation analysis prompt for a paper.
-    
+
     Args:
         paper_id: Paper ID to analyze
         depth: Depth of citation analysis (1-3)
-        
+
     Returns:
         Prompt text for citation analysis
     """
@@ -780,16 +1403,15 @@ Please provide:
 
 @mcp.prompt()
 def research_trend_analysis(
-    field: str,
-    years: int = Field(default=5, ge=1, le=20)
+    field: str, years: int = Field(default=5, ge=1, le=20)
 ) -> str:
     """
     Generate a research trend analysis prompt.
-    
+
     Args:
         field: Research field to analyze
         years: Number of years to analyze
-        
+
     Returns:
         Prompt text for trend analysis
     """
@@ -802,13 +1424,13 @@ Instructions:
    - Most cited papers per year
    - Emerging topics and keywords
    - Declining research areas
-   
+
 3. Analyze:
    - Top contributing authors and institutions
    - International collaboration patterns
    - Funding sources (if available)
    - Industry vs academic contributions
-   
+
 4. Identify:
    - Breakthrough papers and why they're significant
    - Methodology shifts
@@ -823,6 +1445,7 @@ Please provide:
 
 
 # Server lifecycle
+
 
 async def on_startup():
     """Initialize server on startup."""
@@ -842,10 +1465,10 @@ async def on_shutdown():
 def main():
     """Main entry point for the server."""
     import os
-    
+
     # Log environment information if debug mode is enabled
     if os.getenv("DEBUG_MCP_MODE", "false").lower() == "true":
-        temp_config = get_config()
+        get_config()
         temp_logger = get_logger("mcp.main")
         temp_logger.debug_mcp(
             "MCP server main() called",
@@ -855,12 +1478,14 @@ def main():
                 "LOG_API_PAYLOADS": os.getenv("LOG_API_PAYLOADS"),
                 "LOG_PERFORMANCE_METRICS": os.getenv("LOG_PERFORMANCE_METRICS"),
                 "MCP_MODE": os.getenv("MCP_MODE"),
-                "SEMANTIC_SCHOLAR_API_KEY": "***SET***" if os.getenv("SEMANTIC_SCHOLAR_API_KEY") else "***NOT_SET***"
+                "SEMANTIC_SCHOLAR_API_KEY": "***SET***"
+                if os.getenv("SEMANTIC_SCHOLAR_API_KEY")
+                else "***NOT_SET***",
             },
             python_version=sys.version,
-            working_directory=str(Path.cwd())
+            working_directory=str(Path.cwd()),
         )
-    
+
     # Initialize server on startup
     asyncio.run(on_startup())
 
@@ -876,11 +1501,15 @@ def main():
             logging.ERROR,
             "Fatal error running MCP server",
             exception=e,
-            transport="stdio"
+            transport="stdio",
         )
         raise
     finally:
         asyncio.run(on_shutdown())
+
+
+# Export app for testing
+app = mcp
 
 
 if __name__ == "__main__":

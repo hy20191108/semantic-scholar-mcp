@@ -22,12 +22,12 @@ from semantic_scholar_mcp.api_client_enhanced import EnhancedSemanticScholarClie
 
 class SemanticScholarMCPServer:
     """Main MCP server with enterprise features.
-    
+
     Examples:
         >>> # Start server with custom configuration
         >>> server = SemanticScholarMCPServer(environment="production")
         >>> await server.run()
-        
+
         >>> # Health check endpoint
         >>> health = await server.health_check()
         >>> print(health["status"])
@@ -52,11 +52,7 @@ class SemanticScholarMCPServer:
         self.metrics = self.service_provider.get_required_service(IMetricsCollector)
 
         # Initialize cache
-        self.cache = CacheManager(
-            self.config.cache,
-            self.logger,
-            self.metrics
-        )
+        self.cache = CacheManager(self.config.cache, self.logger, self.metrics)
 
         # Initialize API client
         self.api_client: EnhancedSemanticScholarClient | None = None
@@ -74,7 +70,7 @@ class SemanticScholarMCPServer:
         self.logger.info(
             "Semantic Scholar MCP Server initialized",
             environment=self.config.environment.value,
-            version=self.config.app_version
+            version=self.config.app_version,
         )
 
     async def initialize(self) -> None:
@@ -91,19 +87,17 @@ class SemanticScholarMCPServer:
                 config=self.config.api,
                 logger=self.logger,
                 metrics=self.metrics,
-                cache=self.cache
+                cache=self.cache,
             )
             await self.api_client.initialize()
 
             # Register health checks
             self.health_check_service.register_check(
-                "api_client",
-                lambda: asyncio.run(self.api_client.health_check())
+                "api_client", lambda: asyncio.run(self.api_client.health_check())
             )
 
             self.health_check_service.register_check(
-                "cache",
-                lambda: asyncio.run(self._check_cache_health())
+                "cache", lambda: asyncio.run(self._check_cache_health())
             )
 
             # Register MCP tools
@@ -121,19 +115,18 @@ class SemanticScholarMCPServer:
         @self.mcp_server.tool()
         async def search_papers(query: str, limit: int = 10) -> dict:
             """Search for papers on Semantic Scholar.
-            
+
             Args:
                 query: Search query string
                 limit: Maximum number of results (default: 10)
-                
+
             Returns:
                 Search results with paper information
             """
             async with self.logger.log_context(tool="search_papers", query=query):
                 try:
                     results = await self.api_client.search_papers(
-                        query=query,
-                        limit=limit
+                        query=query, limit=limit
                     )
 
                     return {
@@ -145,10 +138,12 @@ class SemanticScholarMCPServer:
                                 "year": paper.year,
                                 "authors": [a.name for a in paper.authors],
                                 "citation_count": paper.citation_count,
-                                "abstract": paper.abstract[:200] + "..." if paper.abstract else None
+                                "abstract": paper.abstract[:200] + "..."
+                                if paper.abstract
+                                else None,
                             }
                             for paper in results.data
-                        ]
+                        ],
                     }
                 except Exception as e:
                     self.logger.error("Search failed", exception=e)
@@ -157,19 +152,18 @@ class SemanticScholarMCPServer:
         @self.mcp_server.tool()
         async def get_paper(paper_id: str, include_references: bool = False) -> dict:
             """Get detailed information about a paper.
-            
+
             Args:
                 paper_id: Paper ID (Semantic Scholar ID, DOI, or ArXiv ID)
                 include_references: Include paper references
-                
+
             Returns:
                 Detailed paper information
             """
             async with self.logger.log_context(tool="get_paper", paper_id=paper_id):
                 try:
                     paper = await self.api_client.get_paper(
-                        paper_id=paper_id,
-                        include_references=include_references
+                        paper_id=paper_id, include_references=include_references
                     )
 
                     result = {
@@ -179,8 +173,7 @@ class SemanticScholarMCPServer:
                         "year": paper.year,
                         "venue": paper.venue,
                         "authors": [
-                            {"name": a.name, "id": a.author_id}
-                            for a in paper.authors
+                            {"name": a.name, "id": a.author_id} for a in paper.authors
                         ],
                         "citation_count": paper.citation_count,
                         "influential_citation_count": paper.influential_citation_count,
@@ -188,16 +181,12 @@ class SemanticScholarMCPServer:
                         "fields_of_study": paper.fields_of_study,
                         "url": paper.url,
                         "doi": paper.doi,
-                        "arxiv_id": paper.arxiv_id
+                        "arxiv_id": paper.arxiv_id,
                     }
 
                     if include_references and hasattr(paper, "references"):
                         result["references"] = [
-                            {
-                                "id": ref.paper_id,
-                                "title": ref.title,
-                                "year": ref.year
-                            }
+                            {"id": ref.paper_id, "title": ref.title, "year": ref.year}
                             for ref in paper.references[:10]
                         ]
 
@@ -210,19 +199,18 @@ class SemanticScholarMCPServer:
         @self.mcp_server.tool()
         async def get_author(author_id: str, papers_limit: int = 10) -> dict:
             """Get detailed information about an author.
-            
+
             Args:
                 author_id: Author ID
                 papers_limit: Maximum number of papers to include
-                
+
             Returns:
                 Detailed author information
             """
             async with self.logger.log_context(tool="get_author", author_id=author_id):
                 try:
                     author = await self.api_client.get_author(
-                        author_id=author_id,
-                        papers_limit=papers_limit
+                        author_id=author_id, papers_limit=papers_limit
                     )
 
                     return {
@@ -239,10 +227,10 @@ class SemanticScholarMCPServer:
                                 "id": p.paper_id,
                                 "title": p.title,
                                 "year": p.year,
-                                "citation_count": p.citation_count
+                                "citation_count": p.citation_count,
                             }
                             for p in author.papers
-                        ]
+                        ],
                     }
 
                 except Exception as e:
@@ -252,19 +240,20 @@ class SemanticScholarMCPServer:
         @self.mcp_server.tool()
         async def get_recommendations(paper_id: str, limit: int = 10) -> dict:
             """Get paper recommendations based on a paper.
-            
+
             Args:
                 paper_id: Paper ID to base recommendations on
                 limit: Maximum number of recommendations
-                
+
             Returns:
                 List of recommended papers
             """
-            async with self.logger.log_context(tool="get_recommendations", paper_id=paper_id):
+            async with self.logger.log_context(
+                tool="get_recommendations", paper_id=paper_id
+            ):
                 try:
                     recommendations = await self.api_client.get_recommendations(
-                        paper_id=paper_id,
-                        limit=limit
+                        paper_id=paper_id, limit=limit
                     )
 
                     return {
@@ -275,7 +264,9 @@ class SemanticScholarMCPServer:
                                 "year": paper.year,
                                 "authors": [a.name for a in paper.authors],
                                 "citation_count": paper.citation_count,
-                                "abstract": paper.abstract[:200] + "..." if paper.abstract else None
+                                "abstract": paper.abstract[:200] + "..."
+                                if paper.abstract
+                                else None,
                             }
                             for paper in recommendations
                         ]
@@ -307,17 +298,15 @@ class SemanticScholarMCPServer:
 
             return {
                 "status": "healthy" if retrieved == test_value else "unhealthy",
-                "stats": stats
+                "stats": stats,
             }
 
         except Exception as e:
-            return {
-                "status": "unhealthy",
-                "error": str(e)
-            }
+            return {"status": "unhealthy", "error": str(e)}
 
     def _setup_signal_handlers(self) -> None:
         """Set up signal handlers for graceful shutdown."""
+
         def signal_handler(signum, frame):
             self.logger.info(f"Received signal {signum}, initiating shutdown")
             asyncio.create_task(self.shutdown())
@@ -353,7 +342,9 @@ class SemanticScholarMCPServer:
 
             # Log startup metrics
             self.metrics.increment("server.start")
-            self.metrics.gauge("server.environment", 1, tags={"env": self.config.environment.value})
+            self.metrics.gauge(
+                "server.environment", 1, tags={"env": self.config.environment.value}
+            )
 
             # Apply middleware
             if self.config.logging.log_request_duration:
@@ -372,7 +363,7 @@ class SemanticScholarMCPServer:
                 await self.mcp_server.run(
                     read_stream,
                     write_stream,
-                    self.mcp_server.create_initialization_options()
+                    self.mcp_server.create_initialization_options(),
                 )
 
         except Exception as e:
@@ -386,8 +377,7 @@ async def main():
     """Main entry point."""
     # Set up basic logging before our structured logger is ready
     logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s"
+        level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
     )
 
     # Create and run server
