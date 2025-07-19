@@ -36,6 +36,7 @@ from .utils import (
     validate_batch_size,
 )
 
+
 async def execute_api_with_error_handling(operation_name: str, operation_func):
     """Execute API operation with standardized error handling."""
     try:

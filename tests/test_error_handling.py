@@ -14,11 +14,11 @@ from core.exceptions import (
     APIError,
     CircuitBreakerError,
     ErrorCode,
+    MCPTimeoutError,
     MCPToolError,
     RateLimitError,
     RetryExhaustedError,
     SemanticScholarMCPError,
-    TimeoutError,
     ValidationError,
     create_error_response,
     wrap_exception,
@@ -513,7 +513,7 @@ class TestIntegratedErrorHandling:
         handler = MCPErrorHandler()
 
         # Simulate a complex error scenario
-        original_error = TimeoutError("Request timed out", timeout_duration=30.0)
+        original_error = MCPTimeoutError("Request timed out", timeout_duration=30.0)
 
         response = await handler.handle_mcp_tool_error(
             error=original_error,
