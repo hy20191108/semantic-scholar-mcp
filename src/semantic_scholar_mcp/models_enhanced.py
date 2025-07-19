@@ -14,8 +14,9 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ..core.abstractions import IValidator
-from ..core.exceptions import ValidationError
+from core.abstractions import IValidator
+from core.exceptions import ValidationError
+
 from .base_models import BaseEntity, CacheableModel
 from .domain_models import Author as BaseAuthor
 from .domain_models import Citation as BaseCitation

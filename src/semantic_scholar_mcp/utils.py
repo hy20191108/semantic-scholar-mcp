@@ -183,7 +183,6 @@ def extract_nested_field(data: dict[str, Any], field_path: str) -> Any:
         if isinstance(current, dict):
             current = current.get(part)
         else:
-            # Try to get attribute if it's an object
             current = getattr(current, part, None)
 
     return current

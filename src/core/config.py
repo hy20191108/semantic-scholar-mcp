@@ -84,7 +84,9 @@ class SemanticScholarConfig(BaseModel):
     """Semantic Scholar API configuration."""
 
     base_url: str = "https://api.semanticscholar.org/graph/v1"
-    api_key: SecretStr | None = Field(default=None, env="SEMANTIC_SCHOLAR_API_KEY")
+    api_key: SecretStr | None = Field(
+        default=None, json_schema_extra={"env": "SEMANTIC_SCHOLAR_API_KEY"}
+    )
     timeout: float = Field(default=30.0, gt=0)
     max_connections: int = Field(default=100, ge=1)
     max_keepalive_connections: int = Field(default=20, ge=1)
@@ -126,12 +128,20 @@ class LoggingConfig(BaseModel):
     backup_count: int = Field(default=5, ge=0)
 
     # MCP-specific debug configuration
-    debug_mcp_mode: bool = Field(default=False, env="DEBUG_MCP_MODE")
-    log_mcp_messages: bool = Field(default=False, env="LOG_MCP_MESSAGES")
-    log_api_payloads: bool = Field(default=False, env="LOG_API_PAYLOADS")
-    log_performance_metrics: bool = Field(default=False, env="LOG_PERFORMANCE_METRICS")
+    debug_mcp_mode: bool = Field(
+        default=False, json_schema_extra={"env": "DEBUG_MCP_MODE"}
+    )
+    log_mcp_messages: bool = Field(
+        default=False, json_schema_extra={"env": "LOG_MCP_MESSAGES"}
+    )
+    log_api_payloads: bool = Field(
+        default=False, json_schema_extra={"env": "LOG_API_PAYLOADS"}
+    )
+    log_performance_metrics: bool = Field(
+        default=False, json_schema_extra={"env": "LOG_PERFORMANCE_METRICS"}
+    )
     debug_level_override: LogLevel | None = Field(
-        default=None, env="DEBUG_LEVEL_OVERRIDE"
+        default=None, json_schema_extra={"env": "DEBUG_LEVEL_OVERRIDE"}
     )
 
 
@@ -158,7 +168,9 @@ class ApplicationConfig(BaseSettings):
     )
 
     # Environment
-    environment: Environment = Field(default=Environment.DEVELOPMENT, env="ENVIRONMENT")
+    environment: Environment = Field(
+        default=Environment.DEVELOPMENT, json_schema_extra={"env": "ENVIRONMENT"}
+    )
 
     # Component configurations
     server: ServerConfig = Field(default_factory=ServerConfig)
@@ -277,9 +289,7 @@ class ConfigurationManager:
             config.semantic_scholar.api_key
             and config.rate_limit.requests_per_second > 1
         ) and not config.is_production():
-            errors.append(
-                "High rate limit with API key in non-production environment"
-            )
+            errors.append("High rate limit with API key in non-production environment")
 
         # Validate cache config
         if config.cache.backend == "redis" and not config.cache.redis_url:

@@ -25,9 +25,9 @@ tool_name_var: ContextVar[str | None] = ContextVar("tool_name", default=None)
 mcp_operation_var: ContextVar[str | None] = ContextVar("mcp_operation", default=None)
 session_id_var: ContextVar[str | None] = ContextVar("session_id", default=None)
 execution_id_var: ContextVar[str | None] = ContextVar("execution_id", default=None)
-error_chain_var: ContextVar[list[str]] = ContextVar("error_chain", default=[])
-performance_trace_var: ContextVar[dict[str, float]] = ContextVar(
-    "performance_trace", default={}
+error_chain_var: ContextVar[list[str] | None] = ContextVar("error_chain", default=None)
+performance_trace_var: ContextVar[dict[str, float] | None] = ContextVar(
+    "performance_trace", default=None
 )
 
 
@@ -59,8 +59,8 @@ class StructuredFormatter(logging.Formatter):
             mcp_operation = mcp_operation_var.get()
             session_id = session_id_var.get()
             execution_id = execution_id_var.get()
-            error_chain = error_chain_var.get()
-            performance_trace = performance_trace_var.get()
+            error_chain = error_chain_var.get() or []
+            performance_trace = performance_trace_var.get() or {}
 
             if correlation_id:
                 log_data["correlation_id"] = correlation_id
@@ -258,7 +258,7 @@ class ContextLogger(ILogger):
             error_context.update(context)
 
         # Add error to chain
-        current_chain = error_chain_var.get()
+        current_chain = error_chain_var.get() or []
         current_chain.append(error_context["error_id"])
         error_chain_var.set(current_chain)
 
@@ -337,7 +337,8 @@ class ContextLogger(ILogger):
 
         kwargs.update(perf_context)
         self.warning(
-            f"Performance warning: {operation} took {duration:.2f}s (threshold: {threshold:.2f}s)",
+            f"Performance warning: {operation} took {duration:.2f}s "
+            f"(threshold: {threshold:.2f}s)",
             **kwargs,
         )
 

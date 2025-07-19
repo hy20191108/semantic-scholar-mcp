@@ -5,7 +5,8 @@ Enhanced with JSON specification fixtures and test utilities for:
 - /docs/api-specifications/semantic-scholar-recommendations-v1.json
 - /docs/api-specifications/semantic-scholar-datasets-v1.json
 
-Provides fixtures and utilities for testing API compliance and implementation validation.
+Provides fixtures and utilities for testing API compliance and implementation
+validation.
 """
 
 import asyncio
@@ -235,7 +236,9 @@ def api_endpoints():
                 "releases": "/release",
                 "release_info": "/release/{release_id}",
                 "dataset_download": "/release/{release_id}/dataset/{dataset_name}",
-                "incremental": "/release/{release_id}/dataset/{dataset_name}/incremental",
+                "incremental": (
+                    "/release/{release_id}/dataset/{dataset_name}/incremental"
+                ),
             },
         },
     }

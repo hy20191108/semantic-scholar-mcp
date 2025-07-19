@@ -797,7 +797,8 @@ class SemanticScholarClient:
     async def get_recommendations(
         self, paper_id: PaperId, fields: Fields | None = None, limit: int = 10
     ) -> list[Paper]:
-        """Get paper recommendations based on a paper with improved response handling."""
+        """Get paper recommendations based on a paper with improved response
+        handling."""
         fields = fields or BASIC_PAPER_FIELDS
         params = {
             "fields": ",".join(fields),
@@ -903,7 +904,8 @@ class SemanticScholarClient:
         if sort:
             params["sort"] = sort
 
-        # Handle additional kwargs but skip 'limit' as it's not supported by bulk endpoint
+        # Handle additional kwargs but skip 'limit' as it's not supported by
+        # bulk endpoint
         for key, value in kwargs.items():
             if key != "limit" and value is not None:
                 params[key] = value

@@ -61,6 +61,8 @@ class EmbeddingType(str, Enum):
 class PublicationVenue(BaseModel):
     """Publication venue model."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str | None = None
     name: str | None = None
     type: str | None = None
@@ -68,18 +70,14 @@ class PublicationVenue(BaseModel):
     issn: str | None = None
     url: Url | None = None
 
-    class Config:
-        populate_by_name = True
-
 
 class PaperEmbedding(BaseModel):
     """Paper embedding vector."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     model: EmbeddingType
     vector: list[float]
-
-    class Config:
-        populate_by_name = True
 
 
 class Author(BaseModel):
@@ -352,3 +350,90 @@ class SearchResult(BaseModel):
     total: int = Field(0, ge=0)
     offset: int = Field(0, ge=0)
     has_more: bool = Field(False)
+
+
+class DatasetSummary(BaseModel):
+    """Dataset summary model from API spec."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = Field(description="Dataset name")
+    description: str = Field(description="Description of the data in the dataset")
+    readme: str = Field(
+        description="Documentation and attribution for the dataset", alias="README"
+    )
+
+
+class DatasetRelease(BaseModel):
+    """Dataset release model from API spec."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    release_id: str = Field(description="Release identifier", alias="releaseId")
+    readme: str = Field(description="License and usage", alias="README")
+    datasets: list[DatasetSummary] = Field(
+        default_factory=list, description="Dataset metadata"
+    )
+
+
+class DatasetDownloadLinks(BaseModel):
+    """Dataset download links model from API spec."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = Field(description="Name of the dataset")
+    description: str = Field(
+        description="Description of the data contained in this dataset"
+    )
+    readme: str = Field(description="License and usage", alias="README")
+    files: list[str] = Field(
+        default_factory=list,
+        description="Temporary, pre-signed download links for dataset files",
+    )
+
+
+class DatasetDiff(BaseModel):
+    """Dataset diff model from API spec."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    from_release: str = Field(
+        description="Baseline release for this diff", alias="fromRelease"
+    )
+    to_release: str = Field(
+        description="Target release for this diff", alias="toRelease"
+    )
+    update_files: list[str] = Field(
+        default_factory=list,
+        description="List of files that contain updates",
+        alias="updateFiles",
+    )
+    delete_files: list[str] = Field(
+        default_factory=list,
+        description="List of files that contain deletes",
+        alias="deleteFiles",
+    )
+
+
+class IncrementalUpdate(BaseModel):
+    """Incremental update model from API spec."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    dataset: str = Field(description="Dataset these diffs are for")
+    start_release: str = Field(description="Beginning release", alias="startRelease")
+    end_release: str = Field(description="Ending release", alias="endRelease")
+    diffs: list[DatasetDiff] = Field(
+        default_factory=list, description="List of diffs to apply"
+    )
+
+
+class DatasetFile(BaseModel):
+    """Dataset file model."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = Field(description="File name")
+    url: str = Field(description="Download URL")
+    size: int | None = Field(None, description="File size in bytes")
+    checksum: str | None = Field(None, description="File checksum")

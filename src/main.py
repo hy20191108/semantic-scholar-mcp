@@ -12,12 +12,12 @@ from datetime import datetime
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
-from core.abstractions import ILogger, IMetricsCollector
-from core.cache import CacheManager
-from core.config import Environment, get_config
-from core.container import configure_services, set_current_scope
-from core.metrics import HealthCheck
-from semantic_scholar_mcp.api_client_enhanced import EnhancedSemanticScholarClient
+from .core.abstractions import ILogger, IMetricsCollector
+from .core.cache import CacheManager
+from .core.config import Environment, get_config
+from .core.container import configure_services, set_current_scope
+from .core.metrics import HealthCheck
+from .semantic_scholar_mcp.api_client_enhanced import EnhancedSemanticScholarClient
 
 
 class SemanticScholarMCPServer:
@@ -348,11 +348,13 @@ class SemanticScholarMCPServer:
 
             # Apply middleware
             if self.config.logging.log_request_duration:
-                # Note: In a real implementation, you would apply this to your HTTP server
+                # Note: In a real implementation, you would apply this to your
+                # HTTP server
                 self.logger.info("Request logging enabled")
 
             if self.config.metrics.enabled:
-                # Note: In a real implementation, you would apply this to your HTTP server
+                # Note: In a real implementation, you would apply this to your
+                # HTTP server
                 self.logger.info("Request metrics enabled")
 
             # Start MCP server
