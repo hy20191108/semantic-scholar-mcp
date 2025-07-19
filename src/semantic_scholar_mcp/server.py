@@ -157,14 +157,14 @@ async def initialize_server():
                 "get_author",
                 "get_author_papers",
                 "search_authors",
-                "get_recommendations",
+                "get_recommendations_for_paper",
                 "batch_get_papers",
                 "bulk_search_papers",
-                "search_papers_by_title",
+                "search_papers_match",
                 "autocomplete_query",
                 "search_snippets",
                 "batch_get_authors",
-                "get_advanced_recommendations",
+                "get_recommendations_batch",
                 "get_dataset_releases",
                 "get_dataset_info",
                 "get_dataset_download_links",
@@ -657,7 +657,7 @@ async def search_authors(
 
 
 @mcp.tool()
-async def get_recommendations(
+async def get_recommendations_for_paper(
     paper_id: str,
     limit: int = Field(
         default=10, ge=1, le=100, description="Number of recommendations"
@@ -680,7 +680,7 @@ async def get_recommendations(
     with RequestContext():
         try:
             async with api_client:
-                papers = await api_client.get_recommendations(
+                papers = await api_client.get_recommendations_for_paper(
                     paper_id=paper_id, limit=limit, fields=fields
                 )
 
@@ -804,7 +804,7 @@ async def bulk_search_papers(
             actual_fields = extract_field_value(fields)
 
             async with api_client:
-                papers = await api_client.bulk_search_papers(
+                papers = await api_client.search_papers_bulk(
                     query=query,
                     fields=actual_fields,
                     publication_types=publication_types,
@@ -839,7 +839,7 @@ async def bulk_search_papers(
 
 
 @mcp.tool()
-async def search_papers_by_title(
+async def search_papers_match(
     title: str,
     fields: list[str] | None = Field(
         default=None,
@@ -862,7 +862,7 @@ async def search_papers_by_title(
             actual_fields = extract_field_value(fields)
 
             async with api_client:
-                papers = await api_client.search_papers_by_title(
+                papers = await api_client.search_papers_match(
                     title=title, fields=actual_fields
                 )
 
@@ -1009,7 +1009,7 @@ async def batch_get_authors(
 
 
 @mcp.tool()
-async def get_advanced_recommendations(
+async def get_recommendations_batch(
     positive_paper_ids: list[str],
     negative_paper_ids: list[str] | None = None,
     limit: int = 10,
@@ -1028,7 +1028,7 @@ async def get_advanced_recommendations(
     with RequestContext():
         try:
             async with api_client:
-                papers = await api_client.get_advanced_recommendations(
+                papers = await api_client.get_recommendations_batch(
                     positive_paper_ids=positive_paper_ids,
                     negative_paper_ids=negative_paper_ids,
                     limit=limit,
