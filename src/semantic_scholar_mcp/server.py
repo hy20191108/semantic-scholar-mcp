@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,12 @@ from core.cache import InMemoryCache
 from core.config import ApplicationConfig, get_config
 from core.error_handler import MCPErrorHandler, mcp_error_handler
 from core.exceptions import ValidationError
-from core.logging import MCPToolContext, RequestContext, get_logger, initialize_logging
+from core.logging import (
+    MCPToolContext,
+    RequestContext,
+    get_logger,
+    initialize_logging,
+)
 from core.metrics_collector import MetricsCollector
 
 from .api_client_enhanced import SemanticScholarClient
@@ -30,11 +36,42 @@ from .utils import (
     validate_batch_size,
 )
 
+async def execute_api_with_error_handling(operation_name: str, operation_func):
+    """Execute API operation with standardized error handling."""
+    try:
+        async with api_client:
+            return await operation_func()
+    except Exception as e:
+        logger.error(f"Error in {operation_name}: {e!s}")
+        return mcp_error_handler.handle_error(e, operation_name)
+
+
+def extract_pagination_params(limit=None, offset=None, default_limit=10):
+    """Extract pagination parameters from Field objects."""
+    actual_limit = extract_field_value(limit) if limit is not None else default_limit
+    actual_offset = extract_field_value(offset) if offset is not None else 0
+    return actual_limit, actual_offset
+
+
 # Initialize FastMCP server
 mcp = FastMCP(
     name="semantic-scholar-mcp",
     description="MCP server for accessing Semantic Scholar academic database",
 )
+
+# Early initialization of logging for debugging
+
+if os.getenv("DEBUG_MCP_MODE", "false").lower() == "true":
+    # Initialize logging early for module-level debugging
+    temp_config = get_config()
+    initialize_logging(temp_config.logging)
+    temp_logger = get_logger("mcp.init")
+    temp_logger.debug_mcp(
+        "FastMCP instance created",
+        mcp_instance=str(mcp),
+        mcp_type=str(type(mcp)),
+        has_tool_method=hasattr(mcp, "tool"),
+    )
 
 # Global instances
 logger = get_logger(__name__)
@@ -196,8 +233,7 @@ async def search_papers(
             )
 
             # Extract actual values from Field objects
-            actual_limit = extract_field_value(limit)
-            actual_offset = extract_field_value(offset)
+            actual_limit, actual_offset = extract_pagination_params(limit, offset, 10)
             actual_sort = extract_field_value(sort)
             actual_year = extract_field_value(year)
             actual_fields_of_study = extract_field_value(fields_of_study)
@@ -237,8 +273,9 @@ async def search_papers(
             logger.debug_mcp(
                 "Executing API search", search_query=search_query.model_dump()
             )
-            async with api_client:
-                result = await api_client.search_papers(search_query)
+            result = await execute_api_with_error_handling(
+                "search_papers", lambda: api_client.search_papers(search_query)
+            )
 
             logger.debug_mcp(
                 "Search completed successfully",
@@ -328,13 +365,15 @@ async def get_paper(
             # Extract actual field value
             actual_fields = extract_field_value(fields)
 
-            async with api_client:
-                paper = await api_client.get_paper(
+            paper = await execute_api_with_error_handling(
+                "get_paper",
+                lambda: api_client.get_paper(
                     paper_id=paper_id,
                     fields=actual_fields,
                     include_citations=include_citations,
                     include_references=include_references,
-                )
+                ),
+            )
 
             paper_dict = paper.model_dump(exclude_none=True)
 
@@ -383,10 +422,14 @@ async def get_paper_citations(
     """
     with RequestContext():
         try:
-            async with api_client:
-                citations = await api_client.get_paper_citations(
-                    paper_id=paper_id, limit=limit, offset=offset
-                )
+            actual_limit, actual_offset = extract_pagination_params(limit, offset, 100)
+
+            citations = await execute_api_with_error_handling(
+                "get_paper_citations",
+                lambda: api_client.get_paper_citations(
+                    paper_id=paper_id, limit=actual_limit, offset=actual_offset
+                ),
+            )
 
             return {
                 "success": True,
@@ -424,10 +467,14 @@ async def get_paper_references(
     """
     with RequestContext():
         try:
-            async with api_client:
-                references = await api_client.get_paper_references(
-                    paper_id=paper_id, limit=limit, offset=offset
-                )
+            actual_limit, actual_offset = extract_pagination_params(limit, offset, 100)
+
+            references = await execute_api_with_error_handling(
+                "get_paper_references",
+                lambda: api_client.get_paper_references(
+                    paper_id=paper_id, limit=actual_limit, offset=actual_offset
+                ),
+            )
 
             return {
                 "success": True,
@@ -465,12 +512,16 @@ async def get_paper_authors(
     """
     with RequestContext():
         try:
-            async with api_client:
-                result = await api_client.get_paper_authors(
+            actual_limit, actual_offset = extract_pagination_params(limit, offset, 100)
+
+            result = await execute_api_with_error_handling(
+                "get_paper_authors",
+                lambda: api_client.get_paper_authors(
                     paper_id=paper_id,
-                    limit=limit,
-                    offset=offset,
-                )
+                    limit=actual_limit,
+                    offset=actual_offset,
+                ),
+            )
 
             return {
                 "success": True,
@@ -1342,7 +1393,8 @@ def literature_review(
     """
     year_filter = f" published after {start_year}" if start_year else ""
 
-    return f"""Please help me create a comprehensive literature review on the topic: "{topic}"
+    return f"""Please help me create a comprehensive literature review on the topic: \
+"{topic}"
 
 Instructions:
 1. Search for the most relevant and highly-cited papers on this topic{year_filter}
@@ -1415,7 +1467,8 @@ def research_trend_analysis(
     Returns:
         Prompt text for trend analysis
     """
-    return f"""Please analyze research trends in the field of "{field}" over the past {years} years.
+    return f"""Please analyze research trends in the field of "{field}" over the \
+past {years} years.
 
 Instructions:
 1. Search for papers in this field from the last {years} years
@@ -1464,11 +1517,15 @@ async def on_shutdown():
 # Main entry point
 def main():
     """Main entry point for the server."""
-    import os
+
+    # Initialize server first
+    logger.debug_mcp("Initializing MCP server")
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(initialize_server())
 
     # Log environment information if debug mode is enabled
     if os.getenv("DEBUG_MCP_MODE", "false").lower() == "true":
-        get_config()
         temp_logger = get_logger("mcp.main")
         temp_logger.debug_mcp(
             "MCP server main() called",
@@ -1486,16 +1543,14 @@ def main():
             working_directory=str(Path.cwd()),
         )
 
-    # Initialize server on startup
-    asyncio.run(on_startup())
-
     # Run the server
     try:
         logger.debug_mcp("Starting FastMCP server with stdio transport")
-        # Run the MCP server - this will block and handle stdio communication
+        # FastMCP handles the async event loop internally
         mcp.run(transport="stdio")
     except KeyboardInterrupt:
         logger.debug_mcp("MCP server interrupted by user")
+        logger.info("Semantic Scholar MCP server shutting down")
     except Exception as e:
         logger.log_with_stack_trace(
             logging.ERROR,
@@ -1505,7 +1560,11 @@ def main():
         )
         raise
     finally:
-        asyncio.run(on_shutdown())
+        logger.debug_mcp("MCP server shutdown completed")
+
+
+# Export app for testing
+app = mcp
 
 
 # Export app for testing

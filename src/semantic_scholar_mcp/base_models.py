@@ -18,7 +18,6 @@ class BaseEntity(BaseModel):
         use_enum_values=True,
         arbitrary_types_allowed=True,
         str_strip_whitespace=True,
-        json_encoders={datetime: lambda v: v.isoformat() if v else None},
         extra="allow",
     )
 

@@ -16,9 +16,9 @@ package "Semantic Scholar MCP Server" {
   ' MCP Layer
   package "MCP Layer" {
     [FastMCP Server] as MCPServer
-    [Tool Handlers] as Tools
-    [Resource Handlers] as Resources
-    [Prompt Handlers] as Prompts
+    [22 Tool Handlers] as Tools
+    [2 Resource Handlers] as Resources
+    [3 Prompt Handlers] as Prompts
     
     MCPServer --> Tools
     MCPServer --> Resources
@@ -91,8 +91,10 @@ Logging --> Protocols : implements
 
 ' Notes
 note right of MCPServer
-  Entry point for all
-  MCP communication
+  FastMCP-based server
+  • 22 Tools (API access)
+  • 2 Resources (direct data)
+  • 3 Prompts (AI assistance)
 end note
 
 note right of Client

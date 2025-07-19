@@ -84,6 +84,10 @@ class InMemoryCache(ICache[str, Any]):
             del self._cache[key]
 
 
+# Alias for backward compatibility
+LRUCache = InMemoryCache
+
+
 def generate_cache_key(*args, **kwargs) -> str:
     """Generate a cache key from arguments."""
     # Create a string representation of args and kwargs
@@ -92,4 +96,4 @@ def generate_cache_key(*args, **kwargs) -> str:
     key_string = ":".join(key_parts)
 
     # Hash for consistent length
-    return hashlib.md5(key_string.encode()).hexdigest()
+    return hashlib.sha256(key_string.encode()).hexdigest()

@@ -6,14 +6,14 @@ title Search Papers Sequence Diagram
 actor User
 participant "MCP Client" as Client
 participant "FastMCP Server" as Server
-participant "search_papers()" as SearchTool
-participant "RequestContext" as Context
+participant "@mcp.tool search_papers" as SearchTool
+participant "mcp_error_handler" as ErrorHandler
 participant "SemanticScholarClient" as APIClient
-participant "TokenBucketRateLimiter" as RateLimiter
 participant "CircuitBreaker" as CB
 participant "InMemoryCache" as Cache
+participant "MetricsCollector" as Metrics
 participant "Semantic Scholar API" as API
-participant "ContextLogger" as Logger
+participant "StructuredLogger" as Logger
 
 User -> Client: search papers "machine learning"
 activate Client
@@ -21,15 +21,17 @@ activate Client
 Client -> Server: invoke tool\n"search_papers"
 activate Server
 
-Server -> SearchTool: search_papers(\n  query="machine learning",\n  limit=10)
+Server -> SearchTool: @mcp.tool decorated\nsearch_papers(query="machine learning", limit=10)
 activate SearchTool
 
-SearchTool -> Context: __enter__()
-activate Context
-note right: Creates request context\nwith correlation ID
+SearchTool -> ErrorHandler: @mcp_error_handler wrapper
+activate ErrorHandler
+note right: Error handling decorator\napplied to tool
 
-SearchTool -> SearchTool: Build SearchQuery
-note right: Validates query parameters
+ErrorHandler -> Logger: log request start
+activate Logger
+Logger -> Metrics: record_request("search_papers")
+activate Metrics
 
 SearchTool -> APIClient: search_papers(search_query)
 activate APIClient
@@ -39,11 +41,7 @@ activate Cache
 Cache --> APIClient: None (cache miss)
 deactivate Cache
 
-APIClient -> RateLimiter: wait_if_needed(1)
-activate RateLimiter
-note right: Checks rate limit\nWaits if necessary
-RateLimiter --> APIClient: OK
-deactivate RateLimiter
+note right of APIClient: Rate limiting handled\ninternally by client
 
 APIClient -> CB: call(_execute_request)
 activate CB

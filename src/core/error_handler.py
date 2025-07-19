@@ -79,7 +79,8 @@ class ErrorRecoveryStrategy:
                         else self.retry_delay
                     )
                     logger.info(
-                        f"Retrying after {delay}s (attempt {attempt}/{self.max_retries})"
+                        f"Retrying after {delay}s (attempt {attempt}/"
+                        f"{self.max_retries})"
                     )
                     await asyncio.sleep(delay)
 
@@ -536,3 +537,7 @@ def get_global_error_handler() -> MCPErrorHandler:
         Global error handler instance
     """
     return global_error_handler
+
+
+# Alias for backward compatibility
+ErrorHandler = MCPErrorHandler

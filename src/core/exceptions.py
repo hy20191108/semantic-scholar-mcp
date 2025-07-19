@@ -124,7 +124,8 @@ class SemanticScholarMCPError(Exception):
 
         if self.inner_exception:
             parts.append(
-                f"Caused by: {type(self.inner_exception).__name__}: {self.inner_exception}"
+                f"Caused by: {type(self.inner_exception).__name__}: "
+                f"{self.inner_exception}"
             )
 
         return " | ".join(parts)
@@ -498,7 +499,7 @@ class ServiceUnavailableError(APIError):
         super().__init__(message=message, details=details, **kwargs)
 
 
-class TimeoutError(SemanticScholarMCPError):
+class MCPTimeoutError(SemanticScholarMCPError):
     """Raised when operations time out."""
 
     def __init__(
@@ -826,11 +827,13 @@ def create_error_response(
         wrapped = wrap_exception(exception)
         response = wrapped.to_dict()
 
-    if not include_internal_details:
-        # Remove sensitive internal details in production
-        if "error" in response and "details" in response["error"]:
-            sensitive_keys = ["stack_trace", "query", "internal_state"]
-            for key in sensitive_keys:
-                response["error"]["details"].pop(key, None)
+    if (
+        not include_internal_details
+        and "error" in response
+        and "details" in response["error"]
+    ):
+        sensitive_keys = ["stack_trace", "query", "internal_state"]
+        for key in sensitive_keys:
+            response["error"]["details"].pop(key, None)
 
     return response

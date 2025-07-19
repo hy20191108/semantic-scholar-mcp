@@ -2,14 +2,7 @@
 !theme plain
 skinparam classAttributeIconSize 0
 
-' Core Protocols (Interfaces)
-interface ILogger {
-  +debug(message: str, **kwargs: Any): None
-  +info(message: str, **kwargs: Any): None
-  +warning(message: str, **kwargs: Any): None
-  +error(message: str, exception: Exception, **kwargs: Any): None
-}
-
+' ===== CORE PROTOCOLS (from core/protocols.py) =====
 interface ICache {
   +get(key: str): Awaitable[Optional[Any]]
   +set(key: str, value: Any, ttl: int): Awaitable[None]
@@ -18,309 +11,315 @@ interface ICache {
   +exists(key: str): Awaitable[bool]
 }
 
-interface ICircuitBreaker {
-  +call(func: Callable, *args, **kwargs): Awaitable[Any]
-  +get_state(): str
-  +reset(): None
-}
-
-interface IRateLimiter {
-  +acquire(tokens: int): Awaitable[bool]
-  +wait_if_needed(tokens: int): Awaitable[None]
-  +get_status(): Dict[str, Any]
-}
-
 interface IMetricsCollector {
-  +increment(metric: str, value: float, tags: Dict[str, str]): None
-  +gauge(metric: str, value: float, tags: Dict[str, str]): None
-  +histogram(metric: str, value: float, tags: Dict[str, str]): None
-  +timing(metric: str, value: float, tags: Dict[str, str]): None
+  +record_request(endpoint: str, method: str): None
+  +record_response(endpoint: str, status_code: int, duration: float): None
+  +record_error(endpoint: str, error_type: str): None
+  +get_metrics(): Dict[str, Any]
 }
 
-' Base Models
-abstract class BaseEntity {
-  +id: Optional[str]
-  +created_at: Optional[datetime]
-  +updated_at: Optional[datetime]
-  +metadata: Dict[str, Any]
-  +validate_id(): Optional[str]
+interface IErrorHandler {
+  +handle_error(error: Exception, context: Dict[str, Any]): Awaitable[Any]
+  +should_retry(error: Exception, attempt: int): bool
 }
 
-abstract class CacheableModel {
-  +generate_cache_key(): str
-  +cache_ttl: int
+interface ILogger {
+  +debug(message: str, **kwargs: Any): None
+  +info(message: str, **kwargs: Any): None
+  +warning(message: str, **kwargs: Any): None
+  +error(message: str, **kwargs: Any): None
 }
 
-' Domain Models
+' ===== DOMAIN MODELS (from domain_models.py) =====
+enum PublicationType {
+  JOURNAL_ARTICLE
+  CONFERENCE_PAPER
+  BOOK_CHAPTER
+  THESIS
+  TECHNICAL_REPORT
+  PREPRINT
+}
+
+enum EmbeddingType {
+  SPECTER_V1
+  SPECTER_V2
+}
+
 class Paper {
-  +paper_id: PaperId
+  +paper_id: str
   +title: str
   +abstract: Optional[str]
   +year: Optional[int]
-  +venue: Optional[str]
   +authors: List[Author]
   +citation_count: int
   +reference_count: int
-  +influential_citation_count: int
-  +external_ids: Dict[str, str]
-  +url: Optional[str]
+  +publication_types: List[PublicationType]
+  +publication_venue: Optional[str]
   +fields_of_study: List[str]
-  +validate_title(): str
-  +validate_year(): Optional[int]
-  +validate_metrics(): Paper
-  +generate_cache_key(): str
+  +is_open_access: bool
+  +external_ids: Dict[str, str]
+  +embedding: Optional[List[float]]
 }
 
 class Author {
-  +author_id: Optional[AuthorId]
+  +author_id: str
   +name: str
-  +aliases: List[str]
-  +affiliations: List[str]
+  +affiliation: Optional[str]
   +homepage: Optional[str]
-  +citation_count: Optional[int]
-  +h_index: Optional[int]
-  +paper_count: Optional[int]
-  +validate_name(): str
-}
-
-class Citation {
-  +paper_id: PaperId
-  +title: str
-  +year: Optional[int]
-  +authors: List[Author]
-  +venue: Optional[str]
+  +paper_count: int
   +citation_count: int
-  +is_influential: bool
-  +contexts: List[str]
-  +intents: List[str]
-}
-
-class Reference {
-  +paper_id: Optional[PaperId]
-  +title: str
-  +year: Optional[int]
-  +authors: List[Author]
-  +venue: Optional[str]
-  +citation_count: Optional[int]
+  +h_index: int
 }
 
 class SearchQuery {
   +query: str
-  +fields: Optional[List[str]]
-  +filters: Optional[SearchFilters]
-  +offset: int
   +limit: int
-  +sort: Optional[str]
-  +validate_query(): str
+  +offset: int
+  +fields: Optional[List[str]]
+  +publication_types: Optional[List[PublicationType]]
+  +fields_of_study: Optional[List[str]]
+  +year: Optional[int]
+  +min_citation_count: Optional[int]
+  +open_access_pdf: Optional[bool]
 }
 
 class SearchFilters {
-  +year: Optional[int]
   +year_range: Optional[Tuple[int, int]]
+  +venues: Optional[List[str]]
+  +min_citations: Optional[int]
+  +max_citations: Optional[int]
   +publication_types: Optional[List[PublicationType]]
   +fields_of_study: Optional[List[str]]
-  +venues: Optional[List[str]]
   +open_access_only: bool
-  +min_citation_count: Optional[int]
-  +validate_year_range(): SearchFilters
 }
 
-' API Client Components
-class SemanticScholarClient {
-  -config: SemanticScholarConfig
-  -logger: ILogger
-  -cache: Optional[ICache]
-  -circuit_breaker: CircuitBreaker
-  -rate_limiter: TokenBucketRateLimiter
-  -retry_strategy: ExponentialBackoffRetryStrategy
-  -_client: Optional[httpx.AsyncClient]
-  +search_papers(query: SearchQuery, fields: Optional[Fields]): Awaitable[PaginatedResponse[Paper]]
-  +get_paper(paper_id: PaperId, fields: Optional[Fields], include_citations: bool, include_references: bool): Awaitable[Paper]
-  +get_paper_citations(paper_id: PaperId, fields: Optional[Fields], offset: int, limit: int): Awaitable[List[Citation]]
-  +get_paper_references(paper_id: PaperId, fields: Optional[Fields], offset: int, limit: int): Awaitable[List[Reference]]
-  +batch_get_papers(paper_ids: List[PaperId], fields: Optional[Fields]): Awaitable[List[Paper]]
-  +get_author(author_id: AuthorId, fields: Optional[Fields]): Awaitable[Author]
-  +get_author_papers(author_id: AuthorId, fields: Optional[Fields], offset: int, limit: int): Awaitable[PaginatedResponse[Paper]]
-  +search_authors(query: str, fields: Optional[Fields], offset: int, limit: int): Awaitable[PaginatedResponse[Author]]
-  +get_recommendations(paper_id: PaperId, fields: Optional[Fields], limit: int): Awaitable[List[Paper]]
-  +health_check(): Awaitable[Dict[str, Any]]
-  -_make_request(method: str, path: str, params: Optional[Dict], json: Optional[Dict], retry_count: int): Awaitable[Dict[str, Any]]
-  -_build_headers(): Dict[str, str]
+' ===== BASE MODELS (from base_models.py) =====
+abstract class BaseEntity {
+  +id: str
+  +created_at: datetime
+  +updated_at: datetime
 }
 
-class CircuitBreaker {
-  -failure_threshold: int
-  -recovery_timeout: float
-  -expected_exception_types: List[Type[Exception]]
-  -_failure_count: int
-  -_last_failure_time: Optional[datetime]
-  -_state: CircuitBreakerState
-  -_half_open_attempts: int
-  +state: CircuitBreakerState
-  +call(func: Callable, *args, **kwargs): Awaitable[Any]
-  +reset(): None
-  -_on_success(): None
-  -_on_failure(): None
+class CacheableModel {
+  +cache_key: str
+  +cache_ttl: int
+  +to_cache_value(): Dict[str, Any]
+  +from_cache_value(data: Dict[str, Any]): Self
 }
 
-class TokenBucketRateLimiter {
-  -rate: float
-  -burst: int
-  -_tokens: float
-  -_last_update: float
-  -_lock: asyncio.Lock
-  +acquire(tokens: int): Awaitable[bool]
-  +wait_if_needed(tokens: int): Awaitable[None]
-  +available_tokens: int
+class ApiResponse<T> {
+  +data: T
+  +total: Optional[int]
+  +offset: Optional[int]
+  +next: Optional[str]
+  +success: bool
+  +error: Optional[str]
 }
 
-class ExponentialBackoffRetryStrategy {
-  -initial_delay: float
-  -max_delay: float
-  -exponential_base: float
-  -jitter: bool
-  +get_delay(attempt: int): float
+class PaginatedResponse<T> {
+  +items: List[T]
+  +total: int
+  +offset: int
+  +limit: int
+  +has_next: bool
+  +has_previous: bool
 }
 
-' Logging Components
-class ContextLogger {
-  -_logger: logging.Logger
-  -_context: Dict[str, Any]
-  +debug(message: str, **kwargs: Any): None
-  +info(message: str, **kwargs: Any): None
-  +warning(message: str, **kwargs: Any): None
-  +error(message: str, exception: Optional[Exception], **kwargs: Any): None
-  +with_context(**context: Any): ContextLogger
-  -_log(level: int, message: str, **kwargs: Any): None
-}
-
-class LoggerFactory {
-  -config: LoggingConfig
-  +get_logger(name: str): ContextLogger
-  -_setup_root_logger(): None
-}
-
-class StructuredFormatter {
-  -include_context: bool
-  +format(record: LogRecord): str
-}
-
-' Configuration
+' ===== CONFIGURATION (from config.py) =====
 class ApplicationConfig {
-  +environment: Environment
-  +server: ServerConfig
+  +environment: str
+  +debug: bool
+  +log_level: str
   +semantic_scholar: SemanticScholarConfig
-  +logging: LoggingConfig
   +cache: CacheConfig
-  +monitoring: MonitoringConfig
-  +tracing: TracingConfig
-  +validate_api_key(): ApplicationConfig
-}
-
-class SemanticScholarConfig {
-  +base_url: str
-  +api_key: Optional[SecretStr]
-  +timeout: float
-  +max_connections: int
-  +max_keepalive_connections: int
-  +default_fields: List[str]
   +rate_limit: RateLimitConfig
-  +retry: RetryConfig
   +circuit_breaker: CircuitBreakerConfig
 }
 
-' MCP Server
-class FastMCP {
-  +name: str
-  +description: str
-  +tool()(func: Callable): Callable
-  +resource(path: str)(func: Callable): Callable
-  +prompt()(func: Callable): Callable
-  +run(transport: str): None
+class SemanticScholarConfig {
+  +api_key: Optional[str]
+  +base_url: str
+  +timeout: float
+  +max_retries: int
+  +retry_delay: float
 }
 
-' Cache Implementation
+class CacheConfig {
+  +enabled: bool
+  +max_size: int
+  +default_ttl: int
+  +cleanup_interval: int
+}
+
+class RateLimitConfig {
+  +enabled: bool
+  +requests_per_minute: int
+  +burst_size: int
+}
+
+class CircuitBreakerConfig {
+  +enabled: bool
+  +failure_threshold: int
+  +recovery_timeout: float
+  +half_open_max_calls: int
+}
+
+' ===== INFRASTRUCTURE IMPLEMENTATIONS =====
 class InMemoryCache {
-  -_cache: Dict[str, CacheEntry]
-  -_lock: asyncio.Lock
+  -cache: Dict[str, CacheEntry]
   -max_size: int
   -default_ttl: int
   +get(key: str): Awaitable[Optional[Any]]
-  +set(key: str, value: Any, ttl: Optional[int]): Awaitable[None]
+  +set(key: str, value: Any, ttl: int): Awaitable[None]
   +delete(key: str): Awaitable[None]
   +clear(): Awaitable[None]
   +exists(key: str): Awaitable[bool]
-  -_evict_expired(): Awaitable[None]
-  -_evict_lru(): Awaitable[None]
+  -cleanup_expired(): None
 }
 
-' Enums
+class MetricsCollector {
+  -metrics: Dict[str, Any]
+  -start_time: datetime
+  +record_request(endpoint: str, method: str): None
+  +record_response(endpoint: str, status_code: int, duration: float): None
+  +record_error(endpoint: str, error_type: str): None
+  +get_metrics(): Dict[str, Any]
+  +reset_metrics(): None
+}
+
+class MCPErrorHandler {
+  -recovery_strategies: Dict[Type[Exception], ErrorRecoveryStrategy]
+  +handle_error(error: Exception, context: Dict[str, Any]): Awaitable[Any]
+  +should_retry(error: Exception, attempt: int): bool
+  +register_strategy(error_type: Type[Exception], strategy: ErrorRecoveryStrategy): None
+}
+
+class StructuredLogger {
+  -logger: Logger
+  -context: Dict[str, Any]
+  +with_context(**kwargs): StructuredLogger
+  +debug(message: str, **kwargs: Any): None
+  +info(message: str, **kwargs: Any): None
+  +warning(message: str, **kwargs: Any): None
+  +error(message: str, **kwargs: Any): None
+}
+
+' ===== API CLIENT (from api_client_enhanced.py) =====
 enum CircuitBreakerState {
   CLOSED
   OPEN
   HALF_OPEN
 }
 
-enum PublicationType {
-  JOURNAL_ARTICLE
-  CONFERENCE
-  REVIEW
-  DATASET
-  BOOK
-  BOOK_CHAPTER
-  THESIS
-  EDITORIAL
-  NEWS
-  STUDY
-  LETTER
-  UNKNOWN
+class CircuitBreaker {
+  -state: CircuitBreakerState
+  -failure_count: int
+  -last_failure_time: Optional[float]
+  -failure_threshold: int
+  -recovery_timeout: float
+  +call(func: Callable, *args, **kwargs): Awaitable[Any]
+  +get_state(): CircuitBreakerState
+  +reset(): None
+  -transition_to_open(): None
+  -transition_to_half_open(): None
+  -transition_to_closed(): None
 }
 
-enum Environment {
-  DEVELOPMENT
-  TESTING
-  STAGING
-  PRODUCTION
+class SemanticScholarClient {
+  -config: SemanticScholarConfig
+  -session: AsyncClient
+  -circuit_breaker: CircuitBreaker
+  -cache: ICache
+  -metrics: IMetricsCollector
+  -logger: ILogger
+  +search_papers(query: SearchQuery): Awaitable[PaginatedResponse[Paper]]
+  +get_paper(paper_id: str): Awaitable[Paper]
+  +get_paper_citations(paper_id: str): Awaitable[List[Paper]]
+  +get_paper_references(paper_id: str): Awaitable[List[Paper]]
+  +get_author(author_id: str): Awaitable[Author]
+  +get_author_papers(author_id: str): Awaitable[List[Paper]]
+  +batch_get_papers(paper_ids: List[str]): Awaitable[List[Paper]]
+  -make_request(endpoint: str, params: Dict[str, Any]): Awaitable[Dict[str, Any]]
 }
 
-enum LogLevel {
-  DEBUG
-  INFO
-  WARNING
-  ERROR
-  CRITICAL
+' ===== MCP SERVER (from server.py) =====
+class FastMCPServer {
+  -client: SemanticScholarClient
+  -config: ApplicationConfig
+  -logger: ILogger
+  -metrics: IMetricsCollector
+  <<22 Tools>>
+  +search_papers()
+  +get_paper()
+  +get_paper_citations()
+  +get_paper_references()
+  +get_paper_authors()
+  +batch_get_papers()
+  +bulk_search_papers()
+  +search_papers_by_title()
+  +get_paper_with_embeddings()
+  +search_papers_with_embeddings()
+  +get_author()
+  +get_author_papers()
+  +search_authors()
+  +batch_get_authors()
+  +get_recommendations()
+  +get_advanced_recommendations()
+  +autocomplete_query()
+  +search_snippets()
+  +get_dataset_releases()
+  +get_dataset_info()
+  +get_dataset_download_links()
+  +get_incremental_dataset_updates()
+  <<2 Resources>>
+  +papers_resource()
+  +authors_resource()
+  <<3 Prompts>>
+  +literature_review()
+  +citation_analysis()
+  +research_trend_analysis()
 }
 
-' Relationships
-Paper --|> CacheableModel
-Paper --|> BaseEntity
-Paper "1" *-- "0..*" Author : authors
-Paper "1" *-- "0..*" Citation : citations
-Paper "1" *-- "0..*" Reference : references
+' ===== RELATIONSHIPS =====
+ICache <|.. InMemoryCache
+IMetricsCollector <|.. MetricsCollector
+IErrorHandler <|.. MCPErrorHandler
+ILogger <|.. StructuredLogger
 
-SearchQuery "1" *-- "0..1" SearchFilters : filters
+BaseEntity <|-- Paper
+BaseEntity <|-- Author
+CacheableModel <|.. Paper
+CacheableModel <|.. Author
 
-SemanticScholarClient ..> ILogger : uses
-SemanticScholarClient ..> ICache : uses
-SemanticScholarClient ..> IMetricsCollector : uses
-SemanticScholarClient "1" *-- "1" CircuitBreaker : circuit_breaker
-SemanticScholarClient "1" *-- "1" TokenBucketRateLimiter : rate_limiter
-SemanticScholarClient "1" *-- "1" ExponentialBackoffRetryStrategy : retry_strategy
-SemanticScholarClient ..> Paper : creates
-SemanticScholarClient ..> Author : creates
-SemanticScholarClient ..> Citation : creates
-SemanticScholarClient ..> Reference : creates
+ApplicationConfig *-- SemanticScholarConfig
+ApplicationConfig *-- CacheConfig
+ApplicationConfig *-- RateLimitConfig
+ApplicationConfig *-- CircuitBreakerConfig
 
-CircuitBreaker ..> ICircuitBreaker : implements
-TokenBucketRateLimiter ..> IRateLimiter : implements
-ContextLogger ..> ILogger : implements
-InMemoryCache ..> ICache : implements
+SemanticScholarClient --> ICache
+SemanticScholarClient --> IMetricsCollector
+SemanticScholarClient --> ILogger
+SemanticScholarClient *-- CircuitBreaker
+SemanticScholarClient ..> SemanticScholarConfig
 
-LoggerFactory "1" --> "*" ContextLogger : creates
-LoggerFactory ..> StructuredFormatter : uses
+FastMCPServer --> SemanticScholarClient
+FastMCPServer --> ILogger
+FastMCPServer --> IMetricsCollector
+FastMCPServer ..> ApplicationConfig
 
-ApplicationConfig "1" *-- "1" SemanticScholarConfig : semantic_scholar
+Paper *-- Author
+SearchQuery ..> SearchFilters
+ApiResponse ..> Paper
+ApiResponse ..> Author
+PaginatedResponse ..> Paper
+PaginatedResponse ..> Author
 
-FastMCP ..> SemanticScholarClient : uses
+MCPErrorHandler ..> ErrorRecoveryStrategy
+
+note top of FastMCPServer : MCP Server Implementation\n• 22 Tools for API access\n• 2 Resources for direct data\n• 3 AI Prompts for research\n• FastMCP framework based
+
+note top of SemanticScholarClient : Enterprise API Client\n• Circuit breaker pattern\n• Rate limiting\n• Caching & metrics\n• Retry with backoff
+
+note top of CircuitBreaker : Fault Tolerance\n• Prevents cascade failures\n• Auto-recovery mechanism\n• Configurable thresholds
 
 @enduml
