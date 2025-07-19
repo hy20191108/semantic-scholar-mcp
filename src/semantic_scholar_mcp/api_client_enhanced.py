@@ -794,7 +794,7 @@ class SemanticScholarClient:
             items=authors, total=data.get("total", 0), offset=offset, limit=limit
         )
 
-    async def get_recommendations(
+    async def get_recommendations_for_paper(
         self, paper_id: PaperId, fields: Fields | None = None, limit: int = 10
     ) -> list[Paper]:
         """Get paper recommendations based on a paper with improved response
@@ -860,7 +860,7 @@ class SemanticScholarClient:
             "burst": self.rate_limiter.burst,
         }
 
-    async def bulk_search_papers(
+    async def search_papers_bulk(
         self,
         query: str,
         fields: Fields | None = None,
@@ -919,7 +919,7 @@ class SemanticScholarClient:
             return [Paper(**paper_data) for paper_data in data]
         return []
 
-    async def search_papers_by_title(
+    async def search_papers_match(
         self, title: str, fields: Fields | None = None
     ) -> list[Paper]:
         """Search papers by title matching."""
@@ -992,7 +992,7 @@ class SemanticScholarClient:
         # Fallback to dict format with "data" key if needed
         return [Author(**author_data) for author_data in response.get("data", [])]
 
-    async def get_advanced_recommendations(
+    async def get_recommendations_batch(
         self,
         positive_paper_ids: list[PaperId],
         negative_paper_ids: list[PaperId] | None = None,

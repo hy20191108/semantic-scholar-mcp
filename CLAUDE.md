@@ -70,8 +70,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **✅ 全22ツール動作確認完了** - 100%成功率
 - **Paper Tools (7)**: search_papers, get_paper, get_paper_citations, get_paper_references, get_paper_authors, batch_get_papers, get_paper_with_embeddings
 - **Author Tools (4)**: get_author, get_author_papers, search_authors, batch_get_authors  
-- **Search Tools (4)**: bulk_search_papers, search_papers_by_title, autocomplete_query, search_snippets
-- **AI/ML Tools (3)**: get_recommendations, get_advanced_recommendations, search_papers_with_embeddings
+- **Search Tools (4)**: bulk_search_papers, search_papers_match, autocomplete_query, search_snippets
+- **AI/ML Tools (3)**: get_recommendations_for_paper, get_recommendations_batch, search_papers_with_embeddings
 - **Dataset Tools (4)**: get_dataset_releases, get_dataset_info, get_dataset_download_links, get_incremental_dataset_updates
 - **Prompts (3)**: literature_review, citation_analysis, research_trend_analysis
 - **API Rate Limiting**: HTTP 429エラーで正常に動作確認 (Circuit breaker, exponential backoff動作)

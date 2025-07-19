@@ -238,7 +238,7 @@ class SemanticScholarMCPServer:
                     return {"error": str(e)}
 
         @self.mcp_server.tool()
-        async def get_recommendations(paper_id: str, limit: int = 10) -> dict:
+        async def get_recommendations_for_paper(paper_id: str, limit: int = 10) -> dict:
             """Get paper recommendations based on a paper.
 
             Args:
@@ -249,11 +249,13 @@ class SemanticScholarMCPServer:
                 List of recommended papers
             """
             async with self.logger.log_context(
-                tool="get_recommendations", paper_id=paper_id
+                tool="get_recommendations_for_paper", paper_id=paper_id
             ):
                 try:
-                    recommendations = await self.api_client.get_recommendations(
-                        paper_id=paper_id, limit=limit
+                    recommendations = (
+                        await self.api_client.get_recommendations_for_paper(
+                            paper_id=paper_id, limit=limit
+                        )
                     )
 
                     return {
