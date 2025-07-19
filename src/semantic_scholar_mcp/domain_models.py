@@ -62,7 +62,6 @@ class PublicationVenue(BaseModel):
     """Publication venue model."""
 
     model_config = ConfigDict(populate_by_name=True)
-
     id: str | None = None
     name: str | None = None
     type: str | None = None

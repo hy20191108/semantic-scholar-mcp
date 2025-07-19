@@ -36,7 +36,6 @@ from .utils import (
     validate_batch_size,
 )
 
-
 async def execute_api_with_error_handling(operation_name: str, operation_func):
     """Execute API operation with standardized error handling."""
     try:
@@ -1562,6 +1561,10 @@ def main():
         raise
     finally:
         logger.debug_mcp("MCP server shutdown completed")
+
+
+# Export app for testing
+app = mcp
 
 
 # Export app for testing
