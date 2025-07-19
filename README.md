@@ -79,10 +79,11 @@ Ask in natural language:
 - *"Get recommendations based on the BERT paper"*
 - *"Create a literature review on quantum computing"*
 
-## Available Tools
+## Available Tools (22 Total)
 
-### 📄 Paper Tools
+### 📄 Paper Tools (11 tools)
 
+<<<<<<< Updated upstream
 | Tool                   | Description                     | Example                                            |
 | ---------------------- | ------------------------------- | -------------------------------------------------- |
 | `search_papers`        | Search papers with filters      | *"Search for deep learning papers from 2023"*      |
@@ -93,25 +94,58 @@ Ask in natural language:
 | `batch_get_papers`     | Get multiple papers efficiently | *"Get details for papers: abc123, def456, ghi789"* |
 | `bulk_search_papers`   | Advanced search with filters    | *"Search ML papers from 2020-2023 with 50+ citations"* |
 | `search_papers_by_title` | Search by exact title match   | *"Find paper with title 'Attention Is All You Need'"* |
+=======
+| Tool                     | Description                        |
+| ------------------------ | ---------------------------------- |
+| `search_papers`          | Search papers with filters         |
+| `get_paper`              | Get detailed paper info            |
+| `get_paper_citations`    | Get papers citing this paper       |
+| `get_paper_references`   | Get papers this paper cites        |
+| `get_paper_authors`      | Get detailed author info for paper |
+| `batch_get_papers`       | Get multiple papers efficiently    |
+| `bulk_search_papers`     | Advanced search with filters       |
+| `search_papers_match`    | Search by exact title match        |
+| `autocomplete_query`     | Get search suggestions             |
+| `search_snippets`        | Search text snippets in papers     |
+| `get_paper_with_embeddings` | Get paper with SPECTER embeddings |
+>>>>>>> Stashed changes
 
-### 👤 Author Tools
+### 👤 Author Tools (4 tools)
 
+<<<<<<< Updated upstream
 | Tool                | Description                | Example                                     |
 | ------------------- | -------------------------- | ------------------------------------------- |
 | `search_authors`    | Search for researchers     | *"Find authors working on computer vision"* |
 | `get_author`        | Get author profile         | *"Get profile for author ID 12345"*         |
 | `get_author_papers` | List author's publications | *"Show papers by Geoffrey Hinton"*          |
 | `batch_get_authors` | Get multiple authors efficiently | *"Get details for authors: 123, 456, 789"* |
+=======
+| Tool                | Description                      |
+| ------------------- | -------------------------------- |
+| `search_authors`    | Search for researchers           |
+| `get_author`        | Get author profile               |
+| `get_author_papers` | List author's publications       |
+| `batch_get_authors` | Get multiple authors efficiently |
+>>>>>>> Stashed changes
 
-### 🤖 AI Tools
+### 🤖 AI & Search Tools (3 tools)
 
+<<<<<<< Updated upstream
 | Tool                  | Description                      | Example                               |
 | --------------------- | -------------------------------- | ------------------------------------- |
 | `get_recommendations` | AI-powered paper recommendations | *"Recommend papers similar to GPT-3"* |
 | `get_advanced_recommendations` | Advanced ML recommendations | *"Get recommendations from positive/negative examples"* |
+=======
+| Tool                           | Description                         |
+| ------------------------------ | ----------------------------------- |
+| `get_recommendations_for_paper` | AI-powered paper recommendations   |
+| `get_recommendations_batch`     | Advanced ML recommendations        |
+| `search_papers_with_embeddings`| Search papers using semantic vectors|
+>>>>>>> Stashed changes
 
-### 🔍 Advanced Search Tools
+### 📊 Dataset Tools (4 tools)
 
+<<<<<<< Updated upstream
 | Tool                | Description                | Example                                     |
 | ------------------- | -------------------------- | ------------------------------------------- |
 | `autocomplete_query` | Get search suggestions    | *"Complete query 'machine lear...'"*       |
@@ -132,15 +166,16 @@ Ask in natural language:
 | `get_dataset_info`  | Get dataset information   | *"Get info for dataset release 2023-01"*   |
 | `get_dataset_download_links` | Get download links | *"Get download links for papers dataset"* |
 | `get_incremental_dataset_updates` | Get dataset updates | *"Get updates between releases"* |
+=======
+| Tool                              | Description             |
+| --------------------------------- | ----------------------- |
+| `get_dataset_releases`            | List available datasets |
+| `get_dataset_info`                | Get dataset information |
+| `get_dataset_download_links`      | Get download links      |
+| `get_incremental_dataset_updates` | Get dataset updates     |
+>>>>>>> Stashed changes
 
 ## Advanced Features
-
-### 📚 Resources (Direct Access)
-
-| Resource              | Description                  | Usage                           |
-| --------------------- | ---------------------------- | ------------------------------- |
-| `papers/{paper_id}`   | Direct paper data access     | Auto-populated in conversations |
-| `authors/{author_id}` | Direct author profile access | Auto-populated in conversations |
 
 ### 🎯 AI Prompts (Smart Templates)
 
