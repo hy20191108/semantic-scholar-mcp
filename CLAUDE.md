@@ -747,6 +747,90 @@ Each tool includes proper error handling, rate limiting, and caching.
 - **Installation**: `pip install semantic-scholar-mcp` (but use `uv add` for development)
 - **Latest Version**: Check PyPI for current version
 
+## Technical Architecture (Moved from README)
+
+### Architecture Overview
+
+This is a **Semantic Scholar MCP Server** that provides access to millions of academic papers through the Model Context Protocol (MCP). The architecture follows enterprise-grade patterns with clean separation of concerns.
+
+### Key Components
+
+1. **MCP Server** (`src/semantic_scholar_mcp/server.py`)
+   - FastMCP-based implementation
+   - 22 tools, 2 resources, 3 prompts
+   - Comprehensive error handling and logging
+
+2. **API Client** (`src/semantic_scholar_mcp/api_client_enhanced.py`)
+   - Circuit breaker pattern for fault tolerance
+   - Rate limiting and retry logic
+   - In-memory LRU caching with TTL
+
+3. **Core Infrastructure** (`src/core/`)
+   - `config.py`: Configuration management
+   - `error_handler.py`: Centralized error handling
+   - `logging.py`: Structured logging with correlation IDs
+   - `cache.py`: In-memory caching layer
+   - `metrics_collector.py`: Performance metrics
+
+4. **Data Models** (`src/semantic_scholar_mcp/`)
+   - `base_models.py`: Core entities (Paper, Author, etc.)
+   - `domain_models.py`: Business logic models
+   - `models.py`: API response models
+
+### Package Structure
+```
+src/
+├── semantic_scholar_mcp/    # Main package
+│   ├── server.py           # MCP server implementation
+│   ├── api_client_enhanced.py # HTTP client with resilience
+│   ├── models.py           # Pydantic models
+│   └── utils.py            # Utility functions
+└── core/                   # Shared infrastructure
+    ├── config.py           # Configuration
+    ├── error_handler.py    # Error handling
+    ├── logging.py          # Structured logging
+    ├── cache.py            # Caching layer
+    └── metrics_collector.py # Performance metrics
+```
+
+### Built with Enterprise-Grade Patterns
+- **Complete API Coverage**: All 22 Semantic Scholar API tools implemented
+- **AI-Powered Features**: 3 smart prompt templates for research assistance  
+- **Resilience**: Circuit breaker pattern for fault tolerance
+- **Performance**: In-memory LRU caching with TTL
+- **Reliability**: Exponential backoff with jitter for retries
+- **Observability**: Structured logging with correlation IDs
+- **Type Safety**: Full type hints with Pydantic models
+- **Semantic Analysis**: SPECTER v1/v2 embeddings for similarity search
+- **Advanced Filtering**: Publication types, venues, date ranges, citation counts
+- **Batch Operations**: Efficient bulk processing for large datasets
+
+## Development Workflows (Moved from README)
+
+### Development Setup
+```bash
+git clone https://github.com/hy20191108/semantic-scholar-mcp.git
+cd semantic-scholar-mcp
+uv sync
+```
+
+### Testing Commands
+```bash
+# Run all tests
+uv run pytest
+
+# Test specific functionality
+uv run python test_simple_search.py
+
+# Use MCP Inspector for debugging
+uv run mcp dev server_standalone.py
+```
+
+### Build Commands
+```bash
+uv build
+```
+
 ### GitHub Actions Workflows
 - **test-pypi.yml**: Publishes to TestPyPI on every push
 - **release.yml**: Publishes to PyPI on GitHub release creation or manual trigger

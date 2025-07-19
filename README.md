@@ -24,20 +24,6 @@ Access millions of academic papers from Semantic Scholar using the Model Context
 claude mcp add semantic-scholar -- uvx semantic-scholar-mcp
 ```
 
-**Or run directly**:
-```bash
-uvx semantic-scholar-mcp
-```
-
-### Alternative Installation Methods
-
-```bash
-# Install globally with uv
-uv tool install semantic-scholar-mcp
-
-# Or with pip  
-pip install semantic-scholar-mcp
-```
 
 ### Manual Configuration (if needed)
 
@@ -173,49 +159,12 @@ Ask in natural language:
 "Analyze citation patterns for deep learning papers in the last decade"
 ```
 
-## Development
+## Features
 
-### Setup
-
-```bash
-git clone https://github.com/hy20191108/semantic-scholar-mcp.git
-cd semantic-scholar-mcp
-uv sync
-```
-
-### Testing
-
-```bash
-# Run all tests
-uv run pytest
-
-# Test specific functionality
-uv run python test_simple_search.py
-
-# Use MCP Inspector for debugging
-uv run mcp dev server_standalone.py
-```
-
-### Build
-
-```bash
-uv build
-```
-
-## Architecture
-
-Built with enterprise-grade patterns:
-- **Complete API Coverage**: All 22 Semantic Scholar API tools implemented
-- **AI-Powered Features**: 3 smart prompt templates for research assistance  
-- **Resilience**: Circuit breaker pattern for fault tolerance
-- **Performance**: In-memory LRU caching with TTL
-- **Reliability**: Exponential backoff with jitter for retries
-- **Observability**: Structured logging with correlation IDs
-- **Type Safety**: Full type hints with Pydantic models
-- **Semantic Analysis**: SPECTER v1/v2 embeddings for similarity search
-- **Advanced Filtering**: Publication types, venues, date ranges, citation counts
-- **Batch Operations**: Efficient bulk processing for large datasets
-- **Production Ready**: 66 tests, 32.79% coverage, comprehensive error handling
+✅ **22 research tools** covering all Semantic Scholar API endpoints  
+✅ **Smart AI prompts** for literature reviews and citation analysis  
+✅ **Fast & reliable** with built-in caching and error recovery  
+✅ **Free to use** - no API key required (optional for higher limits)
 
 ## License
 
