@@ -24,20 +24,6 @@ Access millions of academic papers from Semantic Scholar using the Model Context
 claude mcp add semantic-scholar -- uvx semantic-scholar-mcp
 ```
 
-**Or run directly**:
-```bash
-uvx semantic-scholar-mcp
-```
-
-### Alternative Installation Methods
-
-```bash
-# Install globally with uv
-uv tool install semantic-scholar-mcp
-
-# Or with pip  
-pip install semantic-scholar-mcp
-```
 
 ### Manual Configuration (if needed)
 
@@ -83,55 +69,55 @@ Ask in natural language:
 
 ### 📄 Paper Tools
 
-| Tool                   | Description                     | Example                                            |
-| ---------------------- | ------------------------------- | -------------------------------------------------- |
-| `search_papers`        | Search papers with filters      | *"Search for deep learning papers from 2023"*      |
-| `get_paper`            | Get detailed paper info         | *"Get full details for paper ID abc123"*           |
-| `get_paper_citations`  | Get papers citing this paper    | *"Find papers that cite the attention paper"*      |
-| `get_paper_references` | Get papers this paper cites     | *"Show references from the BERT paper"*            |
-| `get_paper_authors`    | Get detailed author info for paper | *"Show authors of paper abc123"*               |
-| `batch_get_papers`     | Get multiple papers efficiently | *"Get details for papers: abc123, def456, ghi789"* |
-| `bulk_search_papers`   | Advanced search with filters    | *"Search ML papers from 2020-2023 with 50+ citations"* |
-| `search_papers_by_title` | Search by exact title match   | *"Find paper with title 'Attention Is All You Need'"* |
+| Tool                   | Description                        | Example                                                |
+| ---------------------- | ---------------------------------- | ------------------------------------------------------ |
+| `search_papers`        | Search papers with filters         | *"Search for deep learning papers from 2023"*          |
+| `get_paper`            | Get detailed paper info            | *"Get full details for paper ID abc123"*               |
+| `get_paper_citations`  | Get papers citing this paper       | *"Find papers that cite the attention paper"*          |
+| `get_paper_references` | Get papers this paper cites        | *"Show references from the BERT paper"*                |
+| `get_paper_authors`    | Get detailed author info for paper | *"Show authors of paper abc123"*                       |
+| `batch_get_papers`     | Get multiple papers efficiently    | *"Get details for papers: abc123, def456, ghi789"*     |
+| `bulk_search_papers`   | Advanced search with filters       | *"Search ML papers from 2020-2023 with 50+ citations"* |
+| `search_papers_match`  | Search by exact title match        | *"Find paper with title 'Attention Is All You Need'"*  |
 
 ### 👤 Author Tools
 
-| Tool                | Description                | Example                                     |
-| ------------------- | -------------------------- | ------------------------------------------- |
-| `search_authors`    | Search for researchers     | *"Find authors working on computer vision"* |
-| `get_author`        | Get author profile         | *"Get profile for author ID 12345"*         |
-| `get_author_papers` | List author's publications | *"Show papers by Geoffrey Hinton"*          |
-| `batch_get_authors` | Get multiple authors efficiently | *"Get details for authors: 123, 456, 789"* |
+| Tool                | Description                      | Example                                     |
+| ------------------- | -------------------------------- | ------------------------------------------- |
+| `search_authors`    | Search for researchers           | *"Find authors working on computer vision"* |
+| `get_author`        | Get author profile               | *"Get profile for author ID 12345"*         |
+| `get_author_papers` | List author's publications       | *"Show papers by Geoffrey Hinton"*          |
+| `batch_get_authors` | Get multiple authors efficiently | *"Get details for authors: 123, 456, 789"*  |
 
 ### 🤖 AI Tools
 
-| Tool                  | Description                      | Example                               |
-| --------------------- | -------------------------------- | ------------------------------------- |
-| `get_recommendations` | AI-powered paper recommendations | *"Recommend papers similar to GPT-3"* |
-| `get_advanced_recommendations` | Advanced ML recommendations | *"Get recommendations from positive/negative examples"* |
+| Tool                            | Description                      | Example                                                 |
+| ------------------------------- | -------------------------------- | ------------------------------------------------------- |
+| `get_recommendations_for_paper` | AI-powered paper recommendations | *"Recommend papers similar to GPT-3"*                   |
+| `get_recommendations_batch`     | Advanced ML recommendations      | *"Get recommendations from positive/negative examples"* |
 
 ### 🔍 Advanced Search Tools
 
-| Tool                | Description                | Example                                     |
-| ------------------- | -------------------------- | ------------------------------------------- |
-| `autocomplete_query` | Get search suggestions    | *"Complete query 'machine lear...'"*       |
-| `search_snippets`   | Search text snippets      | *"Find papers mentioning 'transformer architecture'"* |
+| Tool                 | Description            | Example                                               |
+| -------------------- | ---------------------- | ----------------------------------------------------- |
+| `autocomplete_query` | Get search suggestions | *"Complete query 'machine lear...'"*                  |
+| `search_snippets`    | Search text snippets   | *"Find papers mentioning 'transformer architecture'"* |
 
 ### 🧠 Semantic Analysis Tools
 
-| Tool                | Description                | Example                                     |
-| ------------------- | -------------------------- | ------------------------------------------- |
-| `get_paper_with_embeddings` | Get paper with vector embeddings | *"Get paper with SPECTER embeddings"* |
-| `search_papers_with_embeddings` | Search with semantic vectors | *"Find semantically similar papers"* |
+| Tool                            | Description                      | Example                               |
+| ------------------------------- | -------------------------------- | ------------------------------------- |
+| `get_paper_with_embeddings`     | Get paper with vector embeddings | *"Get paper with SPECTER embeddings"* |
+| `search_papers_with_embeddings` | Search with semantic vectors     | *"Find semantically similar papers"*  |
 
 ### 📊 Dataset Tools
 
-| Tool                | Description                | Example                                     |
-| ------------------- | -------------------------- | ------------------------------------------- |
-| `get_dataset_releases` | List available datasets | *"Show available dataset releases"*       |
-| `get_dataset_info`  | Get dataset information   | *"Get info for dataset release 2023-01"*   |
-| `get_dataset_download_links` | Get download links | *"Get download links for papers dataset"* |
-| `get_incremental_dataset_updates` | Get dataset updates | *"Get updates between releases"* |
+| Tool                              | Description             | Example                                   |
+| --------------------------------- | ----------------------- | ----------------------------------------- |
+| `get_dataset_releases`            | List available datasets | *"Show available dataset releases"*       |
+| `get_dataset_info`                | Get dataset information | *"Get info for dataset release 2023-01"*  |
+| `get_dataset_download_links`      | Get download links      | *"Get download links for papers dataset"* |
+| `get_incremental_dataset_updates` | Get dataset updates     | *"Get updates between releases"*          |
 
 ## Advanced Features
 
@@ -173,49 +159,12 @@ Ask in natural language:
 "Analyze citation patterns for deep learning papers in the last decade"
 ```
 
-## Development
+## Features
 
-### Setup
-
-```bash
-git clone https://github.com/hy20191108/semantic-scholar-mcp.git
-cd semantic-scholar-mcp
-uv sync
-```
-
-### Testing
-
-```bash
-# Run all tests
-uv run pytest
-
-# Test specific functionality
-uv run python test_simple_search.py
-
-# Use MCP Inspector for debugging
-uv run mcp dev server_standalone.py
-```
-
-### Build
-
-```bash
-uv build
-```
-
-## Architecture
-
-Built with enterprise-grade patterns:
-- **Complete API Coverage**: All 22 Semantic Scholar API tools implemented
-- **AI-Powered Features**: 3 smart prompt templates for research assistance  
-- **Resilience**: Circuit breaker pattern for fault tolerance
-- **Performance**: In-memory LRU caching with TTL
-- **Reliability**: Exponential backoff with jitter for retries
-- **Observability**: Structured logging with correlation IDs
-- **Type Safety**: Full type hints with Pydantic models
-- **Semantic Analysis**: SPECTER v1/v2 embeddings for similarity search
-- **Advanced Filtering**: Publication types, venues, date ranges, citation counts
-- **Batch Operations**: Efficient bulk processing for large datasets
-- **Production Ready**: 66 tests, 32.79% coverage, comprehensive error handling
+✅ **22 research tools** covering all Semantic Scholar API endpoints  
+✅ **Smart AI prompts** for literature reviews and citation analysis  
+✅ **Fast & reliable** with built-in caching and error recovery  
+✅ **Free to use** - no API key required (optional for higher limits)
 
 ## License
 
