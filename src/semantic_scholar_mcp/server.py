@@ -57,7 +57,7 @@ def extract_pagination_params(limit=None, offset=None, default_limit=10):
 # Initialize FastMCP server
 mcp = FastMCP(
     name="semantic-scholar-mcp",
-    description="MCP server for accessing Semantic Scholar academic database",
+    instructions="MCP server for accessing Semantic Scholar academic database",
 )
 
 # Early initialization of logging for debugging
