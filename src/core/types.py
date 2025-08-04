@@ -95,6 +95,18 @@ class SearchQuery:
 # Metric names
 MetricName: TypeAlias = str
 
+
+class MetricNames:
+    """Specific metric names for monitoring."""
+
+    API_REQUEST_COUNT = "api.request.count"
+    API_REQUEST_DURATION = "api.request.duration"
+    API_REQUEST_ERROR = "api.request.error"
+    CACHE_HIT = "cache.hit"
+    CACHE_MISS = "cache.miss"
+    RATE_LIMIT_EXCEEDED = "rate_limit.exceeded"
+
+
 # Common field sets for API requests
 BASIC_PAPER_FIELDS: list[str] = [
     "paperId",

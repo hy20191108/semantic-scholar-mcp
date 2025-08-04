@@ -5,8 +5,8 @@ import time
 from collections import defaultdict, deque
 from typing import Any
 
+from .interfaces import IMetricsCollector
 from .logging import get_logger
-from .protocols import IMetricsCollector
 
 logger = get_logger(__name__)
 
@@ -14,13 +14,15 @@ logger = get_logger(__name__)
 class MetricsCollector(IMetricsCollector):
     """Comprehensive metrics collector with real-time monitoring."""
 
-    def __init__(self, max_history: int = 1000):
+    def __init__(self, max_history: int = 1000, enabled: bool = True):
         """Initialize metrics collector.
 
         Args:
             max_history: Maximum number of historical data points to keep
+            enabled: Whether metrics collection is enabled
         """
         self.max_history = max_history
+        self.enabled = enabled
         self._metrics: dict[str, Any] = {
             "counters": defaultdict(int),
             "gauges": defaultdict(float),
@@ -37,63 +39,66 @@ class MetricsCollector(IMetricsCollector):
         }
         self._lock = asyncio.Lock()
 
+    def increment(
+        self, name: str, value: float = 1.0, tags: dict[str, str] | None = None
+    ) -> None:
+        """Increment counter metric."""
+        if not self.enabled:
+            return
+
+        key = self._make_key(name, tags)
+        self._metrics["counters"][key] += value
+
+    def gauge(
+        self, name: str, value: float, tags: dict[str, str] | None = None
+    ) -> None:
+        """Set gauge metric."""
+        if not self.enabled:
+            return
+
+        key = self._make_key(name, tags)
+        self._metrics["gauges"][key] = value
+
+    def histogram(
+        self, name: str, value: float, tags: dict[str, str] | None = None
+    ) -> None:
+        """Record histogram metric."""
+        if not self.enabled:
+            return
+
+        key = self._make_key(name, tags)
+        self._metrics["histograms"][key].append(
+            {
+                "value": value,
+                "timestamp": time.time(),
+            }
+        )
+
     async def increment_counter(
         self, name: str, value: int = 1, labels: dict[str, str] | None = None
     ) -> None:
-        """Increment a counter metric.
-
-        Args:
-            name: Counter name
-            value: Value to increment by
-            labels: Optional labels for the metric
-        """
-        async with self._lock:
-            key = self._make_key(name, labels)
-            self._metrics["counters"][key] += value
+        """Increment a counter metric."""
+        self.increment(name, float(value), labels)
 
     async def set_gauge(
         self, name: str, value: float, labels: dict[str, str] | None = None
     ) -> None:
-        """Set a gauge metric.
-
-        Args:
-            name: Gauge name
-            value: Value to set
-            labels: Optional labels for the metric
-        """
-        async with self._lock:
-            key = self._make_key(name, labels)
-            self._metrics["gauges"][key] = value
+        """Set a gauge metric."""
+        self.gauge(name, value, labels)
 
     async def record_histogram(
         self, name: str, value: float, labels: dict[str, str] | None = None
     ) -> None:
-        """Record a histogram value.
-
-        Args:
-            name: Histogram name
-            value: Value to record
-            labels: Optional labels for the metric
-        """
-        async with self._lock:
-            key = self._make_key(name, labels)
-            self._metrics["histograms"][key].append(
-                {
-                    "value": value,
-                    "timestamp": time.time(),
-                }
-            )
+        """Record a histogram value."""
+        self.histogram(name, value, labels)
 
     async def record_timer(
         self, name: str, duration: float, labels: dict[str, str] | None = None
     ) -> None:
-        """Record a timer value.
+        """Record a timer value."""
+        if not self.enabled:
+            return
 
-        Args:
-            name: Timer name
-            duration: Duration in seconds
-            labels: Optional labels for the metric
-        """
         async with self._lock:
             key = self._make_key(name, labels)
             self._metrics["timers"][key].append(
@@ -106,12 +111,10 @@ class MetricsCollector(IMetricsCollector):
     async def record_rate(
         self, name: str, labels: dict[str, str] | None = None
     ) -> None:
-        """Record a rate metric.
+        """Record a rate metric."""
+        if not self.enabled:
+            return
 
-        Args:
-            name: Rate name
-            labels: Optional labels for the metric
-        """
         async with self._lock:
             key = self._make_key(name, labels)
             current_time = time.time()
@@ -127,13 +130,10 @@ class MetricsCollector(IMetricsCollector):
     async def record_error(
         self, name: str, error: Exception, labels: dict[str, str] | None = None
     ) -> None:
-        """Record an error metric.
+        """Record an error metric."""
+        if not self.enabled:
+            return
 
-        Args:
-            name: Error metric name
-            error: Exception that occurred
-            labels: Optional labels for the metric
-        """
         async with self._lock:
             key = self._make_key(name, labels)
             error_data = self._metrics["errors"][key]
@@ -147,15 +147,7 @@ class MetricsCollector(IMetricsCollector):
             error_data["error_types"][type(error).__name__] += 1
 
     def _make_key(self, name: str, labels: dict[str, str] | None = None) -> str:
-        """Create a key for the metric.
-
-        Args:
-            name: Metric name
-            labels: Optional labels
-
-        Returns:
-            String key for the metric
-        """
+        """Create a key for the metric."""
         if not labels:
             return name
 
@@ -163,11 +155,7 @@ class MetricsCollector(IMetricsCollector):
         return f"{name}({','.join(label_parts)})"
 
     async def get_metrics(self) -> dict[str, Any]:
-        """Get all metrics.
-
-        Returns:
-            Dictionary of all metrics
-        """
+        """Get all metrics."""
         async with self._lock:
             return {
                 "counters": dict(self._metrics["counters"]),
@@ -181,11 +169,7 @@ class MetricsCollector(IMetricsCollector):
             }
 
     async def get_summary(self) -> dict[str, Any]:
-        """Get a summary of metrics.
-
-        Returns:
-            Dictionary of metric summaries
-        """
+        """Get a summary of metrics."""
         async with self._lock:
             summary = {
                 "total_counters": len(self._metrics["counters"]),
@@ -238,11 +222,7 @@ class MetricsCollector(IMetricsCollector):
             }
 
     async def get_health_status(self) -> dict[str, Any]:
-        """Get health status based on metrics.
-
-        Returns:
-            Dictionary containing health status
-        """
+        """Get health status based on metrics."""
         async with self._lock:
             current_time = time.time()
 
@@ -280,111 +260,6 @@ class MetricsCollector(IMetricsCollector):
                 "slow_responses": slow_responses,
                 "timestamp": current_time,
             }
-
-
-class PerformanceMonitor:
-    """Performance monitoring with thresholds and alerting."""
-
-    def __init__(self, metrics_collector: MetricsCollector):
-        """Initialize performance monitor.
-
-        Args:
-            metrics_collector: Metrics collector instance
-        """
-        self.metrics_collector = metrics_collector
-        self.thresholds = {
-            "response_time": 2.0,  # seconds
-            "error_rate": 0.05,  # 5%
-            "memory_usage": 0.8,  # 80%
-            "cpu_usage": 0.9,  # 90%
-        }
-        self.alerts = []
-
-    async def check_thresholds(self) -> list[dict[str, Any]]:
-        """Check performance thresholds and generate alerts.
-
-        Returns:
-            List of alerts
-        """
-        alerts = []
-        metrics = await self.metrics_collector.get_metrics()
-
-        # Check response time threshold
-        if "timers" in metrics:
-            for timer_name, timer_data in metrics["timers"].items():
-                if timer_data:
-                    recent_times = [
-                        t["duration"] for t in timer_data[-10:]
-                    ]  # Last 10 measurements
-                    if recent_times:
-                        avg_time = sum(recent_times) / len(recent_times)
-                        if avg_time > self.thresholds["response_time"]:
-                            alerts.append(
-                                {
-                                    "type": "performance",
-                                    "metric": "response_time",
-                                    "timer": timer_name,
-                                    "value": avg_time,
-                                    "threshold": self.thresholds["response_time"],
-                                    "timestamp": time.time(),
-                                }
-                            )
-
-        # Check error rate threshold
-        if "errors" in metrics and "counters" in metrics:
-            total_requests = sum(metrics["counters"].values())
-            total_errors = sum(
-                error_data["count"] for error_data in metrics["errors"].values()
-            )
-
-            if total_requests > 0:
-                error_rate = total_errors / total_requests
-                if error_rate > self.thresholds["error_rate"]:
-                    alerts.append(
-                        {
-                            "type": "error_rate",
-                            "metric": "error_rate",
-                            "value": error_rate,
-                            "threshold": self.thresholds["error_rate"],
-                            "total_requests": total_requests,
-                            "total_errors": total_errors,
-                            "timestamp": time.time(),
-                        }
-                    )
-
-        # Store alerts
-        self.alerts.extend(alerts)
-
-        # Log alerts
-        for alert in alerts:
-            logger.log_performance_warning(
-                operation=alert["metric"],
-                duration=alert.get("value", 0),
-                threshold=alert.get("threshold", 0),
-                context=alert,
-            )
-
-        return alerts
-
-    async def get_performance_report(self) -> dict[str, Any]:
-        """Get comprehensive performance report.
-
-        Returns:
-            Dictionary containing performance report
-        """
-        metrics = await self.metrics_collector.get_metrics()
-        summary = await self.metrics_collector.get_summary()
-        health = await self.metrics_collector.get_health_status()
-        alerts = await self.check_thresholds()
-
-        return {
-            "timestamp": time.time(),
-            "health_status": health,
-            "metrics_summary": summary,
-            "recent_alerts": alerts[-10:],  # Last 10 alerts
-            "thresholds": self.thresholds,
-            "detailed_metrics": metrics,
-        }
 
 
 # Global metrics collector instance
@@ -493,3 +368,108 @@ def collect_metrics(
         return sync_wrapper
 
     return decorator
+
+
+class PerformanceMonitor:
+    """Performance monitoring with thresholds and alerting."""
+
+    def __init__(self, metrics_collector: MetricsCollector):
+        """Initialize performance monitor.
+
+        Args:
+            metrics_collector: Metrics collector instance
+        """
+        self.metrics_collector = metrics_collector
+        self.thresholds = {
+            "response_time": 2.0,  # seconds
+            "error_rate": 0.05,  # 5%
+            "memory_usage": 0.8,  # 80%
+            "cpu_usage": 0.9,  # 90%
+        }
+        self.alerts = []
+
+    async def check_thresholds(self) -> list[dict[str, Any]]:
+        """Check performance thresholds and generate alerts.
+
+        Returns:
+            List of alerts
+        """
+        alerts = []
+        metrics = await self.metrics_collector.get_metrics()
+
+        # Check response time threshold
+        if "timers" in metrics:
+            for timer_name, timer_data in metrics["timers"].items():
+                if timer_data:
+                    recent_times = [
+                        t["duration"] for t in timer_data[-10:]
+                    ]  # Last 10 measurements
+                    if recent_times:
+                        avg_time = sum(recent_times) / len(recent_times)
+                        if avg_time > self.thresholds["response_time"]:
+                            alerts.append(
+                                {
+                                    "type": "performance",
+                                    "metric": "response_time",
+                                    "timer": timer_name,
+                                    "value": avg_time,
+                                    "threshold": self.thresholds["response_time"],
+                                    "timestamp": time.time(),
+                                }
+                            )
+
+        # Check error rate threshold
+        if "errors" in metrics and "counters" in metrics:
+            total_requests = sum(metrics["counters"].values())
+            total_errors = sum(
+                error_data["count"] for error_data in metrics["errors"].values()
+            )
+
+            if total_requests > 0:
+                error_rate = total_errors / total_requests
+                if error_rate > self.thresholds["error_rate"]:
+                    alerts.append(
+                        {
+                            "type": "error_rate",
+                            "metric": "error_rate",
+                            "value": error_rate,
+                            "threshold": self.thresholds["error_rate"],
+                            "total_requests": total_requests,
+                            "total_errors": total_errors,
+                            "timestamp": time.time(),
+                        }
+                    )
+
+        # Store alerts
+        self.alerts.extend(alerts)
+
+        # Log alerts
+        for alert in alerts:
+            logger.log_performance_warning(
+                operation=alert["metric"],
+                duration=alert.get("value", 0),
+                threshold=alert.get("threshold", 0),
+                context=alert,
+            )
+
+        return alerts
+
+    async def get_performance_report(self) -> dict[str, Any]:
+        """Get comprehensive performance report.
+
+        Returns:
+            Dictionary containing performance report
+        """
+        metrics = await self.metrics_collector.get_metrics()
+        summary = await self.metrics_collector.get_summary()
+        health = await self.metrics_collector.get_health_status()
+        alerts = await self.check_thresholds()
+
+        return {
+            "timestamp": time.time(),
+            "health_status": health,
+            "metrics_summary": summary,
+            "recent_alerts": alerts[-10:],  # Last 10 alerts
+            "thresholds": self.thresholds,
+            "detailed_metrics": metrics,
+        }
