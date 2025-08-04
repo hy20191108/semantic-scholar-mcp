@@ -10,8 +10,8 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
-from core.cache import InMemoryCache
 from core.config import ApplicationConfig, get_config
+from core.core import InMemoryCache
 from core.error_handler import MCPErrorHandler, mcp_error_handler
 from core.exceptions import ValidationError
 from core.logging import (
@@ -22,8 +22,8 @@ from core.logging import (
 )
 from core.metrics_collector import MetricsCollector
 
-from .api_client_enhanced import SemanticScholarClient
-from .domain_models import (
+from .api_client import SemanticScholarClient
+from .models import (
     SearchFilters,
     SearchQuery,
 )
@@ -1206,7 +1206,7 @@ async def search_papers_with_embeddings(
     """
     with RequestContext():
         try:
-            from semantic_scholar_mcp.domain_models import (
+            from .models import (
                 PublicationType,
                 SearchFilters,
                 SearchQuery,
