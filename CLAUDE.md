@@ -427,7 +427,7 @@ This is a **Semantic Scholar MCP Server** that provides access to millions of ac
    - 22 tools, 2 resources, 3 prompts
    - Comprehensive error handling and logging
 
-2. **API Client** (`src/semantic_scholar_mcp/api_client_enhanced.py`)
+2. **API Client** (`src/semantic_scholar_mcp/api_client.py`)
    - Circuit breaker pattern for fault tolerance
    - Rate limiting and retry logic
    - In-memory LRU caching with TTL
@@ -440,17 +440,15 @@ This is a **Semantic Scholar MCP Server** that provides access to millions of ac
    - `metrics_collector.py`: Performance metrics
 
 4. **Data Models** (`src/semantic_scholar_mcp/`)
-   - `base_models.py`: Core entities (Paper, Author, etc.)
-   - `domain_models.py`: Business logic models
-   - `models.py`: API response models
+   - `models.py`: Unified data models (Paper, Author, etc.)
 
 ### Package Structure
 ```
 src/
 ├── semantic_scholar_mcp/    # Main package
 │   ├── server.py           # MCP server implementation
-│   ├── api_client_enhanced.py # HTTP client with resilience
-│   ├── models.py           # Pydantic models
+│   ├── api_client.py       # HTTP client with resilience
+│   ├── models.py           # Unified Pydantic models
 │   └── utils.py            # Utility functions
 └── core/                   # Shared infrastructure
     ├── config.py           # Configuration
@@ -776,7 +774,7 @@ This is a **Semantic Scholar MCP Server** that provides access to millions of ac
    - 22 tools, 2 resources, 3 prompts
    - Comprehensive error handling and logging
 
-2. **API Client** (`src/semantic_scholar_mcp/api_client_enhanced.py`)
+2. **API Client** (`src/semantic_scholar_mcp/api_client.py`)
    - Circuit breaker pattern for fault tolerance
    - Rate limiting and retry logic
    - In-memory LRU caching with TTL
@@ -789,17 +787,15 @@ This is a **Semantic Scholar MCP Server** that provides access to millions of ac
    - `metrics_collector.py`: Performance metrics
 
 4. **Data Models** (`src/semantic_scholar_mcp/`)
-   - `base_models.py`: Core entities (Paper, Author, etc.)
-   - `domain_models.py`: Business logic models
-   - `models.py`: API response models
+   - `models.py`: Unified data models (Paper, Author, etc.)
 
 ### Package Structure
 ```
 src/
 ├── semantic_scholar_mcp/    # Main package
 │   ├── server.py           # MCP server implementation
-│   ├── api_client_enhanced.py # HTTP client with resilience
-│   ├── models.py           # Pydantic models
+│   ├── api_client.py       # HTTP client with resilience
+│   ├── models.py           # Unified Pydantic models
 │   └── utils.py            # Utility functions
 └── core/                   # Shared infrastructure
     ├── config.py           # Configuration

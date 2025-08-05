@@ -936,9 +936,9 @@ class SemanticScholarClient:
             # Create Paper object using model_validate to bypass constructor validation
             paper = Paper.model_validate(paper_data)
 
-            # Add matchScore as a dynamic attribute
+            # Set match_score if provided (field already exists in Paper model)
             if match_score is not None:
-                paper.matchScore = match_score
+                paper.match_score = match_score
 
             papers.append(paper)
 
