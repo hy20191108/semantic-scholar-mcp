@@ -43,7 +43,7 @@ if [ "$COMPONENT_SUCCESS" = true ]; then
     echo ""
     
     # Start MCP Inspector
-    uv run mcp dev server_standalone.py
+    uv run mcp dev scripts/server_standalone.py
 else
     echo "⚠️ Skipping MCP Inspector due to component test failures"
     echo "📄 Check docs/DEBUG_TEST_RESULTS.md for details"
