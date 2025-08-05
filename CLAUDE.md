@@ -43,16 +43,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **IMPORTANT**: Always update this section with critical information discovered during development.
 
-### Current Status (Updated: 2025-07-18)
+### Current Status (Updated: 2025-08-02)
 - **PyPI Version**: 0.2.2 (last checked: 2025-07-18)
-- **Local Git Version**: v0.2.2-2-g8cc762c-dirty (2 commits ahead, uncommitted changes)
-- **Test Coverage**: 32.79% (minimum required: 30%) - ✅ PASSING
-- **Test Status**: 66 tests total (66 passing, 0 failing)
-- **Git Status**: Branch diverged from origin/main (2 local vs remote commits)
-- **Uncommitted Files**: 15 files modified (core/, semantic_scholar_mcp/, tests/, config files)
+- **Local Git Version**: v0.2.2-refactored (major tool name refactoring completed)
+- **Test Coverage**: 53.80% (minimum required: 30%) - ✅ PASSING
+- **Test Status**: 98 tests total (98 passing, 0 failing)
+- **Tool Names**: ✅ FULLY REFACTORED - All 22 tools renamed to clean, consistent naming
+- **Quality Status**: All quality gates passing (ruff, mypy, pytest, MCP server)
 
 ### Important Notes
 <!-- Add important discoveries, issues, and decisions here -->
+
+#### Tool Name Refactoring Completion (Updated: 2025-08-02)
+- **✅ COMPLETED**: Comprehensive tool name refactoring from verbose to clean naming
+- **Before→After Examples**:
+  - `get_graph_paper_relevance_search` → `search_papers`
+  - `get_graph_get_paper` → `get_paper`
+  - `get_graph_get_author_search` → `search_authors`
+  - `post_graph_get_papers` → `batch_get_papers`
+  - `get_releases` → `get_dataset_releases`
+- **Impact**: 50% average reduction in tool name length, improved readability
+- **Quality**: All 98 tests passing, 53.80% coverage, zero regressions
+- **API Compliance**: Maintains full compatibility with Semantic Scholar API specification
+- **Documentation**: README.md, CLAUDE.md, USER_GUIDE.md all updated
+- **Files Modified**: server.py, test files, documentation - all references updated
 
 #### Shared Server Environment Constraints (Updated: 2025-07-19)
 - **Server Environment**: 共有開発サーバー（複数開発者が使用）
@@ -124,13 +138,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - Pydantic v2.0 migration warnings (7 instances)
 - **Release Readiness**: NOT READY - Quality gates not met
 
-### Current Quality Status (Updated: 2025-07-18)
-- **✅ Tests**: 66 tests total (66 passing, 0 failing) - 32.81% coverage
+### Current Quality Status (Updated: 2025-08-02)
+- **✅ Tests**: 98 tests total (98 passing, 0 failing) - 53.80% coverage
 - **✅ Linting**: All ruff checks pass
 - **✅ Type Checking**: mypy passes (ignore_errors=true configuration)
-- **✅ Coverage**: 32.81% (exceeds 30% requirement)
+- **✅ Coverage**: 53.80% (exceeds 30% requirement by 79%)
 - **✅ Pydantic v2**: All migrations completed, no deprecation warnings
-- **✅ MCP Server**: 22 tools, 3 prompts available and functional
+- **✅ MCP Server**: 22 tools, 3 prompts available with clean naming
+- **✅ Tool Names**: Fully refactored to clean, consistent naming convention
 
 ### MCP Server Testing Status
 - **✅ MCP Configuration**: `.mcp.json` properly configured with `semantic-scholar-dev` 
@@ -293,11 +308,12 @@ uv run --frozen pytest tests/ --cov=src --cov-report=term-missing
 - **Field Validation**: 100% (19/19 tests passing)
 
 #### Expected Test Results
-- **Total Tests**: 66 tests
-- **Success Rate**: 100% (66/66 passing)
-- **Coverage**: 32.81% (exceeds 30% requirement)
-- **Test Execution Time**: ~2-3 seconds
+- **Total Tests**: 98 tests
+- **Success Rate**: 100% (98/98 passing)
+- **Coverage**: 53.80% (exceeds 30% requirement by 79%)
+- **Test Execution Time**: ~9-10 seconds
 - **Quality Gates**: All passing (ruff, mypy, pytest, MCP)
+- **Tool Names**: All references updated to new clean naming convention
 
 ### Testing
 ```bash
@@ -385,7 +401,7 @@ uv sync
 uv run semantic-scholar-mcp
 
 # Debug with MCP Inspector
-uv run mcp dev server_standalone.py
+uv run mcp dev scripts/server_standalone.py
 ```
 
 ### MCP Development
@@ -397,7 +413,7 @@ uv run semantic-scholar-mcp
 DEBUG_MCP_MODE=true uv run semantic-scholar-mcp
 
 # Use standalone server for development
-uv run server_standalone.py
+uv run scripts/server_standalone.py
 ```
 
 ## Architecture Overview
@@ -411,7 +427,7 @@ This is a **Semantic Scholar MCP Server** that provides access to millions of ac
    - 22 tools, 2 resources, 3 prompts
    - Comprehensive error handling and logging
 
-2. **API Client** (`src/semantic_scholar_mcp/api_client_enhanced.py`)
+2. **API Client** (`src/semantic_scholar_mcp/api_client.py`)
    - Circuit breaker pattern for fault tolerance
    - Rate limiting and retry logic
    - In-memory LRU caching with TTL
@@ -424,17 +440,15 @@ This is a **Semantic Scholar MCP Server** that provides access to millions of ac
    - `metrics_collector.py`: Performance metrics
 
 4. **Data Models** (`src/semantic_scholar_mcp/`)
-   - `base_models.py`: Core entities (Paper, Author, etc.)
-   - `domain_models.py`: Business logic models
-   - `models.py`: API response models
+   - `models.py`: Unified data models (Paper, Author, etc.)
 
 ### Package Structure
 ```
 src/
 ├── semantic_scholar_mcp/    # Main package
 │   ├── server.py           # MCP server implementation
-│   ├── api_client_enhanced.py # HTTP client with resilience
-│   ├── models.py           # Pydantic models
+│   ├── api_client.py       # HTTP client with resilience
+│   ├── models.py           # Unified Pydantic models
 │   └── utils.py            # Utility functions
 └── core/                   # Shared infrastructure
     ├── config.py           # Configuration
@@ -577,11 +591,11 @@ The codebase implements comprehensive error handling:
   - **NEW**: Author metrics validation
   - **NEW**: Nested field and alias validation
   - **NEW**: Extra fields handling
-- **Total**: 66 tests, all passing, 32.81% coverage (exceeds 30% requirement)
+- **Total**: 98 tests, all passing, 53.80% coverage (exceeds 30% requirement by 79%)
 
 ### Coverage Requirements
 - Minimum coverage: 30% (configured in pyproject.toml)
-- **Current coverage**: 32.81% ✅ (exceeds requirement)
+- **Current coverage**: 53.80% ✅ (exceeds requirement by 79%)
 - Focus on critical paths and error conditions
 - Test both success and failure scenarios
 
@@ -615,7 +629,7 @@ The codebase implements comprehensive error handling:
 
 ### MCP Debugging
 - Use `DEBUG_MCP_MODE=true` for detailed logging
-- Test with `uv run mcp dev server_standalone.py`
+- Test with `uv run mcp dev scripts/server_standalone.py`
 - Check `.mcp.json` configuration
 
 ## Development Workflow
@@ -760,7 +774,7 @@ This is a **Semantic Scholar MCP Server** that provides access to millions of ac
    - 22 tools, 2 resources, 3 prompts
    - Comprehensive error handling and logging
 
-2. **API Client** (`src/semantic_scholar_mcp/api_client_enhanced.py`)
+2. **API Client** (`src/semantic_scholar_mcp/api_client.py`)
    - Circuit breaker pattern for fault tolerance
    - Rate limiting and retry logic
    - In-memory LRU caching with TTL
@@ -773,17 +787,15 @@ This is a **Semantic Scholar MCP Server** that provides access to millions of ac
    - `metrics_collector.py`: Performance metrics
 
 4. **Data Models** (`src/semantic_scholar_mcp/`)
-   - `base_models.py`: Core entities (Paper, Author, etc.)
-   - `domain_models.py`: Business logic models
-   - `models.py`: API response models
+   - `models.py`: Unified data models (Paper, Author, etc.)
 
 ### Package Structure
 ```
 src/
 ├── semantic_scholar_mcp/    # Main package
 │   ├── server.py           # MCP server implementation
-│   ├── api_client_enhanced.py # HTTP client with resilience
-│   ├── models.py           # Pydantic models
+│   ├── api_client.py       # HTTP client with resilience
+│   ├── models.py           # Unified Pydantic models
 │   └── utils.py            # Utility functions
 └── core/                   # Shared infrastructure
     ├── config.py           # Configuration
@@ -823,7 +835,7 @@ uv run pytest
 uv run python test_simple_search.py
 
 # Use MCP Inspector for debugging
-uv run mcp dev server_standalone.py
+uv run mcp dev scripts/server_standalone.py
 ```
 
 ### Build Commands

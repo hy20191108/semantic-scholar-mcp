@@ -30,8 +30,8 @@
   },
   
   "mcp": {
-    "server_file": "server_standalone.py",
-    "inspector_command": "uv run mcp dev server_standalone.py",
+    "server_file": "scripts/server_standalone.py",
+    "inspector_command": "uv run mcp dev scripts/server_standalone.py",
     "test_file": "test_simple_search.py"
   }
 }

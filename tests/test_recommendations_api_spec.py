@@ -1,7 +1,7 @@
 """Tests for Semantic Scholar Recommendations API specification compliance."""
 
 from core.exceptions import APIError
-from semantic_scholar_mcp.domain_models import Author, Paper
+from semantic_scholar_mcp.models import Author, Paper
 
 
 class TestRecommendationsAPISpec:

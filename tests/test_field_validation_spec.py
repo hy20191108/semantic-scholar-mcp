@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from semantic_scholar_mcp.domain_models import (
+from semantic_scholar_mcp.models import (
     TLDR,
     Author,
     EmbeddingType,

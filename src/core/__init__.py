@@ -12,13 +12,15 @@ from .exceptions import (
     UnauthorizedError,
     ValidationError,
 )
-from .protocols import (
+from .interfaces import (
     ICache,
-    IConfigurable,
-    IHealthCheckable,
+    ICircuitBreaker,
     ILogger,
     IMetricsCollector,
+    IRateLimiter,
     IRepository,
+    IRetryable,
+    IValidator,
 )
 from .types import (
     AuthorDetails,
@@ -40,11 +42,13 @@ __all__ = [
     "Fields",
     # Protocols
     "ICache",
-    "IConfigurable",
-    "IHealthCheckable",
+    "ICircuitBreaker",
     "ILogger",
     "IMetricsCollector",
+    "IRateLimiter",
     "IRepository",
+    "IRetryable",
+    "IValidator",
     "NetworkError",
     "NotFoundError",
     "PaperDetails",

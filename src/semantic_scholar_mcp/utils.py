@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from .domain_models import PublicationType, SearchFilters
+from .models import PublicationType, SearchFilters
 
 
 def parse_year_range(year_range: str) -> tuple[int, int] | None:

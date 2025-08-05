@@ -15,7 +15,7 @@ from logging.handlers import RotatingFileHandler
 from typing import Any
 
 from .config import LoggingConfig
-from .protocols import ILogger
+from .interfaces import ILogger
 
 # Context variables for request tracking
 correlation_id_var: ContextVar[str | None] = ContextVar("correlation_id", default=None)

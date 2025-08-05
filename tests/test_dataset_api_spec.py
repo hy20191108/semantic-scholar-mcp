@@ -1,6 +1,6 @@
 """Tests for Semantic Scholar Dataset API specification compliance."""
 
-from semantic_scholar_mcp.domain_models import (
+from semantic_scholar_mcp.models import (
     DatasetDiff,
     DatasetDownloadLinks,
     DatasetRelease,

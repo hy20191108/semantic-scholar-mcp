@@ -1,7 +1,7 @@
 """Tests that verify Semantic Scholar API specification compliance."""
 
 from core.exceptions import APIError
-from semantic_scholar_mcp.domain_models import (
+from semantic_scholar_mcp.models import (
     Author,
     DatasetDiff,
     DatasetDownloadLinks,
