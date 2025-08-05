@@ -19,14 +19,6 @@
         "semantic-scholar-mcp@latest"
       ]
     },
-    "lsmcp-python": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@mizchi/lsmcp",
-        "--bin=pylsp"
-      ]
-    },
     "serena": {
       "command": "uvx",
       "args": [

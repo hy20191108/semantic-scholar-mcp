@@ -6,7 +6,6 @@ factory functions that create properly configured service instances.
 """
 
 import asyncio
-import hashlib
 from collections import OrderedDict
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
@@ -92,11 +91,14 @@ class InMemoryCache(ICache[str, Any]):
             return True
 
     def make_key(self, *args, **kwargs) -> str:
-        """Create a cache key from arguments."""
-        # Convert args and kwargs to a consistent string representation
-        key_data = f"{args}:{sorted(kwargs.items())}"
-        # Use hash for consistent, short keys
-        return hashlib.sha256(key_data.encode()).hexdigest()[:16]
+        """Create a cache key from arguments.
+
+        Uses simple string concatenation for better performance than hashing.
+        Format: arg1:arg2:...:key1=val1:key2=val2:...
+        """
+        parts = [str(arg) for arg in args]
+        parts.extend(f"{k}={v}" for k, v in sorted(kwargs.items()))
+        return ":".join(parts)
 
 
 # Factory functions for service creation
