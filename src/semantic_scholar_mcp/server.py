@@ -44,7 +44,11 @@ async def execute_api_with_error_handling(operation_name: str, operation_func):
             return await operation_func()
     except Exception as e:
         logger.error(f"Error in {operation_name}: {e!s}")
-        return mcp_error_handler.handle_error(e, operation_name)
+        return (
+            error_handler.handle_error(e)
+            if error_handler
+            else {"success": False, "error": {"type": "error", "message": str(e)}}
+        )
 
 
 def extract_pagination_params(limit=None, offset=None, default_limit=10):
