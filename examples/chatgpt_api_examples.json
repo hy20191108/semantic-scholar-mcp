@@ -1,0 +1,55 @@
+{
+  "search_papers": {
+    "method": "POST",
+    "url": "/api/v1/papers/search",
+    "payload": {
+      "query": "machine learning transformers",
+      "limit": 10,
+      "year": "2020-2023",
+      "fields": [
+        "title",
+        "authors",
+        "year",
+        "abstract",
+        "citationCount"
+      ],
+      "min_citation_count": 50
+    }
+  },
+  "get_paper": {
+    "method": "GET",
+    "url": "/api/v1/papers/204e3073870fae3d05bcbc2f6a8e263d9b72e776",
+    "params": {
+      "fields": [
+        "title",
+        "authors",
+        "year",
+        "abstract",
+        "venue",
+        "citationCount"
+      ]
+    }
+  },
+  "search_authors": {
+    "method": "POST",
+    "url": "/api/v1/authors/search",
+    "payload": {
+      "query": "Geoffrey Hinton",
+      "limit": 5
+    }
+  },
+  "get_recommendations": {
+    "method": "POST",
+    "url": "/api/v1/recommendations/paper",
+    "payload": {
+      "paper_id": "204e3073870fae3d05bcbc2f6a8e263d9b72e776",
+      "limit": 10,
+      "fields": [
+        "title",
+        "authors",
+        "year",
+        "abstract"
+      ]
+    }
+  }
+}

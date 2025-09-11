@@ -29,6 +29,8 @@ dependencies = [
     "pydantic>=2.0.0",
     "tenacity>=8.2.0",
     "python-dotenv>=1.0.0",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
 ]
 
 
@@ -40,6 +42,7 @@ dependencies = [
 
 [project.scripts]
 semantic-scholar-mcp = "semantic_scholar_mcp:main"
+semantic-scholar-chatgpt = "semantic_scholar_mcp.chatgpt_connector:run_chatgpt_connector"
 
 [tool.pytest.ini_options]
 minversion = "7.0"

@@ -1,0 +1,559 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Semantic Scholar API for ChatGPT",
+    "description": "Access millions of academic papers from Semantic Scholar. Search for papers, get citations, find authors, and discover research insights.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Semantic Scholar MCP",
+      "url": "https://github.com/hy20191108/semantic-scholar-mcp"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000",
+      "description": "Local development server"
+    }
+  ],
+  "paths": {
+    "/api/v1/papers/search": {
+      "post": {
+        "summary": "Search for academic papers",
+        "description": "Search for academic papers using keywords, filters, and sorting options.",
+        "operationId": "searchPapers",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchPapersRequest"
+              },
+              "example": {
+                "query": "machine learning transformers",
+                "limit": 10,
+                "year": "2020-2023",
+                "fields": ["title", "authors", "year", "abstract", "citationCount"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/papers/{paper_id}": {
+      "get": {
+        "summary": "Get paper details",
+        "description": "Get detailed information about a specific paper by its ID.",
+        "operationId": "getPaper",
+        "parameters": [
+          {
+            "name": "paper_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Paper ID (Semantic Scholar ID, DOI, ArXiv ID, etc.)"
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": "Fields to include in response"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paper details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/papers/{paper_id}/citations": {
+      "get": {
+        "summary": "Get papers citing this paper",
+        "description": "Get a list of papers that cite the specified paper.",
+        "operationId": "getPaperCitations",
+        "parameters": [
+          {
+            "name": "paper_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Paper ID"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 10
+            },
+            "description": "Number of citations to return"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Offset for pagination"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Citation list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/papers/{paper_id}/references": {
+      "get": {
+        "summary": "Get papers referenced by this paper",
+        "description": "Get a list of papers referenced by the specified paper.",
+        "operationId": "getPaperReferences",
+        "parameters": [
+          {
+            "name": "paper_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Paper ID"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 10
+            },
+            "description": "Number of references to return"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "Offset for pagination"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reference list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/authors/search": {
+      "post": {
+        "summary": "Search for authors",
+        "description": "Search for academic authors by name or keywords.",
+        "operationId": "searchAuthors",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthorSearchRequest"
+              },
+              "example": {
+                "query": "Geoffrey Hinton",
+                "limit": 10
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Author search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/authors/{author_id}": {
+      "get": {
+        "summary": "Get author details",
+        "description": "Get detailed information about a specific author.",
+        "operationId": "getAuthor",
+        "parameters": [
+          {
+            "name": "author_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Author ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Author details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/authors/{author_id}/papers": {
+      "get": {
+        "summary": "Get papers by author",
+        "description": "Get a list of papers authored by the specified author.",
+        "operationId": "getAuthorPapers",
+        "parameters": [
+          {
+            "name": "author_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Author ID"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 10
+            },
+            "description": "Number of papers to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Author's papers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/recommendations/paper": {
+      "post": {
+        "summary": "Get paper recommendations",
+        "description": "Get paper recommendations based on a single paper.",
+        "operationId": "getRecommendationsForPaper",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecommendationsRequest"
+              },
+              "example": {
+                "paper_id": "204e3073870fae3d05bcbc2f6a8e263d9b72e776",
+                "limit": 10
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Paper recommendations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/search/autocomplete": {
+      "get": {
+        "summary": "Get search suggestions",
+        "description": "Get autocomplete suggestions for search queries.",
+        "operationId": "autocompleteQuery",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query to autocomplete"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10
+            },
+            "description": "Number of suggestions"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Autocomplete suggestions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "description": "Check if the service is healthy and running.",
+        "operationId": "healthCheck",
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "healthy"
+                    },
+                    "service": {
+                      "type": "string",
+                      "example": "semantic-scholar-chatgpt-connector"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "SearchPapersRequest": {
+        "type": "object",
+        "required": ["query"],
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query for papers",
+            "example": "machine learning transformers"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "Number of results to return"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Offset for pagination"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields to include in response",
+            "example": ["title", "authors", "year", "abstract", "citationCount"]
+          },
+          "year": {
+            "type": "string",
+            "description": "Year filter (e.g., '2020', '2020-2023')",
+            "example": "2020-2023"
+          },
+          "publication_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Publication types to filter"
+          },
+          "fields_of_study": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields of study to filter",
+            "example": ["Computer Science", "Mathematics"]
+          },
+          "venue": {
+            "type": "string",
+            "description": "Venue filter"
+          },
+          "min_citation_count": {
+            "type": "integer",
+            "description": "Minimum citation count"
+          },
+          "open_access_pdf": {
+            "type": "boolean",
+            "description": "Filter for open access PDFs"
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order",
+            "enum": ["relevance", "citationCount", "publicationDate"]
+          }
+        }
+      },
+      "AuthorSearchRequest": {
+        "type": "object",
+        "required": ["query"],
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Author search query",
+            "example": "Geoffrey Hinton"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "Number of results to return"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Offset for pagination"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields to include in response"
+          }
+        }
+      },
+      "RecommendationsRequest": {
+        "type": "object",
+        "required": ["paper_id"],
+        "properties": {
+          "paper_id": {
+            "type": "string",
+            "description": "Paper ID for recommendations",
+            "example": "204e3073870fae3d05bcbc2f6a8e263d9b72e776"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "Number of recommendations"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields to include in response"
+          }
+        }
+      },
+      "PaperResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the request was successful"
+          },
+          "data": {
+            "type": "object",
+            "description": "Response data"
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "description": "Error information if request failed"
+          }
+        }
+      }
+    }
+  }
+}

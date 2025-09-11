@@ -4,7 +4,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io/)
 
-Access millions of academic papers from Semantic Scholar using the Model Context Protocol (MCP). Works with Claude Code, Claude Desktop, Cursor, VS Code, and other MCP-compatible editors.
+Access millions of academic papers from Semantic Scholar using the Model Context Protocol (MCP). Works with Claude Code, Claude Desktop, ChatGPT Custom GPTs, Cursor, VS Code, and other MCP-compatible editors.
 
 ## Features
 
@@ -23,6 +23,14 @@ Access millions of academic papers from Semantic Scholar using the Model Context
 ```bash
 claude mcp add semantic-scholar -- uvx semantic-scholar-mcp
 ```
+
+**ChatGPT Custom GPT**:
+```bash
+# Install and start the ChatGPT connector
+pip install semantic-scholar-mcp
+semantic-scholar-chatgpt
+```
+Then create a Custom GPT using the [ChatGPT Integration Guide](docs/CHATGPT_INTEGRATION.md).
 
 
 ### Manual Configuration (if needed)
@@ -164,7 +172,31 @@ Ask in natural language:
 ✅ **22 research tools** covering all Semantic Scholar API endpoints  
 ✅ **Smart AI prompts** for literature reviews and citation analysis  
 ✅ **Fast & reliable** with built-in caching and error recovery  
-✅ **Free to use** - no API key required (optional for higher limits)
+✅ **Free to use** - no API key required (optional for higher limits)  
+✅ **ChatGPT integration** - works with Custom GPTs via REST API  
+✅ **Multi-platform** - Claude, ChatGPT, VS Code, and more
+
+## Platform Support
+
+| Platform | Integration Method | Status |
+|----------|-------------------|---------|
+| Claude Desktop/Code | MCP Server | ✅ Native |
+| ChatGPT Custom GPTs | REST API | ✅ Supported |
+| VS Code with MCP | MCP Extension | ✅ Compatible |
+| Cursor | MCP Support | ✅ Compatible |
+| Direct API Access | HTTP Endpoints | ✅ Available |
+
+### ChatGPT Integration
+
+Access academic research directly in ChatGPT conversations:
+
+1. **Install**: `pip install semantic-scholar-mcp`
+2. **Start server**: `semantic-scholar-chatgpt`  
+3. **Create Custom GPT**: Use our [integration guide](docs/CHATGPT_INTEGRATION.md)
+
+Example ChatGPT conversation:
+> **You**: "Find recent papers on quantum computing algorithms"  
+> **GPT**: *Searches Semantic Scholar and returns formatted results with abstracts, authors, and citations*
 
 ## License
 
