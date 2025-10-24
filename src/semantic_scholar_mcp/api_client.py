@@ -9,7 +9,7 @@ from typing import Any, TypeVar
 
 import httpx
 
-from core.config import SemanticScholarConfig
+from core.config import RateLimitConfig, RetryConfig, SemanticScholarConfig
 from core.exceptions import (
     CircuitBreakerError,
     NetworkError,
@@ -285,14 +285,25 @@ class SemanticScholarClient:
     def __init__(
         self,
         config: SemanticScholarConfig,
+        rate_limit_config: RateLimitConfig | None = None,
+        retry_config: RetryConfig | None = None,
         logger: ILogger | None = None,
         cache: ICache | None = None,
         metrics: IMetricsCollector | None = None,
+        **legacy_kwargs,
     ):
         self.config = config
         self.logger = logger or get_logger(__name__)
         self.cache = cache
         self.metrics = metrics
+        self._rate_limit_config = rate_limit_config
+        self._retry_config = retry_config
+
+        if legacy_kwargs:
+            self.logger.debug(
+                "Ignoring deprecated SemanticScholarClient kwargs",
+                ignored_arguments=list(legacy_kwargs.keys()),
+            )
 
         # Initialize resilience components
         self.circuit_breaker = CircuitBreaker(
@@ -305,23 +316,53 @@ class SemanticScholarClient:
             logger=self.logger.with_context(component="circuit_breaker"),
         )
 
+        # Resolve rate limit configuration. Always allow explicit overrides but
+        # fall back to sensible defaults based on whether an API key is present.
+        resolved_rate_config = self._rate_limit_config
+        if resolved_rate_config is None and hasattr(config, "rate_limit"):
+            resolved_rate_config = config.rate_limit
+
+        api_key_present = bool(
+            getattr(config, "api_key", None) and config.api_key.get_secret_value()
+        )
+
+        # Semantic Scholar allows higher throughput when an API key is supplied.
+        default_rate_limit = 5.0 if api_key_present else 1.0
+        burst_size = 10
+        configured_rate_limit: float | None = None
+
+        self._rate_limit_enabled = True
+
+        if resolved_rate_config is not None:
+            burst_size = resolved_rate_config.burst_size
+            self._rate_limit_enabled = resolved_rate_config.enabled
+            if resolved_rate_config.enabled:
+                configured_rate_limit = resolved_rate_config.requests_per_second
+
+        rate_limit = configured_rate_limit or default_rate_limit
+        self._resolved_rate_limit = rate_limit
+        self._resolved_burst_size = burst_size
+
         self.rate_limiter = TokenBucketRateLimiter(
-            rate=config.rate_limit.requests_per_second
-            if hasattr(config, "rate_limit")
-            else 1.0,
-            burst=config.rate_limit.burst_size if hasattr(config, "rate_limit") else 10,
+            rate=rate_limit,
+            burst=burst_size,
             logger=self.logger.with_context(component="rate_limiter"),
         )
 
+        resolved_retry_config = self._retry_config
+        if resolved_retry_config is None and hasattr(config, "retry"):
+            resolved_retry_config = config.retry
+        if resolved_retry_config is None:
+            resolved_retry_config = RetryConfig()
+
+        self._retry_config = resolved_retry_config
+        self._max_retry_attempts = resolved_retry_config.max_attempts
+
         self.retry_strategy = ExponentialBackoffRetryStrategy(
-            initial_delay=config.retry.initial_delay
-            if hasattr(config, "retry")
-            else 1.0,
-            max_delay=config.retry.max_delay if hasattr(config, "retry") else 60.0,
-            exponential_base=config.retry.exponential_base
-            if hasattr(config, "retry")
-            else 2.0,
-            jitter=config.retry.jitter if hasattr(config, "retry") else True,
+            initial_delay=resolved_retry_config.initial_delay,
+            max_delay=resolved_retry_config.max_delay,
+            exponential_base=resolved_retry_config.exponential_base,
+            jitter=resolved_retry_config.jitter,
         )
 
         self._client: httpx.AsyncClient | None = None
@@ -372,7 +413,8 @@ class SemanticScholarClient:
             raise RuntimeError("Client not initialized. Use async context manager.")
 
         # Rate limiting
-        await self.rate_limiter.wait_if_needed()
+        if self._rate_limit_enabled:
+            await self.rate_limiter.wait_if_needed()
 
         # Build request context
         request_id = f"{method}:{path}:{time.time()}"
@@ -401,7 +443,11 @@ class SemanticScholarClient:
                     url=full_url,
                     params=params,
                     retry_attempt=retry_count,
-                    rate_limit_tokens=self.rate_limiter.available_tokens,
+                    rate_limit_tokens=(
+                        self.rate_limiter.available_tokens
+                        if self._rate_limit_enabled
+                        else None
+                    ),
                 )
 
                 try:
@@ -486,9 +532,7 @@ class SemanticScholarClient:
             return await self.circuit_breaker.call(_execute_request)
         except (RateLimitError, ServiceUnavailableError, NetworkError) as e:
             # Retry with exponential backoff
-            max_attempts = (
-                self.config.retry.max_attempts if hasattr(self.config, "retry") else 3
-            )
+            max_attempts = self._max_retry_attempts
             if retry_count < max_attempts:
                 delay = self.retry_strategy.get_delay(retry_count + 1)
                 self.logger.debug_mcp(
@@ -547,10 +591,10 @@ class SemanticScholarClient:
         # Make request
         data = await self._make_request("GET", "/paper/search", params=params)
 
-        # Parse response
+        # Parse response - API returns items in 'data' field
         papers = [Paper(**paper_data) for paper_data in data.get("data", [])]
         response = PaginatedResponse[Paper](
-            items=papers,
+            data=papers,
             total=data.get("total", 0),
             offset=query.offset,
             limit=query.limit,
@@ -662,7 +706,7 @@ class SemanticScholarClient:
         authors = [Author(**author_data) for author_data in data.get("data", [])]
 
         return PaginatedResponse[Author](
-            items=authors,
+            data=authors,
             total=data.get("total", 0),
             offset=offset,
             limit=limit,
@@ -767,7 +811,7 @@ class SemanticScholarClient:
         papers = [Paper(**paper_data) for paper_data in data.get("data", [])]
 
         return PaginatedResponse[Paper](
-            items=papers, total=data.get("total", 0), offset=offset, limit=limit
+            data=papers, total=data.get("total", 0), offset=offset, limit=limit
         )
 
     async def search_authors(
@@ -790,7 +834,7 @@ class SemanticScholarClient:
         authors = [Author(**author_data) for author_data in data.get("data", [])]
 
         return PaginatedResponse[Author](
-            items=authors, total=data.get("total", 0), offset=offset, limit=limit
+            data=authors, total=data.get("total", 0), offset=offset, limit=limit
         )
 
     async def get_recommendations_for_paper(
@@ -854,9 +898,12 @@ class SemanticScholarClient:
     def get_rate_limiter_status(self) -> dict[str, Any]:
         """Get rate limiter status."""
         return {
-            "available_tokens": self.rate_limiter.available_tokens,
-            "rate": self.rate_limiter.rate,
-            "burst": self.rate_limiter.burst,
+            "enabled": self._rate_limit_enabled,
+            "available_tokens": (
+                self.rate_limiter.available_tokens if self._rate_limit_enabled else None
+            ),
+            "rate": self._resolved_rate_limit,
+            "burst": self._resolved_burst_size,
         }
 
     async def search_papers_bulk(
@@ -971,7 +1018,7 @@ class SemanticScholarClient:
         snippets = data.get("data", [])
 
         return PaginatedResponse[dict[str, Any]](
-            items=snippets, total=data.get("total", 0), offset=offset, limit=limit
+            data=snippets, total=data.get("total", 0), offset=offset, limit=limit
         )
 
     async def batch_get_authors(
@@ -1095,7 +1142,7 @@ class SemanticScholarClient:
         papers = [Paper(**paper_data) for paper_data in data.get("data", [])]
 
         return PaginatedResponse[Paper](
-            items=papers,
+            data=papers,
             total=data.get("total", 0),
             offset=query.offset,
             limit=query.limit,

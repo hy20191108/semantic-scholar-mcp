@@ -92,7 +92,7 @@ Logging --> Protocols : implements
 ' Notes
 note right of MCPServer
   FastMCP-based server
-  • 22 Tools (API access)
+  • 23 Tools (API access)
   • 2 Resources (direct data)
   • 3 Prompts (AI assistance)
 end note

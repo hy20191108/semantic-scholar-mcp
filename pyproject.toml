@@ -29,6 +29,7 @@ dependencies = [
     "pydantic>=2.0.0",
     "tenacity>=8.2.0",
     "python-dotenv>=1.0.0",
+    "pymupdf4llm>=0.0.27",
 ]
 
 

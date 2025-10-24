@@ -158,6 +158,7 @@ mcp-logs/
 *.sqlite
 logs/
 cache/
+.semantic_scholar_mcp/
 
 # Editor specific
 .cursor/

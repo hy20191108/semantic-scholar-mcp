@@ -48,7 +48,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Local Git Version**: v0.2.2-refactored (major tool name refactoring completed)
 - **Test Coverage**: 53.80% (minimum required: 30%) - ✅ PASSING
 - **Test Status**: 98 tests total (98 passing, 0 failing)
-- **Tool Names**: ✅ FULLY REFACTORED - All 22 tools renamed to clean, consistent naming
+- **Tool Names**: ✅ FULLY REFACTORED - 23 tools follow the clean naming pattern (includes new `get_markdown_from_pdf`)
 - **Quality Status**: All quality gates passing (ruff, mypy, pytest, MCP server)
 
 ### Important Notes
@@ -68,6 +68,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Documentation**: README.md, CLAUDE.md, USER_GUIDE.md all updated
 - **Files Modified**: server.py, test files, documentation - all references updated
 
+#### PDF Markdown Tool Integration (Updated: 2025-10-25)
+- **✅ IMPLEMENTED**: `get_markdown_from_pdf` provides PDF→Markdown/chunk conversion with caching and optional image extraction
+- **Artifacts**: Stored under `.semantic_scholar_mcp/artifacts/` with SHA-1 partitioning, plus cache index metadata
+- **Configuration**: `PDFProcessingConfig` controls limits, directories, TTL (env-overridable)
+- **Testing**: Unit coverage for cache reuse, image extraction keyword, and `max_pages`; error-path tests pending (see `.serena/memories/pdf_markdown_todos.md`)
+- **Licensing**: PyMuPDF4LLM (AGPL) notice added to README; advise commercial users to review licensing
+
 #### Shared Server Environment Constraints (Updated: 2025-07-19)
 - **Server Environment**: 共有開発サーバー（複数開発者が使用）
 - **Forbidden Commands**: 全体影響のあるコマンド実行禁止
@@ -80,9 +87,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - typecheckジョブはタイムアウト発生（共有リソース制約）
 - **Recommendation**: ローカル環境では直接uvコマンドでCI相当のテスト実行を推奨
 
-#### MCP Server 22ツール全動作テスト結果 (Updated: 2025-07-18)
-- **✅ 全22ツール動作確認完了** - 100%成功率
-- **Paper Tools (7)**: search_papers, get_paper, get_paper_citations, get_paper_references, get_paper_authors, batch_get_papers, get_paper_with_embeddings
+#### MCP Server 23ツール全動作テスト結果 (Updated: 2025-07-18)
+- **✅ 全23ツール動作確認完了** - 100%成功率
+- **Paper Tools (8)**: search_papers, get_paper, get_paper_citations, get_paper_references, get_paper_authors, batch_get_papers, get_paper_with_embeddings, get_markdown_from_pdf
 - **Author Tools (4)**: get_author, get_author_papers, search_authors, batch_get_authors  
 - **Search Tools (4)**: bulk_search_papers, search_papers_match, autocomplete_query, search_snippets
 - **AI/ML Tools (3)**: get_recommendations_for_paper, get_recommendations_batch, search_papers_with_embeddings
@@ -95,7 +102,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Pydantic v2 migration**: COMPLETED - all 7 Field() env kwargs migrated to json_schema_extra
 - **Coverage**: ✅ ACHIEVED 32.68% (exceeds 30% threshold) - 25 total tests (25 passing)
 - **Ruff linting**: All checks pass
-- **MCP Server**: 22 tools, 3 prompts operational
+- **MCP Server**: 23 tools, 3 prompts operational
 - **Test Purpose**: テストはこのMCPがSemantic Scholar APIに対して、呼び出しをできるかどうかをチェックするためのものです
 - **API Specifications**: Semantic Scholarの仕様は docs/api-specifications/ にあります
   - semantic-scholar-datasets-v1.json
@@ -144,12 +151,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **✅ Type Checking**: mypy passes (ignore_errors=true configuration)
 - **✅ Coverage**: 53.80% (exceeds 30% requirement by 79%)
 - **✅ Pydantic v2**: All migrations completed, no deprecation warnings
-- **✅ MCP Server**: 22 tools, 3 prompts available with clean naming
+- **✅ MCP Server**: 23 tools, 3 prompts available with clean naming
 - **✅ Tool Names**: Fully refactored to clean, consistent naming convention
 
 ### MCP Server Testing Status
 - **✅ MCP Configuration**: `.mcp.json` properly configured with `semantic-scholar-dev` 
-- **✅ Tools Available**: 22 tools (11 Paper, 3 Author, 4 Dataset, 4 AI/ML)
+- **✅ Tools Available**: 23 tools across paper research, authors, datasets, recommendations, and PDF conversion
 - **✅ Prompts Available**: 3 prompts (literature_review, citation_analysis, research_trend_analysis)
 - **✅ Server Startup**: Normal startup/shutdown with debug logging
 - **✅ Inspector Test**: Use `npx @modelcontextprotocol/inspector semantic-scholar-dev` for full testing
@@ -371,22 +378,21 @@ asyncio.run(test())
 "
 ```
 
-**Expected Results**: 22 tools, 3 prompts, 0 resources, JSON structured logging
+**Expected Results**: 23 tools, 3 prompts, 0 resources, JSON structured logging
 
-#### MCP Server 22ツール全動作テスト (Claude使用)
+#### MCP Server 23ツール全動作テスト (Claude使用)
 ```bash
 # MCP Inspector でClaude経由テスト
 npx @modelcontextprotocol/inspector --config .mcp.json --server semantic-scholar-dev
 
 # 各ツールをClaude経由で実行:
-# 1. Paper検索: search_papers (query: "machine learning", limit: 2)
-# 2. Paper詳細: get_paper (paper_id: "204e3073870fae3d05bcbc2f6a8e263d9b72e776")
-# 3-11. 他Paper関連ツール: citations, references, embeddings等
-# 12-14. Author関連: search_authors, get_author, get_author_papers
-# 15-18. Dataset関連: releases, info, download_links, updates
-# 19-22. AI/ML関連: recommendations, embeddings, bulk_search等
+# ・Paper関連: search_papers, get_paper, citations, references, authors, batch系, embeddings, get_markdown_from_pdf
+# ・Author関連: search_authors, get_author, get_author_papers, batch_get_authors
+# ・Dataset関連: get_dataset_releases, get_dataset_info, get_dataset_download_links, get_incremental_dataset_updates
+# ・検索/スニペット: bulk_search_papers, search_papers_match, autocomplete_query, search_snippets
+# ・AI/ML関連: get_recommendations_for_paper, get_recommendations_batch, search_papers_with_embeddings
 
-# 期待結果: 22/22 tools success
+# 期待結果: 23/23 tools success
 ```
 
 ### Build and Release
@@ -424,7 +430,7 @@ This is a **Semantic Scholar MCP Server** that provides access to millions of ac
 
 1. **MCP Server** (`src/semantic_scholar_mcp/server.py`)
    - FastMCP-based implementation
-   - 22 tools, 2 resources, 3 prompts
+  - 23 tools, 2 resources, 3 prompts
    - Comprehensive error handling and logging
 
 2. **API Client** (`src/semantic_scholar_mcp/api_client.py`)
@@ -771,7 +777,7 @@ This is a **Semantic Scholar MCP Server** that provides access to millions of ac
 
 1. **MCP Server** (`src/semantic_scholar_mcp/server.py`)
    - FastMCP-based implementation
-   - 22 tools, 2 resources, 3 prompts
+  - 23 tools, 2 resources, 3 prompts
    - Comprehensive error handling and logging
 
 2. **API Client** (`src/semantic_scholar_mcp/api_client.py`)

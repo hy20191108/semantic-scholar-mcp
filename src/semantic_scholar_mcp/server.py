@@ -5,7 +5,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
@@ -13,7 +13,7 @@ from pydantic import Field
 from core.config import ApplicationConfig, get_config
 from core.core import InMemoryCache
 from core.error_handler import MCPErrorHandler, mcp_error_handler
-from core.exceptions import ValidationError
+from core.exceptions import NotFoundError, ValidationError
 from core.logging import (
     MCPToolContext,
     RequestContext,
@@ -27,6 +27,8 @@ from .models import (
     SearchFilters,
     SearchQuery,
 )
+from .pdf_processor import OutputMode
+from .pdf_processor import get_markdown_from_pdf as process_pdf_markdown
 from .utils import (
     apply_field_selection,
     extract_field_value,
@@ -44,11 +46,14 @@ async def execute_api_with_error_handling(operation_name: str, operation_func):
             return await operation_func()
     except Exception as e:
         logger.error(f"Error in {operation_name}: {e!s}")
-        return (
-            error_handler.handle_error(e)
-            if error_handler
-            else {"success": False, "error": {"type": "error", "message": str(e)}}
-        )
+        if error_handler:
+            return await error_handler.handle_mcp_tool_error(
+                error=e,
+                tool_name=operation_name,
+                arguments={},
+                context={"operation": operation_name},
+            )
+        return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
 def extract_pagination_params(limit=None, offset=None, default_limit=10):
@@ -90,6 +95,51 @@ async def initialize_server():
     """Initialize server components."""
     global config, api_client, error_handler, metrics_collector
 
+    # Load .env file with robust path discovery
+    import os
+    from pathlib import Path
+
+    from dotenv import load_dotenv
+
+    def find_env_file():
+        """Find .env file using multiple strategies for robustness."""
+        # Strategy 1: Check current working directory first (most common case)
+        cwd_env = Path.cwd() / ".env"
+        if cwd_env.exists():
+            logger.debug(f"Found .env file in current working directory: {cwd_env}")
+            return cwd_env
+
+        # Strategy 2: Check for explicit environment variable
+        env_path_var = os.getenv("DOTENV_PATH")
+        if env_path_var:
+            env_path = Path(env_path_var)
+            if env_path.exists():
+                logger.debug(f"Found .env file via DOTENV_PATH: {env_path}")
+                return env_path
+
+        # Strategy 3: Search parent directories from current file location
+        current_file = Path(__file__).resolve()
+        for parent in [current_file.parent, *list(current_file.parents)]:
+            env_path = parent / ".env"
+            if env_path.exists():
+                logger.debug(f"Found .env file in parent directory: {env_path}")
+                return env_path
+
+        logger.debug("No .env file found in any searched locations")
+        return None
+
+    # Find and load .env file
+    env_path = find_env_file()
+    if env_path:
+        load_dotenv(env_path)
+        logger.info(f"Successfully loaded .env file from {env_path}")
+        # Debug: Check if API key is now available
+        api_key = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
+        api_key_status = "***SET***" if api_key else "NOT SET"
+        logger.debug(f"API key after loading .env: {api_key_status}")
+    else:
+        logger.info("No .env file loaded - using system environment variables only")
+
     # Load configuration
     config = get_config()
 
@@ -122,7 +172,11 @@ async def initialize_server():
 
     # Create API client
     api_client = SemanticScholarClient(
-        config=config.semantic_scholar, logger=logger, cache=cache
+        config=config.semantic_scholar,
+        rate_limit_config=config.rate_limit,
+        retry_config=config.retry,
+        logger=logger,
+        cache=cache,
     )
 
     # Initialize error handler and metrics collector
@@ -282,30 +336,62 @@ async def search_papers(
                 "search_papers", lambda: api_client.search_papers(search_query)
             )
 
+            # Check if result is an error response
+            if (
+                isinstance(result, dict)
+                and "success" in result
+                and not result["success"]
+            ):
+                return result
+
+            # Ensure result is a valid PaginatedResponse object
+            if not hasattr(result, "data") or result.data is None:
+                logger.error(
+                    "Invalid result format: missing data", result_type=type(result)
+                )
+                return {
+                    "success": False,
+                    "error": {
+                        "type": "error",
+                        "message": "Invalid API response format",
+                    },
+                }
+
             logger.debug_mcp(
                 "Search completed successfully",
-                result_count=len(result.items),
-                total=result.total,
-                has_more=result.has_more,
+                result_count=len(result.data),
+                total=getattr(result, "total", 0),
+                has_more=getattr(result, "has_more", False),
             )
 
             # Format response
             papers_data = []
-            for paper in result.items:
-                paper_dict = paper.model_dump(exclude_none=True)
-                # Apply field selection if requested
-                if actual_fields:
-                    paper_dict = apply_field_selection(paper_dict, actual_fields)
-                papers_data.append(paper_dict)
+            if result.data:
+                for paper in result.data:
+                    # Ensure paper is a Pydantic model, not a dict
+                    if hasattr(paper, "model_dump"):
+                        paper_dict = paper.model_dump(exclude_none=True)
+                    elif isinstance(paper, dict):
+                        paper_dict = paper
+                    else:
+                        logger.warning(
+                            "Unexpected paper format", paper_type=type(paper)
+                        )
+                        continue
+
+                    # Apply field selection if requested
+                    if actual_fields:
+                        paper_dict = apply_field_selection(paper_dict, actual_fields)
+                    papers_data.append(paper_dict)
 
             return {
                 "success": True,
                 "data": {
                     "papers": papers_data,
-                    "total": result.total,
-                    "offset": result.offset,
-                    "limit": result.limit,
-                    "has_more": result.has_more,
+                    "total": getattr(result, "total", 0),
+                    "offset": getattr(result, "offset", 0),
+                    "limit": getattr(result, "limit", 0),
+                    "has_more": getattr(result, "has_more", False),
                 },
             }
 
@@ -380,7 +466,23 @@ async def get_paper(
                 ),
             )
 
-            paper_dict = paper.model_dump(exclude_none=True)
+            # Check if result is an error response
+            if isinstance(paper, dict) and "success" in paper and not paper["success"]:
+                return paper
+
+            # Ensure paper is a valid Pydantic model
+            if hasattr(paper, "model_dump"):
+                paper_dict = paper.model_dump(exclude_none=True)
+            elif isinstance(paper, dict):
+                paper_dict = paper
+            else:
+                return {
+                    "success": False,
+                    "error": {
+                        "type": "error",
+                        "message": "Invalid paper response format",
+                    },
+                }
 
             # Apply field selection if requested
             if actual_fields:
@@ -532,7 +634,7 @@ async def get_paper_authors(
                 "success": True,
                 "data": {
                     "authors": [
-                        author.model_dump(exclude_none=True) for author in result.items
+                        author.model_dump(exclude_none=True) for author in result.data
                     ],
                     "total": result.total,
                     "offset": result.offset,
@@ -599,7 +701,7 @@ async def get_author_papers(
                 "success": True,
                 "data": {
                     "papers": [
-                        paper.model_dump(exclude_none=True) for paper in result.items
+                        paper.model_dump(exclude_none=True) for paper in result.data
                     ],
                     "total": result.total,
                     "offset": result.offset,
@@ -646,7 +748,7 @@ async def search_authors(
                 "success": True,
                 "data": {
                     "authors": [
-                        author.model_dump(exclude_none=True) for author in result.items
+                        author.model_dump(exclude_none=True) for author in result.data
                     ],
                     "total": result.total,
                     "offset": result.offset,
@@ -954,7 +1056,7 @@ async def search_snippets(
             return {
                 "success": True,
                 "data": {
-                    "snippets": result.items,
+                    "snippets": result.data,
                     "total": result.total,
                     "offset": result.offset,
                     "limit": result.limit,
@@ -1137,6 +1239,109 @@ async def get_dataset_download_links(
 
 
 @mcp.tool()
+async def get_markdown_from_pdf(
+    paper_id: str = Field(..., description="Semantic Scholar paper ID or DOI"),
+    output_mode: str | None = Field(
+        default=None,
+        description="Choose 'markdown', 'chunks', or 'both'. Defaults to server configuration.",
+    ),
+    include_images: bool = Field(
+        default=False,
+        description="Extract images while converting the PDF.",
+    ),
+    max_pages: int | None = Field(
+        default=None,
+        ge=1,
+        description="Limit the number of pages to convert. Defaults to configuration.",
+    ),
+    force_refresh: bool = Field(
+        default=False,
+        description="Force re-download and regeneration of artifacts.",
+    ),
+) -> dict[str, Any]:
+    """Download an open-access PDF and expose Markdown content to MCP clients."""
+    with RequestContext():
+        try:
+            if config is None or api_client is None:
+                raise ValidationError(
+                    "Server configuration has not been initialized",
+                    field="config",
+                )
+
+            pdf_config = config.pdf_processing
+            if not pdf_config.enabled:
+                raise ValidationError(
+                    "PDF processing is disabled in configuration",
+                    field="pdf_processing.enabled",
+                )
+
+            selected_mode = (output_mode or pdf_config.default_output_mode).lower()
+            valid_modes: set[str] = {"markdown", "chunks", "both"}
+            if selected_mode not in valid_modes:
+                raise ValidationError(
+                    "output_mode must be one of 'markdown', 'chunks', or 'both'",
+                    field="output_mode",
+                    value=selected_mode,
+                )
+
+            typed_mode: OutputMode = cast(OutputMode, selected_mode)
+
+            async with api_client:
+                result = await process_pdf_markdown(
+                    paper_id=paper_id,
+                    client=api_client,
+                    app_config=config,
+                    output_mode=typed_mode,
+                    include_images=include_images,
+                    max_pages=max_pages,
+                    force_refresh=force_refresh,
+                )
+
+            content: dict[str, Any] = {}
+            if result.markdown is not None:
+                content["markdown"] = result.markdown
+            if result.chunks is not None:
+                content["chunks"] = result.chunks
+
+            payload = {
+                "paper": {
+                    "paper_id": result.paper.paper_id,
+                    "title": result.paper.title,
+                    "year": result.paper.year,
+                    "venue": result.paper.venue,
+                    "authors": [author.name for author in result.paper.authors],
+                },
+                "artifacts": {
+                    "pdf_path": str(result.pdf_path),
+                    "markdown_path": str(result.markdown_path)
+                    if result.markdown_path
+                    else None,
+                    "chunks_path": str(result.chunks_path)
+                    if result.chunks_path
+                    else None,
+                    "images_dir": str(result.images_dir) if result.images_dir else None,
+                    "memory_path": str(result.memory_path)
+                    if result.memory_path
+                    else None,
+                },
+                "content": content,
+                "metadata": result.metadata,
+            }
+
+            return format_success_response(payload)
+
+        except (ValidationError, NotFoundError) as error:
+            logger.error("PDF to Markdown conversion failed", exception=error)
+            return format_error_response(error)
+        except Exception as error:
+            logger.error(
+                "Unexpected error while converting PDF to Markdown",
+                exception=error,
+            )
+            return format_error_response(error)
+
+
+@mcp.tool()
 async def get_paper_with_embeddings(
     paper_id: str,
     embedding_type: str = Field(
@@ -1246,7 +1451,7 @@ async def search_papers_with_embeddings(
                 "success": True,
                 "data": {
                     "papers": [
-                        paper.model_dump(exclude_none=True) for paper in result.items
+                        paper.model_dump(exclude_none=True) for paper in result.data
                     ],
                     "total": result.total,
                     "offset": result.offset,
@@ -1293,6 +1498,87 @@ async def get_incremental_dataset_updates(
 
         except Exception as e:
             logger.error("Error getting incremental dataset updates", exception=e)
+            return {"success": False, "error": {"type": "error", "message": str(e)}}
+
+
+@mcp.tool()
+async def check_api_key_status() -> dict[str, Any]:
+    """
+    Check the API key configuration status and usage.
+
+    Returns:
+        Dictionary containing API key status information
+    """
+    import os
+
+    from core.config import get_config
+
+    with RequestContext():
+        try:
+            # Check environment variable
+            api_key_env = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
+
+            # Get configuration
+            config = get_config()
+            api_key_configured = bool(config.semantic_scholar.api_key)
+
+            # Get API client configuration
+            # Note: Free tier API keys have 1 req/s limit (same as anonymous)
+            # Premium API keys would have higher limits (e.g., 100 req/s)
+            rate_limit_info = {
+                "requests_per_second": 1,  # Free tier and anonymous both have 1 req/s
+                "daily_limit": (
+                    "Unlimited (1 req/s)" if api_key_configured else "5,000 requests"
+                ),
+                "mode": (
+                    "authenticated (free tier)" if api_key_configured else "anonymous"
+                ),
+            }
+
+            # Check actual API key value (masked)
+            api_key_preview = None
+            if api_key_configured and config.semantic_scholar.api_key:
+                # Show first 4 and last 4 characters only
+                # Get the actual string value from SecretStr
+                key_value = config.semantic_scholar.api_key.get_secret_value()
+                if len(key_value) > 10:
+                    api_key_preview = f"{key_value[:4]}...{key_value[-4:]}"
+                else:
+                    api_key_preview = "***SET***"
+
+            return {
+                "success": True,
+                "data": {
+                    "api_key_configured": api_key_configured,
+                    "api_key_source": (
+                        "environment_variable" if api_key_env else "not_set"
+                    ),
+                    "api_key_preview": api_key_preview,
+                    "rate_limits": rate_limit_info,
+                    "benefits_with_key": [
+                        "No daily request limit (unlimited requests at 1 req/s)",
+                        "More stable service (authenticated requests)",
+                        "Access to all endpoints",
+                        "Required for production applications",
+                    ],
+                    "current_status": (
+                        "API key is configured ✓"
+                        if api_key_configured
+                        else "No API key configured (using anonymous mode)"
+                    ),
+                    "recommendation": (
+                        None
+                        if api_key_configured
+                        else (
+                            "Consider adding SEMANTIC_SCHOLAR_API_KEY "
+                            "for better performance"
+                        )
+                    ),
+                },
+            }
+
+        except Exception as e:
+            logger.error("Error checking API key status", exception=e)
             return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 

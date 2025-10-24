@@ -153,13 +153,11 @@ def create_api_client():
 
     config = get_config()
     return SemanticScholarClient(
-        api_key=config.semantic_scholar.api_key,
-        base_url=config.semantic_scholar.base_url,
-        timeout=config.semantic_scholar.timeout,
-        max_retries=config.retry.max_attempts,
-        backoff_factor=config.retry.backoff_factor,
+        config=config.semantic_scholar,
+        rate_limit_config=config.rate_limit,
+        retry_config=config.retry,
         cache=get_service(InMemoryCache),
-        metrics_collector=get_service(MetricsCollector),
+        metrics=get_service(MetricsCollector),
     )
 
 
