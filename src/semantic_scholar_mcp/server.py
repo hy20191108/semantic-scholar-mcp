@@ -395,9 +395,12 @@ TOOL_INSTRUCTIONS: dict[str, str] = {
     ),
     "get_markdown_from_pdf": (
         "### Next Steps\n"
-        "- Read the generated markdown or chunks for key findings.\n"
-        "- Ask for summaries, quotes, or figure call-outs from the content.\n"
-        "- If images were captured, request a recap of notable visuals.\n"
+        "- **Read the Markdown file**: When available, use the Read tool with the path from `artifacts.markdown_path` to view the converted content; this path is only returned if Markdown artifacts are enabled.\n"
+        "- **Access chunks**: Request `output_mode=\"chunks\"` or `\"both\"` to populate `content.chunks` with structured text segments for analysis.\n"
+        "- **Analyze findings**: Ask for summaries, key concepts, or specific sections from the paper.\n"
+        "- **Check artifacts**: PDF, Markdown, and chunks are saved in `.semantic_scholar_mcp/artifacts/` with SHA-1 partitioned paths.\n"
+        "- **View images**: If `include_images=true`, extracted images are in `artifacts.images_dir`.\n"
+        "- **Leverage caching**: Subsequent requests use cached artifacts unless `force_refresh=true` is specified.\n"
     ),
     "check_api_key_status": (
         "### Next Steps\n"
