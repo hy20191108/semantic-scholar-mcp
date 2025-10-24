@@ -70,17 +70,17 @@ Ask in natural language:
 
 ### 📄 Paper Tools
 
-| Tool                   | Description                        | Example                                                |
-| ---------------------- | ---------------------------------- | ------------------------------------------------------ |
-| `search_papers`        | Search papers with filters         | *"Search for deep learning papers from 2023"*          |
-| `get_paper`            | Get detailed paper info            | *"Get full details for paper ID abc123"*               |
-| `get_markdown_from_pdf`| Convert open-access PDFs to Markdown or chunks | *"Convert the PDF for paper abc123 into Markdown"* |
-| `get_paper_citations`  | Get papers citing this paper       | *"Find papers that cite the attention paper"*          |
-| `get_paper_references` | Get papers this paper cites        | *"Show references from the BERT paper"*                |
-| `get_paper_authors`    | Get detailed author info for paper | *"Show authors of paper abc123"*                       |
-| `batch_get_papers`     | Get multiple papers efficiently    | *"Get details for papers: abc123, def456, ghi789"*     |
-| `bulk_search_papers`   | Advanced search with filters       | *"Search ML papers from 2020-2023 with 50+ citations"* |
-| `search_papers_match`  | Search by exact title match        | *"Find paper with title 'Attention Is All You Need'"*  |
+| Tool                    | Description                                    | Example                                                |
+| ----------------------- | ---------------------------------------------- | ------------------------------------------------------ |
+| `search_papers`         | Search papers with filters                     | *"Search for deep learning papers from 2023"*          |
+| `get_paper`             | Get detailed paper info                        | *"Get full details for paper ID abc123"*               |
+| `get_markdown_from_pdf` | Convert open-access PDFs to Markdown or chunks | *"Convert the PDF for paper abc123 into Markdown"*     |
+| `get_paper_citations`   | Get papers citing this paper                   | *"Find papers that cite the attention paper"*          |
+| `get_paper_references`  | Get papers this paper cites                    | *"Show references from the BERT paper"*                |
+| `get_paper_authors`     | Get detailed author info for paper             | *"Show authors of paper abc123"*                       |
+| `batch_get_papers`      | Get multiple papers efficiently                | *"Get details for papers: abc123, def456, ghi789"*     |
+| `bulk_search_papers`    | Advanced search with filters                   | *"Search ML papers from 2020-2023 with 50+ citations"* |
+| `search_papers_match`   | Search by exact title match                    | *"Find paper with title 'Attention Is All You Need'"*  |
 
 ### 👤 Author Tools
 

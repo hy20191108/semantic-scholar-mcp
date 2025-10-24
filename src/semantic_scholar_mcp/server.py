@@ -4,8 +4,10 @@ import asyncio
 import logging
 import os
 import sys
+from collections.abc import Awaitable, Callable, MutableMapping
+from functools import wraps
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, ParamSpec, cast
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
@@ -39,21 +41,30 @@ from .utils import (
 )
 
 
-async def execute_api_with_error_handling(operation_name: str, operation_func):
+async def execute_api_with_error_handling(
+    operation_name: str,
+    operation_func: Callable[[], Awaitable[Any]],
+    *,
+    context: MutableMapping[str, Any] | None = None,
+):
     """Execute API operation with standardized error handling."""
+
     try:
         async with api_client:
             return await operation_func()
-    except Exception as e:
-        logger.error(f"Error in {operation_name}: {e!s}")
+    except Exception as exc:  # pragma: no cover - defensive safety net
+        logger.error("Error in %s: %s", operation_name, exc)
         if error_handler:
             return await error_handler.handle_mcp_tool_error(
-                error=e,
+                error=exc,
                 tool_name=operation_name,
                 arguments={},
-                context={"operation": operation_name},
+                context={"operation": operation_name, **(context or {})},
             )
-        return {"success": False, "error": {"type": "error", "message": str(e)}}
+        return {
+            "success": False,
+            "error": {"type": "error", "message": str(exc)},
+        }
 
 
 def extract_pagination_params(limit=None, offset=None, default_limit=10):
@@ -245,6 +256,216 @@ async def initialize_server():
 # Tool implementations
 
 
+P = ParamSpec("P")
+ToolCoroutine = Callable[P, Awaitable[MutableMapping[str, Any]]]
+
+
+TOOL_INSTRUCTIONS: dict[str, str] = {
+    "search_papers": (
+        "### Next Steps\n"
+        "- Review the returned `papers` list and flag items worth reading.\n"
+        "- Ask for summaries of any paper that stands out.\n"
+        "- Refine the query or add filters if the scope is still too broad.\n"
+    ),
+    "get_paper": (
+        "### Next Steps\n"
+        "- Examine the abstract, authors, and venue to confirm relevance.\n"
+        "- Request a summary of specific sections or findings.\n"
+        "- Consider checking citations or references for deeper context.\n"
+    ),
+    "get_paper_citations": (
+        "### Next Steps\n"
+        "- Review citing papers to understand follow-up research.\n"
+        "- Ask for a comparison between key citing works.\n"
+        "- Use `get_paper` on notable citations to inspect details.\n"
+    ),
+    "get_paper_references": (
+        "### Next Steps\n"
+        "- Scan referenced papers to map the foundational work.\n"
+        "- Ask for brief summaries of the most influential references.\n"
+        "- Retrieve full details for any reference with `get_paper`.\n"
+    ),
+    "get_paper_authors": (
+        "### Next Steps\n"
+        "- Identify recurring collaborators or leading authors.\n"
+        "- Ask for author profiles to evaluate expertise.\n"
+        "- Follow up with `get_author_papers` for a selected researcher.\n"
+    ),
+    "search_authors": (
+        "### Next Steps\n"
+        "- Inspect the candidate list and shortlist promising researchers.\n"
+        "- Request `get_author` for profiles you want to explore.\n"
+        "- Note emerging topics or institutions tied to each author.\n"
+    ),
+    "get_author": (
+        "### Next Steps\n"
+        "- Review the author metrics and affiliations provided.\n"
+        "- Ask for trends or notable publications in their portfolio.\n"
+        "- Use `get_author_papers` for recent work or specific years.\n"
+    ),
+    "get_author_papers": (
+        "### Next Steps\n"
+        "- Scan the publication list for themes or collaborations.\n"
+        "- Request summaries of standout papers for a quick brief.\n"
+        "- Compare with other authors to spot overlapping research.\n"
+    ),
+    "get_recommendations_for_paper": (
+        "### Next Steps\n"
+        "- Review recommended papers and note recurring concepts.\n"
+        "- Ask for summaries or contrasts with the source paper.\n"
+        "- Queue follow-up searches for promising recommendations.\n"
+    ),
+    "batch_get_papers": (
+        "### Next Steps\n"
+        "- Check that each requested paper is present and complete.\n"
+        "- Ask for a synthesis across the batch to spot shared themes.\n"
+        "- Plan deeper dives using `get_paper` where more detail is needed.\n"
+    ),
+    "bulk_search_papers": (
+        "### Next Steps\n"
+        "- Inspect aggregated hits and decide which query succeeded.\n"
+        "- Ask for focused summaries of the best-performing results.\n"
+        "- Iterate on the weaker queries with refined keywords.\n"
+    ),
+    "search_papers_match": (
+        "### Next Steps\n"
+        "- Verify the matching titles to confirm precision.\n"
+        "- Request details on the closest matches for validation.\n"
+        "- Adjust the exact title or add identifiers if results are sparse.\n"
+    ),
+    "autocomplete_query": (
+        "### Next Steps\n"
+        "- Use the suggestions to craft a clearer search prompt.\n"
+        "- Ask for the pros and cons of the top suggested phrases.\n"
+        "- Run `search_papers` with the selected completion.\n"
+    ),
+    "search_snippets": (
+        "### Next Steps\n"
+        "- Read snippet contexts to judge relevance quickly.\n"
+        "- Ask for full paper details on the most compelling snippets.\n"
+        "- Consider refining keywords if noise remains high.\n"
+    ),
+    "batch_get_authors": (
+        "### Next Steps\n"
+        "- Confirm that each requested author profile is included.\n"
+        "- Ask for a comparative overview across these researchers.\n"
+        "- Plan next queries such as `get_author_papers` per person.\n"
+    ),
+    "get_recommendations_batch": (
+        "### Next Steps\n"
+        "- Scan recommended sets for consensus picks.\n"
+        "- Ask for clusters or themes spanning the recommendations.\n"
+        "- Prioritize papers for closer reading or follow-up calls.\n"
+    ),
+    "get_dataset_releases": (
+        "### Next Steps\n"
+        "- Identify the release that matches your research needs.\n"
+        "- Ask for differences between adjacent releases if unsure.\n"
+        "- Fetch detailed metadata via `get_dataset_info`.\n"
+    ),
+    "get_dataset_info": (
+        "### Next Steps\n"
+        "- Review dataset size, modality, and coverage carefully.\n"
+        "- Ask for implications or usage tips for this dataset.\n"
+        "- Proceed to `get_dataset_download_links` when ready.\n"
+    ),
+    "get_dataset_download_links": (
+        "### Next Steps\n"
+        "- Record the download URLs and any authentication notes.\n"
+        "- Ask for guidance on verifying file integrity.\n"
+        "- Plan storage or processing steps before downloading.\n"
+    ),
+    "get_incremental_dataset_updates": (
+        "### Next Steps\n"
+        "- Examine update windows to schedule data refreshes.\n"
+        "- Ask for change summaries between the releases.\n"
+        "- Decide whether a full or incremental download is needed.\n"
+    ),
+    "get_paper_with_embeddings": (
+        "### Next Steps\n"
+        "- Use the embedding vector for similarity searches or clustering.\n"
+        "- Ask for interpretation of key metadata linked to the vector.\n"
+        "- Combine with `search_papers_with_embeddings` to expand the set.\n"
+    ),
+    "search_papers_with_embeddings": (
+        "### Next Steps\n"
+        "- Check each match score to gauge semantic proximity.\n"
+        "- Ask for a narrative summary of the closest matches.\n"
+        "- Feed chosen IDs into `get_paper` for full context.\n"
+    ),
+    "get_markdown_from_pdf": (
+        "### Next Steps\n"
+        "- Read the generated markdown or chunks for key findings.\n"
+        "- Ask for summaries, quotes, or figure call-outs from the content.\n"
+        "- If images were captured, request a recap of notable visuals.\n"
+    ),
+    "check_api_key_status": (
+        "### Next Steps\n"
+        "- Review the API key status and rate limit guidance provided.\n"
+        "- Set or rotate `SEMANTIC_SCHOLAR_API_KEY` if configuration is missing.\n"
+        "- Ask for usage recommendations or next steps after updating credentials.\n"
+    ),
+}
+
+
+REGISTERED_TOOL_NAMES: set[str] = set()
+
+
+def _default_instruction(tool_name: str) -> str:
+    """Return a fallback instruction block for tools without explicit guidance."""
+
+    return (
+        "### Next Steps\n"
+        f"- Review the `{tool_name}` output and capture follow-up questions.\n"
+        "- Ask for summaries or comparisons based on your goal.\n"
+        "- Run adjacent tools if you need supporting context.\n"
+    )
+
+
+def _inject_instructions(
+    result: MutableMapping[str, Any], instruction_text: str
+) -> MutableMapping[str, Any]:
+    """Attach instructions to successful tool responses."""
+
+    if not instruction_text:
+        return result
+
+    success_value = result.get("success")
+    if success_value is False:
+        return result
+
+    result.setdefault("instructions", instruction_text)
+    return result
+
+
+def with_tool_instructions(tool_name: str) -> Callable[[ToolCoroutine], ToolCoroutine]:
+    """Decorator that injects follow-up instructions into tool responses."""
+
+    instruction_text = TOOL_INSTRUCTIONS.get(tool_name) or _default_instruction(
+        tool_name
+    )
+
+    def decorator(func: ToolCoroutine) -> ToolCoroutine:
+        if not asyncio.iscoroutinefunction(func):
+            raise TypeError(
+                "with_tool_instructions decorator expects an async function"
+            )
+
+        REGISTERED_TOOL_NAMES.add(tool_name)
+
+        @wraps(func)
+        async def async_wrapper(
+            *args: P.args, **kwargs: P.kwargs
+        ) -> MutableMapping[str, Any]:
+            result = await func(*args, **kwargs)
+            return _inject_instructions(result, instruction_text)
+
+        return async_wrapper
+
+    return decorator
+
+
+@with_tool_instructions("search_papers")
 @mcp.tool()
 @mcp_error_handler(tool_name="search_papers")
 async def search_papers(
@@ -265,21 +486,9 @@ async def search_papers(
         description="Fields to include in response (supports dot notation)",
     ),
 ) -> dict[str, Any]:
-    """
-    Search for academic papers in Semantic Scholar.
+    """Search Semantic Scholar papers with optional filters."""
 
-    Args:
-        query: Search query string
-        limit: Maximum number of results (1-100)
-        offset: Pagination offset
-        year: Filter by publication year
-        fields_of_study: Filter by fields of study
-        sort: Sort order
-
-    Returns:
-        Dictionary containing search results with papers and metadata
-    """
-    with RequestContext(), MCPToolContext("search_papers"):
+    with RequestContext():
         try:
             logger.debug_mcp(
                 "Starting search_papers tool execution",
@@ -291,7 +500,6 @@ async def search_papers(
                 sort=sort,
             )
 
-            # Extract actual values from Field objects
             actual_limit, actual_offset = extract_pagination_params(limit, offset, 10)
             actual_sort = extract_field_value(sort)
             actual_year = extract_field_value(year)
@@ -299,15 +507,15 @@ async def search_papers(
             actual_fields = extract_field_value(fields)
 
             logger.debug_mcp(
-                "Extracted field values",
+                "Resolved search parameters",
                 actual_limit=actual_limit,
                 actual_offset=actual_offset,
                 actual_sort=actual_sort,
                 actual_year=actual_year,
                 actual_fields_of_study=actual_fields_of_study,
+                requested_fields=actual_fields,
             )
 
-            # Build search query
             search_query = SearchQuery(
                 query=query,
                 limit=actual_limit,
@@ -316,10 +524,10 @@ async def search_papers(
                 fields=actual_fields,
             )
 
-            # Apply filters if provided
             if actual_year or actual_fields_of_study:
                 search_query.filters = SearchFilters(
-                    year=actual_year, fields_of_study=actual_fields_of_study
+                    year=actual_year,
+                    fields_of_study=actual_fields_of_study,
                 )
                 logger.debug_mcp(
                     "Applied search filters",
@@ -328,26 +536,18 @@ async def search_papers(
                     else None,
                 )
 
-            # Execute search
-            logger.debug_mcp(
-                "Executing API search", search_query=search_query.model_dump()
-            )
             result = await execute_api_with_error_handling(
-                "search_papers", lambda: api_client.search_papers(search_query)
+                "search_papers",
+                lambda: api_client.search_papers(search_query),
             )
 
-            # Check if result is an error response
-            if (
-                isinstance(result, dict)
-                and "success" in result
-                and not result["success"]
-            ):
+            if isinstance(result, dict):
                 return result
 
-            # Ensure result is a valid PaginatedResponse object
-            if not hasattr(result, "data") or result.data is None:
+            if not hasattr(result, "data"):
                 logger.error(
-                    "Invalid result format: missing data", result_type=type(result)
+                    "Invalid API response: missing data attribute",
+                    response_type=type(result),
                 )
                 return {
                     "success": False,
@@ -357,73 +557,81 @@ async def search_papers(
                     },
                 }
 
-            logger.debug_mcp(
-                "Search completed successfully",
-                result_count=len(result.data),
-                total=getattr(result, "total", 0),
-                has_more=getattr(result, "has_more", False),
+            papers_data: list[dict[str, Any]] = []
+            for paper in result.data or []:
+                if hasattr(paper, "model_dump"):
+                    paper_dict = cast(MutableMapping[str, Any], paper.model_dump(exclude_none=True))
+                elif isinstance(paper, MutableMapping):
+                    paper_dict = dict(paper)
+                else:
+                    logger.warning(
+                        "Skipping unexpected paper payload",
+                        paper_type=type(paper),
+                    )
+                    continue
+
+                if actual_fields:
+                    paper_dict = apply_field_selection(paper_dict, actual_fields)
+                papers_data.append(paper_dict)
+
+            total = getattr(result, "total", len(papers_data))
+            has_more = getattr(
+                result,
+                "has_more",
+                (getattr(result, "offset", 0) + getattr(result, "limit", 0)) < total,
             )
 
-            # Format response
-            papers_data = []
-            if result.data:
-                for paper in result.data:
-                    # Ensure paper is a Pydantic model, not a dict
-                    if hasattr(paper, "model_dump"):
-                        paper_dict = paper.model_dump(exclude_none=True)
-                    elif isinstance(paper, dict):
-                        paper_dict = paper
-                    else:
-                        logger.warning(
-                            "Unexpected paper format", paper_type=type(paper)
-                        )
-                        continue
-
-                    # Apply field selection if requested
-                    if actual_fields:
-                        paper_dict = apply_field_selection(paper_dict, actual_fields)
-                    papers_data.append(paper_dict)
+            logger.debug_mcp(
+                "Search completed",
+                result_count=len(papers_data),
+                total=total,
+                has_more=has_more,
+            )
 
             return {
                 "success": True,
                 "data": {
                     "papers": papers_data,
-                    "total": getattr(result, "total", 0),
-                    "offset": getattr(result, "offset", 0),
-                    "limit": getattr(result, "limit", 0),
-                    "has_more": getattr(result, "has_more", False),
+                    "total": total,
+                    "offset": getattr(result, "offset", actual_offset),
+                    "limit": getattr(result, "limit", actual_limit),
+                    "has_more": has_more,
                 },
             }
 
-        except ValidationError as e:
+        except ValidationError as exc:
             logger.log_with_stack_trace(
                 logging.ERROR,
                 "Validation error in search_papers",
-                exception=e,
+                exception=exc,
                 tool_name="search_papers",
                 query=query,
-                validation_details=e.details,
+                validation_details=exc.details,
             )
             return {
                 "success": False,
                 "error": {
                     "type": "validation_error",
-                    "message": str(e),
-                    "details": e.details,
+                    "message": str(exc),
+                    "details": exc.details,
                 },
             }
-        except Exception as e:
+        except Exception as exc:
             logger.log_with_stack_trace(
                 logging.ERROR,
                 "Error searching papers",
-                exception=e,
+                exception=exc,
                 tool_name="search_papers",
                 query=query,
-                exception_type=type(e).__name__,
+                exception_type=type(exc).__name__,
             )
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+            return {
+                "success": False,
+                "error": {"type": "error", "message": str(exc)},
+            }
 
 
+@with_tool_instructions("get_paper")
 @mcp.tool()
 @mcp_error_handler(tool_name="get_paper")
 async def get_paper(
@@ -439,21 +647,10 @@ async def get_paper(
         default=False, description="Include reference details"
     ),
 ) -> dict[str, Any]:
-    """
-    Get detailed information about a specific paper.
+    """Retrieve detailed information about a specific paper."""
 
-    Args:
-        paper_id: Paper ID (Semantic Scholar ID, DOI, or ArXiv ID)
-        fields: Optional list of fields to include (supports dot notation)
-        include_citations: Whether to include citation details
-        include_references: Whether to include reference details
-
-    Returns:
-        Dictionary containing paper details
-    """
     with RequestContext():
         try:
-            # Extract actual field value
             actual_fields = extract_field_value(fields)
 
             paper = await execute_api_with_error_handling(
@@ -464,17 +661,16 @@ async def get_paper(
                     include_citations=include_citations,
                     include_references=include_references,
                 ),
+                context={"paper_id": paper_id},
             )
 
-            # Check if result is an error response
-            if isinstance(paper, dict) and "success" in paper and not paper["success"]:
+            if isinstance(paper, dict):
                 return paper
 
-            # Ensure paper is a valid Pydantic model
             if hasattr(paper, "model_dump"):
                 paper_dict = paper.model_dump(exclude_none=True)
-            elif isinstance(paper, dict):
-                paper_dict = paper
+            elif isinstance(paper, MutableMapping):
+                paper_dict = dict(paper)
             else:
                 return {
                     "success": False,
@@ -484,27 +680,27 @@ async def get_paper(
                     },
                 }
 
-            # Apply field selection if requested
             if actual_fields:
                 paper_dict = apply_field_selection(paper_dict, actual_fields)
 
             return {"success": True, "data": paper_dict}
 
-        except ValidationError as e:
-            logger.error("Validation error in get_paper", exception=e)
+        except ValidationError as exc:
+            logger.error("Validation error in get_paper", exception=exc)
             return {
                 "success": False,
                 "error": {
                     "type": "validation_error",
-                    "message": str(e),
-                    "details": e.details,
+                    "message": str(exc),
+                    "details": exc.details,
                 },
             }
-        except Exception as e:
-            logger.error("Error getting paper", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+        except Exception as exc:
+            logger.error("Error getting paper", exception=exc)
+            return {"success": False, "error": {"type": "error", "message": str(exc)}}
 
 
+@with_tool_instructions("get_paper_citations")
 @mcp.tool()
 async def get_paper_citations(
     paper_id: str,
@@ -516,17 +712,8 @@ async def get_paper_citations(
     ),
     offset: int = Field(default=0, ge=0, description="Offset for pagination"),
 ) -> dict[str, Any]:
-    """
-    Get citations for a specific paper.
+    """Get citations for a specific paper."""
 
-    Args:
-        paper_id: Paper ID
-        limit: Maximum number of citations
-        offset: Pagination offset
-
-    Returns:
-        Dictionary containing citation list
-    """
     with RequestContext():
         try:
             actual_limit, actual_offset = extract_pagination_params(limit, offset, 100)
@@ -534,8 +721,11 @@ async def get_paper_citations(
             citations = await execute_api_with_error_handling(
                 "get_paper_citations",
                 lambda: api_client.get_paper_citations(
-                    paper_id=paper_id, limit=actual_limit, offset=actual_offset
+                    paper_id=paper_id,
+                    limit=actual_limit,
+                    offset=actual_offset,
                 ),
+                context={"paper_id": paper_id},
             )
 
             return {
@@ -548,11 +738,12 @@ async def get_paper_citations(
                 },
             }
 
-        except Exception as e:
-            logger.error("Error getting citations", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+        except Exception as exc:
+            logger.error("Error getting citations", exception=exc)
+            return {"success": False, "error": {"type": "error", "message": str(exc)}}
 
 
+@with_tool_instructions("get_paper_references")
 @mcp.tool()
 async def get_paper_references(
     paper_id: str,
@@ -598,6 +789,7 @@ async def get_paper_references(
             return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
+@with_tool_instructions("get_paper_authors")
 @mcp.tool()
 async def get_paper_authors(
     paper_id: str,
@@ -648,6 +840,7 @@ async def get_paper_authors(
             return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
+@with_tool_instructions("get_author")
 @mcp.tool()
 async def get_author(author_id: str) -> dict[str, Any]:
     """
@@ -671,6 +864,7 @@ async def get_author(author_id: str) -> dict[str, Any]:
             return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
+@with_tool_instructions("get_author_papers")
 @mcp.tool()
 async def get_author_papers(
     author_id: str,
@@ -715,6 +909,7 @@ async def get_author_papers(
             return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
+@with_tool_instructions("search_authors")
 @mcp.tool()
 async def search_authors(
     query: str,
@@ -762,6 +957,7 @@ async def search_authors(
             return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
+@with_tool_instructions("get_recommendations_for_paper")
 @mcp.tool()
 async def get_recommendations_for_paper(
     paper_id: str,
@@ -805,6 +1001,7 @@ async def get_recommendations_for_paper(
             return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
+@with_tool_instructions("batch_get_papers")
 @mcp.tool()
 async def batch_get_papers(
     paper_ids: list[str],
@@ -859,6 +1056,7 @@ async def batch_get_papers(
             return format_error_response(e)
 
 
+@with_tool_instructions("bulk_search_papers")
 @mcp.tool()
 async def bulk_search_papers(
     query: str,
@@ -944,6 +1142,7 @@ async def bulk_search_papers(
             return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
+@with_tool_instructions("search_papers_match")
 @mcp.tool()
 async def search_papers_match(
     title: str,
@@ -994,6 +1193,7 @@ async def search_papers_match(
             return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
+@with_tool_instructions("autocomplete_query")
 @mcp.tool()
 async def autocomplete_query(
     query: str,
@@ -1029,6 +1229,7 @@ async def autocomplete_query(
             return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
+@with_tool_instructions("search_snippets")
 @mcp.tool()
 async def search_snippets(
     query: str,
@@ -1069,6 +1270,7 @@ async def search_snippets(
             return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
+@with_tool_instructions("batch_get_authors")
 @mcp.tool()
 async def batch_get_authors(
     author_ids: list[str],
@@ -1114,6 +1316,7 @@ async def batch_get_authors(
             return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
+@with_tool_instructions("get_recommendations_batch")
 @mcp.tool()
 async def get_recommendations_batch(
     positive_paper_ids: list[str],
@@ -1155,6 +1358,7 @@ async def get_recommendations_batch(
             return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
+@with_tool_instructions("get_dataset_releases")
 @mcp.tool()
 async def get_dataset_releases() -> dict[str, Any]:
     """
@@ -1181,6 +1385,7 @@ async def get_dataset_releases() -> dict[str, Any]:
             return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
+@with_tool_instructions("get_dataset_info")
 @mcp.tool()
 async def get_dataset_info(release_id: str) -> dict[str, Any]:
     """
@@ -1207,6 +1412,7 @@ async def get_dataset_info(release_id: str) -> dict[str, Any]:
             return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
+@with_tool_instructions("get_dataset_download_links")
 @mcp.tool()
 async def get_dataset_download_links(
     release_id: str, dataset_name: str
@@ -1238,12 +1444,16 @@ async def get_dataset_download_links(
             return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
+@with_tool_instructions("get_markdown_from_pdf")
 @mcp.tool()
 async def get_markdown_from_pdf(
     paper_id: str = Field(..., description="Semantic Scholar paper ID or DOI"),
     output_mode: str | None = Field(
         default=None,
-        description="Choose 'markdown', 'chunks', or 'both'. Defaults to server configuration.",
+        description=(
+            "Choose 'markdown', 'chunks', or 'both'. Defaults to the server "
+            "configuration."
+        ),
     ),
     include_images: bool = Field(
         default=False,
@@ -1341,6 +1551,7 @@ async def get_markdown_from_pdf(
             return format_error_response(error)
 
 
+@with_tool_instructions("get_paper_with_embeddings")
 @mcp.tool()
 async def get_paper_with_embeddings(
     paper_id: str,
@@ -1376,6 +1587,7 @@ async def get_paper_with_embeddings(
             return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
+@with_tool_instructions("search_papers_with_embeddings")
 @mcp.tool()
 async def search_papers_with_embeddings(
     query: str,
@@ -1465,6 +1677,7 @@ async def search_papers_with_embeddings(
             return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
+@with_tool_instructions("get_incremental_dataset_updates")
 @mcp.tool()
 async def get_incremental_dataset_updates(
     start_release_id: str,
@@ -1501,6 +1714,7 @@ async def get_incremental_dataset_updates(
             return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
+@with_tool_instructions("check_api_key_status")
 @mcp.tool()
 async def check_api_key_status() -> dict[str, Any]:
     """
@@ -1580,6 +1794,22 @@ async def check_api_key_status() -> dict[str, Any]:
         except Exception as e:
             logger.error("Error checking API key status", exception=e)
             return {"success": False, "error": {"type": "error", "message": str(e)}}
+
+
+_TOOL_INSTRUCTION_KEYS = set(TOOL_INSTRUCTIONS.keys())
+_UNUSED_INSTRUCTION_KEYS = _TOOL_INSTRUCTION_KEYS - REGISTERED_TOOL_NAMES
+if _UNUSED_INSTRUCTION_KEYS:
+    raise ValueError(
+        "TOOL_INSTRUCTIONS contains keys that do not correspond to registered tools: "
+        + ", ".join(sorted(_UNUSED_INSTRUCTION_KEYS))
+    )
+
+_MISSING_INSTRUCTION_KEYS = REGISTERED_TOOL_NAMES - _TOOL_INSTRUCTION_KEYS
+if _MISSING_INSTRUCTION_KEYS:
+    logger.warning(
+        "Missing explicit tool instructions; default instructions will be used",
+        tools=sorted(_MISSING_INSTRUCTION_KEYS),
+    )
 
 
 # Resource implementations
