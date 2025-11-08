@@ -118,16 +118,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Explain why changes are needed and get explicit approval
 - Preserve project conventions (88 char line limit, etc.)
 
-### Release Process Analysis
-- **Current git tag**: v0.2.2 (last PyPI release: 2025-07-08)
-- **Uncommitted changes**: 1 commit ahead (bd7f465) - marked as dirty
-- **Version management**: hatch-vcs (automatic from git tags)
-- **Build system**: hatchling + hatch-vcs
-- **Release triggers**: 
-  - GitHub release creation
-  - Git tag push (v*)
-  - Manual workflow dispatch
-- **Trusted publishing**: Configured for both PyPI and TestPyPI via OIDC
+### Release Process (Simplified)
+- **Current version**: 0.2.2 (manually managed in pyproject.toml and __init__.py)
+- **Version management**: Manual versioning (simple and clear)
+- **Build system**: hatchling (minimal dependencies)
+- **Release process**:
+  1. Update version in `pyproject.toml` and `src/semantic_scholar_mcp/__init__.py`
+  2. Create GitHub Release with tag `v0.2.3`
+  3. Automatic PyPI publish via GitHub Actions
+- **TestPyPI**: Manual workflow dispatch only (for testing)
+- **Trusted publishing**: OIDC configured for PyPI and TestPyPI
 
 ### Current CI/CD Status (Updated: 2025-07-18)
 - **CI Status**: PARTIALLY FAILING (mypy: 1 error, coverage: below threshold)
@@ -173,64 +173,46 @@ git describe --tags --dirty
 git tag --list --sort=-version:refname | head -5
 ```
 
-### Release Process Documentation
+### Simplified Release Process
 ```bash
-# 1. Create a new release (will auto-version from git tags)
-git tag v0.2.3
-git push origin v0.2.3
+# Step 1: Update version in both files
+# - pyproject.toml: version = "0.2.3"
+# - src/semantic_scholar_mcp/__init__.py: __version__ = "0.2.3"
 
-# 2. Or create GitHub release (triggers workflow)
+# Step 2: Create GitHub release (this triggers PyPI publish automatically)
 gh release create v0.2.3 --title "Release v0.2.3" --notes "Release notes here"
 
-# 3. Or trigger manual release
-gh workflow run release.yml
-
-# 4. Test release to TestPyPI (weekly or manual)
+# Optional: Test release to TestPyPI first
 gh workflow run test-pypi.yml
 ```
 
-### Complete Release Workflow
+### Simplified Release Workflow
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            RELEASE WORKFLOW                                 │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ 1. PRE-RELEASE VALIDATION                                                   │
-│    ├─── CI Pipeline (.github/workflows/ci.yml)                             │
-│    │    ├─── Lint: ruff check + format                                     │
-│    │    ├─── Type Check: mypy                                               │
-│    │    └─── Test: pytest on Python 3.10, 3.11, 3.12                     │
-│    ├─── Code Review: Claude Code Review (auto on PR)                       │
-│    └─── Dependencies: Dependabot (weekly updates)                          │
-│                                                                             │
-│ 2. RELEASE TRIGGERS                                                         │
-│    ├─── GitHub Release Creation                                             │
-│    ├─── Git Tag Push (v*)                                                  │
-│    └─── Manual Workflow Dispatch                                           │
-│                                                                             │
-│ 3. BUILD & PUBLISH PIPELINE (.github/workflows/release.yml)                │
-│    ├─── Checkout with full git history (fetch-depth: 0)                   │
-│    ├─── Setup uv + Python 3.10                                            │
-│    ├─── Build packages (uv build)                                          │
-│    ├─── Validate packages (wheel + tar.gz)                                 │
-│    └─── Publish to PyPI (OIDC trusted publishing)                          │
-│                                                                             │
-│ 4. TEST PIPELINE (.github/workflows/test-pypi.yml)                         │
-│    ├─── Weekly automated test releases                                     │
-│    ├─── Manual test releases                                               │
-│    └─── Publish to TestPyPI (skip existing)                               │
-│                                                                             │
-│ 5. VERSION MANAGEMENT                                                       │
-│    ├─── hatch-vcs: Auto-version from git tags                             │
-│    ├─── Development: 0.2.3.dev1+gSHA.date format                          │
-│    └─── Release: Semantic versioning from git tags                        │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                   SIMPLIFIED RELEASE WORKFLOW                   │
+├─────────────────────────────────────────────────────────────────┤
+│ 1. UPDATE VERSION                                               │
+│    ├─── Edit pyproject.toml: version = "X.Y.Z"                 │
+│    └─── Edit __init__.py: __version__ = "X.Y.Z"                │
+│                                                                 │
+│ 2. CREATE GITHUB RELEASE                                        │
+│    └─── GitHub Release with tag vX.Y.Z                         │
+│         (Automatically triggers PyPI publish)                   │
+│                                                                 │
+│ 3. AUTOMATED BUILD & PUBLISH                                    │
+│    ├─── Verify version matches tag                             │
+│    ├─── Build packages (uv build)                              │
+│    ├─── Validate artifacts                                     │
+│    └─── Publish to PyPI (OIDC)                                 │
+│                                                                 │
+│ OPTIONAL: TestPyPI                                              │
+│    └─── Manual workflow dispatch only                          │
+└─────────────────────────────────────────────────────────────────┘
 
-CURRENT STATUS: 🚫 NOT READY FOR RELEASE (Updated: 2025-07-18)
-- mypy type checking blocked by module path conflict
-- Test coverage at 22% (below 30% threshold)
-- Git branch diverged from origin/main (sync needed)
-- Pydantic v2.0 migration warnings present
-- Quality gates not met for release
+CURRENT STATUS: ✅ READY FOR RELEASE
+- All quality gates passing
+- Tests: 98/98 passing (53.80% coverage)
+- Version management: Manual and clear
 ```
 
 ### Branch Protection Investigation

@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
 name = "semantic-scholar-mcp"
-dynamic = ["version"]
+version = "0.2.2"
 description = "MCP server for Semantic Scholar API integration with Claude Desktop"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -156,13 +156,6 @@ ignore = [
 [tool.bandit]
 tests = ["B201", "B301"]
 skips = ["B101", "B601"]
-
-[tool.hatch.version]
-source = "vcs"
-tag-prefix = "v"
-
-[tool.hatch.build.hooks.vcs]
-version-file = "src/semantic_scholar_mcp/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/semantic_scholar_mcp", "src/core"]

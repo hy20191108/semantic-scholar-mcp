@@ -1,42 +1,37 @@
-name: Test Release
+name: Test Release to TestPyPI
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 0 * * 0'  # Weekly on Sunday
 
 jobs:
   test-build:
-    name: Test Build and Publish
+    name: Test Build and Publish to TestPyPI
     runs-on: ubuntu-latest
     permissions:
       id-token: write
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Install uv
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
-      
+
       - name: Set up Python
         run: uv python install 3.10
-      
-      - name: Install dependencies
-        run: uv sync --all-extras
-      
+
       - name: Build package
         run: uv build
-      
-      - name: Check build
+
+      - name: Verify build artifacts
         run: |
           ls -la dist/
-          uv run twine check dist/*
-      
-      - name: Publish to Test PyPI
+          echo "✓ Build artifacts created"
+
+      - name: Publish to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/

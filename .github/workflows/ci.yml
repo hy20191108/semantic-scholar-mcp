@@ -9,76 +9,75 @@ on:
 
 jobs:
   lint:
-    name: Lint
+    name: Code Linting
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Install uv
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
-      
-      - name: Set up Python
+
+      - name: Set up Python 3.10
         run: uv python install 3.10
-      
+
       - name: Install dependencies
         run: uv sync --all-extras
-      
+
       - name: Run ruff check
         run: uv run ruff check . --output-format=github
-      
+
       - name: Run ruff format check
         run: uv run ruff format --check .
 
   typecheck:
-    name: Type Check
+    name: Type Checking
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Install uv
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
-      
-      - name: Set up Python
+
+      - name: Set up Python 3.10
         run: uv python install 3.10
-      
+
       - name: Install dependencies
         run: uv sync --all-extras
-      
+
       - name: Run mypy
         run: uv run mypy src/ --show-error-codes --pretty
 
   test:
-    name: Test Python 3.10
+    name: Tests (Python 3.10)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Install uv
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
-      
-      - name: Set up Python
+
+      - name: Set up Python 3.10
         run: uv python install 3.10
-      
+
       - name: Install dependencies
         run: uv sync --all-extras
-      
-      - name: Run tests
+
+      - name: Run tests with coverage
         run: uv run pytest tests/ -v --tb=short --cov=src/semantic_scholar_mcp --cov-report=xml
-      
-      - name: Upload coverage
+
+      - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           file: ./coverage.xml
