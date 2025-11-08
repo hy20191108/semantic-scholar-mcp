@@ -266,6 +266,25 @@ class Citation(BaseModel):
             return str(v)
         return v
 
+    @model_validator(mode="before")
+    @classmethod
+    def extract_citing_paper(cls, data: Any) -> dict[str, Any]:
+        """Extract fields from nested citingPaper structure."""
+        if not isinstance(data, dict):
+            return data
+
+        # If citingPaper exists, extract its fields to root level
+        if "citingPaper" in data:
+            citing_paper = data["citingPaper"]
+            if isinstance(citing_paper, dict):
+                # Merge citingPaper fields with root data
+                extracted = {**data, **citing_paper}
+                # Remove the nested structure
+                extracted.pop("citingPaper", None)
+                return extracted
+
+        return data
+
     @field_validator("paper_id", mode="before")
     @classmethod
     def normalize_paper_id(cls, value):
@@ -298,6 +317,25 @@ class Reference(BaseModel):
         if v is not None and not isinstance(v, str):
             return str(v)
         return v
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_cited_paper(cls, data: Any) -> dict[str, Any]:
+        """Extract fields from nested citedPaper structure."""
+        if not isinstance(data, dict):
+            return data
+
+        # If citedPaper exists, extract its fields to root level
+        if "citedPaper" in data:
+            cited_paper = data["citedPaper"]
+            if isinstance(cited_paper, dict):
+                # Merge citedPaper fields with root data
+                extracted = {**data, **cited_paper}
+                # Remove the nested structure
+                extracted.pop("citedPaper", None)
+                return extracted
+
+        return data
 
     @field_validator("paper_id", mode="before")
     @classmethod

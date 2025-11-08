@@ -690,8 +690,8 @@ class SemanticScholarClient:
         fields: Fields | None = None,
         limit: int = 100,
         offset: int = 0,
-    ) -> PaginatedResponse[Author]:
-        """Get paper authors with pagination support."""
+    ) -> list[Author]:
+        """Get paper authors."""
         fields = fields or AUTHOR_FIELDS
         params = {
             "fields": ",".join(fields),
@@ -703,14 +703,7 @@ class SemanticScholarClient:
             "GET", f"/paper/{paper_id}/authors", params=params
         )
 
-        authors = [Author(**author_data) for author_data in data.get("data", [])]
-
-        return PaginatedResponse[Author](
-            data=authors,
-            total=data.get("total", 0),
-            offset=offset,
-            limit=limit,
-        )
+        return [Author(**author_data) for author_data in data.get("data", [])]
 
     async def batch_get_papers(
         self, paper_ids: list[PaperId], fields: Fields | None = None
