@@ -13,7 +13,7 @@ from core.exceptions import NotFoundError, ValidationError
 from semantic_scholar_mcp import pdf_processor
 from semantic_scholar_mcp.api_client import SemanticScholarClient
 from semantic_scholar_mcp.models import Paper
-from semantic_scholar_mcp.pdf_processor import cleanup_pdf_cache, get_markdown_from_pdf
+from semantic_scholar_mcp.pdf_processor import cleanup_pdf_cache, get_paper_fulltext
 
 
 @pytest.fixture
@@ -59,7 +59,7 @@ def build_client(paper: Paper) -> SemanticScholarClient:
 
 
 @pytest.mark.anyio
-async def test_get_markdown_from_pdf_reuses_cached_artifacts(
+async def test_get_paper_fulltext_reuses_cached_artifacts(
     sample_paper,
     tmp_path,
     monkeypatch,
@@ -87,7 +87,7 @@ async def test_get_markdown_from_pdf_reuses_cached_artifacts(
     monkeypatch.setattr(pdf_processor, "_fetch_pdf_to_disk", fake_fetch_pdf)
     monkeypatch.setattr(pdf_processor, "_convert_pdf_to_chunks", fake_convert_pdf)
 
-    first = await get_markdown_from_pdf(
+    first = await get_paper_fulltext(
         paper_id=sample_paper.paper_id,
         client=client,
         app_config=app_config,
@@ -99,7 +99,7 @@ async def test_get_markdown_from_pdf_reuses_cached_artifacts(
     assert first.markdown is not None
     assert first.chunks is not None
 
-    second = await get_markdown_from_pdf(
+    second = await get_paper_fulltext(
         paper_id=sample_paper.paper_id,
         client=client,
         app_config=app_config,
@@ -139,7 +139,7 @@ async def test_include_images_uses_image_path_keyword(
     monkeypatch.setattr(pdf_processor, "_fetch_pdf_to_disk", fake_fetch_pdf)
     monkeypatch.setattr(pdf_processor, "_convert_pdf_to_chunks", fake_convert_pdf)
 
-    result = await get_markdown_from_pdf(
+    result = await get_paper_fulltext(
         paper_id=sample_paper.paper_id,
         client=client,
         app_config=app_config,
@@ -181,7 +181,7 @@ async def test_max_pages_limits_returned_chunks(
     monkeypatch.setattr(pdf_processor, "_fetch_pdf_to_disk", fake_fetch_pdf)
     monkeypatch.setattr(pdf_processor, "_convert_pdf_to_chunks", fake_convert_pdf)
 
-    result = await get_markdown_from_pdf(
+    result = await get_paper_fulltext(
         paper_id=sample_paper.paper_id,
         client=client,
         app_config=app_config,
@@ -226,7 +226,7 @@ async def test_cache_ttl_removes_expired_artifacts(
     monkeypatch.setattr(pdf_processor, "_fetch_pdf_to_disk", fake_fetch_pdf)
     monkeypatch.setattr(pdf_processor, "_convert_pdf_to_chunks", fake_convert_pdf)
 
-    result = await get_markdown_from_pdf(
+    result = await get_paper_fulltext(
         paper_id=sample_paper.paper_id,
         client=client,
         app_config=app_config,
@@ -253,7 +253,7 @@ async def test_cache_ttl_removes_expired_artifacts(
 
 
 @pytest.mark.anyio
-async def test_get_markdown_from_pdf_requires_open_access(tmp_path, sample_paper):
+async def test_get_paper_fulltext_requires_open_access(tmp_path, sample_paper):
     """Closed-access papers surface a not found error before downloading."""
     config = build_config(tmp_path)
     app_config = build_app_config(config)
@@ -261,7 +261,7 @@ async def test_get_markdown_from_pdf_requires_open_access(tmp_path, sample_paper
     client = build_client(closed_paper)
 
     with pytest.raises(NotFoundError):
-        await get_markdown_from_pdf(
+        await get_paper_fulltext(
             paper_id=closed_paper.paper_id,
             client=client,
             app_config=app_config,
@@ -351,7 +351,7 @@ async def test_conversion_error_propagates_without_artifacts(
     monkeypatch.setattr(pdf_processor, "_convert_pdf_to_chunks", fake_convert_pdf)
 
     with pytest.raises(RuntimeError):
-        await get_markdown_from_pdf(
+        await get_paper_fulltext(
             paper_id=sample_paper.paper_id,
             client=client,
             app_config=app_config,

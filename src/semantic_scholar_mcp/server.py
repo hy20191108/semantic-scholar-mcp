@@ -2,11 +2,15 @@
 
 import asyncio
 import logging
+import multiprocessing
 import os
 import sys
+import threading
+import webbrowser
 from collections.abc import Awaitable, Callable, MutableMapping
 from functools import wraps
 from pathlib import Path
+from time import perf_counter
 from typing import Any, ParamSpec, cast
 
 from mcp.server.fastmcp import FastMCP
@@ -17,20 +21,22 @@ from core.core import InMemoryCache
 from core.error_handler import MCPErrorHandler, mcp_error_handler
 from core.exceptions import NotFoundError, ValidationError
 from core.logging import (
-    MCPToolContext,
     RequestContext,
+    TextFormatter,
     get_logger,
     initialize_logging,
 )
 from core.metrics_collector import MetricsCollector
 
 from .api_client import SemanticScholarClient
+from .dashboard import DashboardAPI, DashboardStats
+from .instruction_loader import load_tool_instructions
 from .models import (
     SearchFilters,
     SearchQuery,
 )
 from .pdf_processor import OutputMode
-from .pdf_processor import get_markdown_from_pdf as process_pdf_markdown
+from .pdf_processor import get_paper_fulltext as process_pdf_markdown
 from .utils import (
     apply_field_selection,
     extract_field_value,
@@ -100,11 +106,113 @@ config: ApplicationConfig | None = None
 api_client: SemanticScholarClient | None = None
 error_handler: MCPErrorHandler | None = None
 metrics_collector: MetricsCollector | None = None
+dashboard_stats: DashboardStats | None = None
+dashboard_api: DashboardAPI | None = None
+dashboard_thread = None
+dashboard_port = None
+dashboard_log_messages: list[str] = []
+dashboard_log_handler: logging.Handler | None = None
+
+
+class DashboardLogHandler(logging.Handler):
+    """In-memory log handler feeding dashboard UI."""
+
+    def __init__(self, buffer: list[str], max_messages: int) -> None:
+        super().__init__(level=logging.INFO)
+        self._buffer = buffer
+        self._max_messages = max_messages
+        self._lock = threading.Lock()
+        self.setFormatter(TextFormatter(include_context=False))
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            message = self.format(record)
+        except Exception:
+            message = record.getMessage()
+
+        with self._lock:
+            self._buffer.append(message)
+            overflow = len(self._buffer) - self._max_messages
+            if overflow > 0:
+                del self._buffer[:overflow]
+
+
+def _record_search_insights(
+    query: str | None,
+    papers: list[MutableMapping[str, Any]],
+) -> None:
+    """Record aggregated analytics for search-style tools."""
+
+    if not dashboard_stats or not papers:
+        return
+
+    if query:
+        dashboard_stats.record_search_query(query)
+
+    for paper in papers:
+        paper_identifier = (
+            paper.get("paperId") or paper.get("paper_id") or paper.get("id")
+        )
+        if paper_identifier:
+            dashboard_stats.record_paper_access(str(paper_identifier))
+
+        fields = paper.get("fieldsOfStudy") or paper.get("fields_of_study") or []
+        if isinstance(fields, list):
+            for field in fields:
+                if field:
+                    dashboard_stats.record_field_of_study(str(field))
+
+
+def _record_paper_metadata(
+    paper_id: str | None,
+    payload: MutableMapping[str, Any],
+) -> None:
+    """Record metadata analytics for single-paper responses."""
+
+    if not dashboard_stats:
+        return
+
+    paper_identifier = payload.get("paperId") or payload.get("paper_id") or paper_id
+    if paper_identifier:
+        dashboard_stats.record_paper_access(str(paper_identifier))
+
+    fields = payload.get("fieldsOfStudy") or payload.get("fields_of_study") or []
+    if isinstance(fields, list):
+        for field in fields:
+            if field:
+                dashboard_stats.record_field_of_study(str(field))
+
+
+def _launch_dashboard_browser(url: str) -> None:
+    """Open dashboard URL in a separate process, Serena-style."""
+
+    def _open() -> None:
+        try:
+            null_fd = os.open(os.devnull, os.O_WRONLY)
+            try:
+                os.dup2(null_fd, sys.stdout.fileno())
+                os.dup2(null_fd, sys.stderr.fileno())
+            finally:
+                os.close(null_fd)
+        except OSError:
+            # Fall back silently if redirecting fails
+            pass
+
+        try:
+            webbrowser.open(url, new=2, autoraise=True)
+        except Exception:
+            # Swallow exceptions to avoid noisy stderr in subprocess; parent logs success
+            pass
+
+    process = multiprocessing.Process(target=_open, daemon=True)
+    process.start()
+    process.join(timeout=1)
 
 
 async def initialize_server():
     """Initialize server components."""
     global config, api_client, error_handler, metrics_collector
+    global dashboard_stats, dashboard_api
 
     # Load .env file with robust path discovery
     import os
@@ -201,6 +309,32 @@ async def initialize_server():
     set_global_metrics_collector(metrics_collector)
     set_global_error_handler(error_handler)
 
+    # Initialize Dashboard if enabled
+    global dashboard_stats, dashboard_api, dashboard_log_messages, dashboard_log_handler
+    if config.dashboard.enabled:
+        dashboard_stats = DashboardStats()
+        dashboard_log_messages = []
+        dashboard_api = DashboardAPI(
+            stats=dashboard_stats,
+            log_messages=dashboard_log_messages,
+        )
+
+        if config.dashboard.enable_log_collection:
+            root_logger = logging.getLogger()
+            if dashboard_log_handler:
+                root_logger.removeHandler(dashboard_log_handler)
+            dashboard_log_handler = DashboardLogHandler(
+                dashboard_log_messages,
+                max_messages=config.dashboard.max_log_messages,
+            )
+            root_logger.addHandler(dashboard_log_handler)
+
+        logger.info(
+            "Dashboard initialized",
+            host=config.dashboard.host,
+            port=config.dashboard.port,
+        )
+
     # Log server initialization details
     logger.info(
         "Semantic Scholar MCP server initialized",
@@ -260,169 +394,12 @@ P = ParamSpec("P")
 ToolCoroutine = Callable[P, Awaitable[MutableMapping[str, Any]]]
 
 
-TOOL_INSTRUCTIONS: dict[str, str] = {
-    "search_papers": (
-        "### Next Steps\n"
-        "- Review the returned `papers` list and flag items worth reading.\n"
-        "- Ask for summaries of any paper that stands out.\n"
-        "- Refine the query or add filters if the scope is still too broad.\n"
-    ),
-    "get_paper": (
-        "### Next Steps\n"
-        "- Examine the abstract, authors, and venue to confirm relevance.\n"
-        "- Request a summary of specific sections or findings.\n"
-        "- Consider checking citations or references for deeper context.\n"
-    ),
-    "get_paper_citations": (
-        "### Next Steps\n"
-        "- Review citing papers to understand follow-up research.\n"
-        "- Ask for a comparison between key citing works.\n"
-        "- Use `get_paper` on notable citations to inspect details.\n"
-    ),
-    "get_paper_references": (
-        "### Next Steps\n"
-        "- Scan referenced papers to map the foundational work.\n"
-        "- Ask for brief summaries of the most influential references.\n"
-        "- Retrieve full details for any reference with `get_paper`.\n"
-    ),
-    "get_paper_authors": (
-        "### Next Steps\n"
-        "- Identify recurring collaborators or leading authors.\n"
-        "- Ask for author profiles to evaluate expertise.\n"
-        "- Follow up with `get_author_papers` for a selected researcher.\n"
-    ),
-    "search_authors": (
-        "### Next Steps\n"
-        "- Inspect the candidate list and shortlist promising researchers.\n"
-        "- Request `get_author` for profiles you want to explore.\n"
-        "- Note emerging topics or institutions tied to each author.\n"
-    ),
-    "get_author": (
-        "### Next Steps\n"
-        "- Review the author metrics and affiliations provided.\n"
-        "- Ask for trends or notable publications in their portfolio.\n"
-        "- Use `get_author_papers` for recent work or specific years.\n"
-    ),
-    "get_author_papers": (
-        "### Next Steps\n"
-        "- Scan the publication list for themes or collaborations.\n"
-        "- Request summaries of standout papers for a quick brief.\n"
-        "- Compare with other authors to spot overlapping research.\n"
-    ),
-    "get_recommendations_for_paper": (
-        "### Next Steps\n"
-        "- Review recommended papers and note recurring concepts.\n"
-        "- Ask for summaries or contrasts with the source paper.\n"
-        "- Queue follow-up searches for promising recommendations.\n"
-    ),
-    "batch_get_papers": (
-        "### Next Steps\n"
-        "- Check that each requested paper is present and complete.\n"
-        "- Ask for a synthesis across the batch to spot shared themes.\n"
-        "- Plan deeper dives using `get_paper` where more detail is needed.\n"
-    ),
-    "bulk_search_papers": (
-        "### Next Steps\n"
-        "- Inspect aggregated hits and decide which query succeeded.\n"
-        "- Ask for focused summaries of the best-performing results.\n"
-        "- Iterate on the weaker queries with refined keywords.\n"
-    ),
-    "search_papers_match": (
-        "### Next Steps\n"
-        "- Verify the matching titles to confirm precision.\n"
-        "- Request details on the closest matches for validation.\n"
-        "- Adjust the exact title or add identifiers if results are sparse.\n"
-    ),
-    "autocomplete_query": (
-        "### Next Steps\n"
-        "- Use the suggestions to craft a clearer search prompt.\n"
-        "- Ask for the pros and cons of the top suggested phrases.\n"
-        "- Run `search_papers` with the selected completion.\n"
-    ),
-    "search_snippets": (
-        "### Next Steps\n"
-        "- Read snippet contexts to judge relevance quickly.\n"
-        "- Ask for full paper details on the most compelling snippets.\n"
-        "- Consider refining keywords if noise remains high.\n"
-    ),
-    "batch_get_authors": (
-        "### Next Steps\n"
-        "- Confirm that each requested author profile is included.\n"
-        "- Ask for a comparative overview across these researchers.\n"
-        "- Plan next queries such as `get_author_papers` per person.\n"
-    ),
-    "get_recommendations_batch": (
-        "### Next Steps\n"
-        "- Scan recommended sets for consensus picks.\n"
-        "- Ask for clusters or themes spanning the recommendations.\n"
-        "- Prioritize papers for closer reading or follow-up calls.\n"
-    ),
-    "get_dataset_releases": (
-        "### Next Steps\n"
-        "- Identify the release that matches your research needs.\n"
-        "- Ask for differences between adjacent releases if unsure.\n"
-        "- Fetch detailed metadata via `get_dataset_info`.\n"
-    ),
-    "get_dataset_info": (
-        "### Next Steps\n"
-        "- Review dataset size, modality, and coverage carefully.\n"
-        "- Ask for implications or usage tips for this dataset.\n"
-        "- Proceed to `get_dataset_download_links` when ready.\n"
-    ),
-    "get_dataset_download_links": (
-        "### Next Steps\n"
-        "- Record the download URLs and any authentication notes.\n"
-        "- Ask for guidance on verifying file integrity.\n"
-        "- Plan storage or processing steps before downloading.\n"
-    ),
-    "get_incremental_dataset_updates": (
-        "### Next Steps\n"
-        "- Examine update windows to schedule data refreshes.\n"
-        "- Ask for change summaries between the releases.\n"
-        "- Decide whether a full or incremental download is needed.\n"
-    ),
-    "get_paper_with_embeddings": (
-        "### Next Steps\n"
-        "- Use the embedding vector for similarity searches or clustering.\n"
-        "- Ask for interpretation of key metadata linked to the vector.\n"
-        "- Combine with `search_papers_with_embeddings` to expand the set.\n"
-    ),
-    "search_papers_with_embeddings": (
-        "### Next Steps\n"
-        "- Check each match score to gauge semantic proximity.\n"
-        "- Ask for a narrative summary of the closest matches.\n"
-        "- Feed chosen IDs into `get_paper` for full context.\n"
-    ),
-    "get_markdown_from_pdf": (
-        "### Next Steps\n"
-        "- **Read the Markdown file**: When available, use the Read tool with the path from `artifacts.markdown_path` to view the converted content; this path is only returned if Markdown artifacts are enabled.\n"
-        "- **Access chunks**: Request `output_mode=\"chunks\"` or `\"both\"` to populate `content.chunks` with structured text segments for analysis.\n"
-        "- **Analyze findings**: Ask for summaries, key concepts, or specific sections from the paper.\n"
-        "- **Check artifacts**: PDF, Markdown, and chunks are saved in `.semantic_scholar_mcp/artifacts/` with SHA-1 partitioned paths.\n"
-        "- **View images**: If `include_images=true`, extracted images are in `artifacts.images_dir`.\n"
-        "- **Leverage caching**: Subsequent requests use cached artifacts unless `force_refresh=true` is specified.\n"
-    ),
-    "check_api_key_status": (
-        "### Next Steps\n"
-        "- Review the API key status and rate limit guidance provided.\n"
-        "- Set or rotate `SEMANTIC_SCHOLAR_API_KEY` if configuration is missing.\n"
-        "- Ask for usage recommendations or next steps after updating credentials.\n"
-    ),
-}
+# Load tool instructions from external template files
+# This is done at module level to benefit from caching
+TOOL_INSTRUCTIONS: dict[str, str] = load_tool_instructions()
 
 
 REGISTERED_TOOL_NAMES: set[str] = set()
-
-
-def _default_instruction(tool_name: str) -> str:
-    """Return a fallback instruction block for tools without explicit guidance."""
-
-    return (
-        "### Next Steps\n"
-        f"- Review the `{tool_name}` output and capture follow-up questions.\n"
-        "- Ask for summaries or comparisons based on your goal.\n"
-        "- Run adjacent tools if you need supporting context.\n"
-    )
 
 
 def _inject_instructions(
@@ -431,22 +408,37 @@ def _inject_instructions(
     """Attach instructions to successful tool responses."""
 
     if not instruction_text:
+        logger.debug("No instruction_text provided, skipping injection")
         return result
 
     success_value = result.get("success")
     if success_value is False:
+        logger.debug("Result marked as failure, skipping instruction injection")
         return result
 
+    logger.debug(
+        "Injecting instructions into result",
+        instruction_length=len(instruction_text),
+        has_instructions_key="instructions" in result,
+    )
     result.setdefault("instructions", instruction_text)
+    logger.debug(
+        "Instructions injected successfully",
+        instructions_present="instructions" in result,
+    )
     return result
 
 
 def with_tool_instructions(tool_name: str) -> Callable[[ToolCoroutine], ToolCoroutine]:
-    """Decorator that injects follow-up instructions into tool responses."""
+    """
+    Decorator that injects follow-up instructions into tool descriptions.
 
-    instruction_text = TOOL_INSTRUCTIONS.get(tool_name) or _default_instruction(
-        tool_name
-    )
+    Implements Serena-style instruction injection by appending guidance
+    to tool docstrings for better LLM interaction.
+    """
+    from .instruction_loader import get_instruction
+
+    instruction_text = TOOL_INSTRUCTIONS.get(tool_name) or get_instruction(tool_name)
 
     def decorator(func: ToolCoroutine) -> ToolCoroutine:
         if not asyncio.iscoroutinefunction(func):
@@ -456,11 +448,84 @@ def with_tool_instructions(tool_name: str) -> Callable[[ToolCoroutine], ToolCoro
 
         REGISTERED_TOOL_NAMES.add(tool_name)
 
+        # Serena-style: Append instructions to docstring
+        if instruction_text and func.__doc__:
+            # Append instructions to the existing docstring
+            original_doc = func.__doc__.strip()
+
+            # Format instructions section
+            instructions_section = f"\n\n{instruction_text}"
+
+            # Create new docstring
+            func.__doc__ = original_doc + instructions_section
+
+            logger.debug(
+                "Appended instructions to docstring",
+                tool_name=tool_name,
+                original_doc_length=len(original_doc),
+                instructions_length=len(instruction_text),
+            )
+
+        # Update FastMCP tool description after registration
+        # This runs after @mcp.tool() has registered the tool
+        def update_tool_description():
+            try:
+                tool = mcp._tool_manager._tools.get(tool_name)
+                if tool and instruction_text:
+                    # Update the tool's description with instructions
+                    original_description = tool.description
+                    if (
+                        original_description
+                        and instruction_text not in original_description
+                    ):
+                        tool.description = (
+                            f"{original_description}\n\n{instruction_text}"
+                        )
+                        logger.debug(
+                            "Updated MCP tool description with instructions",
+                            tool_name=tool_name,
+                            instructions_length=len(instruction_text),
+                        )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to update tool description",
+                    tool_name=tool_name,
+                    error=str(exc),
+                )
+
+        # Update tool description immediately after decorator execution
+        # Note: This runs synchronously at import time, which is safe because
+        # we're only modifying the tool's description string (no async operations)
+        update_tool_description()
+
         @wraps(func)
         async def async_wrapper(
             *args: P.args, **kwargs: P.kwargs
         ) -> MutableMapping[str, Any]:
-            result = await func(*args, **kwargs)
+            start = perf_counter()
+            result: MutableMapping[str, Any]
+            success_flag = False
+
+            try:
+                result = await func(*args, **kwargs)
+                success_flag = bool(result.get("success", True))
+            except Exception:
+                if dashboard_stats:
+                    dashboard_stats.record_tool_call(
+                        tool_name,
+                        perf_counter() - start,
+                        success=False,
+                    )
+                raise
+            else:
+                if dashboard_stats:
+                    dashboard_stats.record_tool_call(
+                        tool_name,
+                        perf_counter() - start,
+                        success=success_flag,
+                    )
+
+            # Keep JSON-based injection for backward compatibility
             return _inject_instructions(result, instruction_text)
 
         return async_wrapper
@@ -489,7 +554,33 @@ async def search_papers(
         description="Fields to include in response (supports dot notation)",
     ),
 ) -> dict[str, Any]:
-    """Search Semantic Scholar papers with optional filters."""
+    """
+    Search Semantic Scholar papers with optional filters.
+
+    This tool searches the Semantic Scholar database and returns matching papers
+    with metadata like title, authors, citations, publication venue, and more.
+
+    Args:
+        query: Search query string
+        limit: Number of results to return (1-100, default: 10)
+        offset: Pagination offset (default: 0)
+        year: Filter by publication year (optional)
+        fields_of_study: Filter by academic fields (optional)
+        sort: Sort order - "relevance", "citationCount", or "year" (optional)
+        fields: Specific fields to include in response, supports dot notation (optional)
+
+    Returns:
+        Dictionary containing:
+        - success: Whether the search succeeded
+        - data: Search results with papers list, total count, pagination info
+        - error: Error details if search failed
+
+    Next Steps:
+        - Review the returned papers list and identify items worth reading
+        - Request summaries or full details of papers that stand out
+        - Refine your search query or add filters if results are too broad
+        - Use pagination (offset/limit) to explore more results if needed
+    """
 
     with RequestContext():
         try:
@@ -563,7 +654,9 @@ async def search_papers(
             papers_data: list[dict[str, Any]] = []
             for paper in result.data or []:
                 if hasattr(paper, "model_dump"):
-                    paper_dict = cast(MutableMapping[str, Any], paper.model_dump(exclude_none=True))
+                    paper_dict = cast(
+                        MutableMapping[str, Any], paper.model_dump(exclude_none=True)
+                    )
                 elif isinstance(paper, MutableMapping):
                     paper_dict = dict(paper)
                 else:
@@ -590,6 +683,8 @@ async def search_papers(
                 total=total,
                 has_more=has_more,
             )
+
+            _record_search_insights(query, papers_data)
 
             return {
                 "success": True,
@@ -650,7 +745,29 @@ async def get_paper(
         default=False, description="Include reference details"
     ),
 ) -> dict[str, Any]:
-    """Retrieve detailed information about a specific paper."""
+    """
+    Retrieve detailed information about a specific paper.
+
+    Fetches comprehensive metadata for a single paper from Semantic Scholar,
+    including title, authors, abstract, citations, references, and publication details.
+
+    Args:
+        paper_id: Semantic Scholar paper ID, DOI, or ArXiv ID
+        fields: Specific fields to include in response, supports dot notation (optional)
+        include_citations: Whether to include citation details (default: False)
+        include_references: Whether to include reference details (default: False)
+
+    Returns:
+        Dictionary containing:
+        - success: Whether the request succeeded
+        - data: Paper details with requested fields
+        - error: Error details if request failed
+
+    Next Steps:
+        - Examine the abstract, authors, and venue to confirm relevance
+        - Request a summary of specific sections or findings
+        - Consider checking citations or references for deeper context
+    """
 
     with RequestContext():
         try:
@@ -686,6 +803,8 @@ async def get_paper(
             if actual_fields:
                 paper_dict = apply_field_selection(paper_dict, actual_fields)
 
+            _record_paper_metadata(paper_id, paper_dict)
+
             return {"success": True, "data": paper_dict}
 
         except ValidationError as exc:
@@ -715,7 +834,28 @@ async def get_paper_citations(
     ),
     offset: int = Field(default=0, ge=0, description="Offset for pagination"),
 ) -> dict[str, Any]:
-    """Get citations for a specific paper."""
+    """
+    Get citations for a specific paper.
+
+    Retrieves the list of papers that cite this paper, helping you understand
+    its impact and follow-up research.
+
+    Args:
+        paper_id: Semantic Scholar paper ID, DOI, or ArXiv ID
+        limit: Maximum number of citations to return (1-9999, default: 100)
+        offset: Pagination offset (default: 0)
+
+    Returns:
+        Dictionary containing:
+        - success: Whether the request succeeded
+        - data: List of citing papers with metadata
+        - error: Error details if request failed
+
+    Next Steps:
+        - Review citing papers to understand follow-up research
+        - Ask for a comparison between key citing works
+        - Use get_paper on notable citations to inspect details
+    """
 
     with RequestContext():
         try:
@@ -731,12 +871,17 @@ async def get_paper_citations(
                 context={"paper_id": paper_id},
             )
 
+            citations_data = [cite.model_dump(exclude_none=True) for cite in citations]
+
+            for payload in citations_data:
+                _record_paper_metadata(None, payload)
+
+            _record_paper_metadata(paper_id, {"paperId": paper_id})
+
             return {
                 "success": True,
                 "data": {
-                    "citations": [
-                        cite.model_dump(exclude_none=True) for cite in citations
-                    ],
+                    "citations": citations_data,
                     "count": len(citations),
                 },
             }
@@ -758,13 +903,24 @@ async def get_paper_references(
     """
     Get references for a specific paper.
 
+    Retrieves the list of papers referenced by this paper, helping you map
+    the foundational work and research context.
+
     Args:
-        paper_id: Paper ID
-        limit: Maximum number of references
-        offset: Pagination offset
+        paper_id: Semantic Scholar paper ID, DOI, or ArXiv ID
+        limit: Maximum number of references to return (1-1000, default: 100)
+        offset: Pagination offset (default: 0)
 
     Returns:
-        Dictionary containing reference list
+        Dictionary containing:
+        - success: Whether the request succeeded
+        - data: List of referenced papers with metadata
+        - error: Error details if request failed
+
+    Next Steps:
+        - Scan referenced papers to map the foundational work
+        - Ask for brief summaries of the most influential references
+        - Retrieve full details for any reference with get_paper
     """
     with RequestContext():
         try:
@@ -777,12 +933,17 @@ async def get_paper_references(
                 ),
             )
 
+            references_data = [ref.model_dump(exclude_none=True) for ref in references]
+
+            for payload in references_data:
+                _record_paper_metadata(None, payload)
+
+            _record_paper_metadata(paper_id, {"paperId": paper_id})
+
             return {
                 "success": True,
                 "data": {
-                    "references": [
-                        ref.model_dump(exclude_none=True) for ref in references
-                    ],
+                    "references": references_data,
                     "count": len(references),
                 },
             }
@@ -804,10 +965,24 @@ async def get_paper_authors(
     """
     Get detailed author information for a specific paper.
 
+    Retrieves comprehensive author profiles for all authors of a paper,
+    including affiliations, h-index, and publication metrics.
+
     Args:
-        paper_id: Paper ID
-        limit: Maximum number of authors to return
-        offset: Pagination offset
+        paper_id: Semantic Scholar paper ID, DOI, or ArXiv ID
+        limit: Maximum number of authors to return (1-1000, default: 100)
+        offset: Pagination offset (default: 0)
+
+    Returns:
+        Dictionary containing:
+        - success: Whether the request succeeded
+        - data: List of author profiles with metrics
+        - error: Error details if request failed
+
+    Next Steps:
+        - Identify recurring collaborators or leading authors
+        - Ask for author profiles to evaluate expertise
+        - Follow up with get_author_papers for a selected researcher
 
     Returns:
         Dictionary containing paper authors
@@ -849,11 +1024,22 @@ async def get_author(author_id: str) -> dict[str, Any]:
     """
     Get detailed information about an author.
 
+    Retrieves comprehensive profile information for a researcher,
+    including publications, citations, h-index, and affiliations.
+
     Args:
-        author_id: Author ID
+        author_id: Semantic Scholar author ID
 
     Returns:
-        Dictionary containing author details
+        Dictionary containing:
+        - success: Whether the request succeeded
+        - data: Author profile with metrics and affiliations
+        - error: Error details if request failed
+
+    Next Steps:
+        - Review the author metrics and affiliations provided
+        - Ask for trends or notable publications in their portfolio
+        - Use get_author_papers for recent work or specific years
     """
     with RequestContext():
         try:
@@ -879,10 +1065,24 @@ async def get_author_papers(
     """
     Get papers by a specific author.
 
+    Retrieves the publication list for a researcher, including paper titles,
+    venues, citations, and publication dates.
+
     Args:
-        author_id: Author ID
-        limit: Maximum number of papers
-        offset: Pagination offset
+        author_id: Semantic Scholar author ID
+        limit: Maximum number of papers to return (1-1000, default: 100)
+        offset: Pagination offset (default: 0)
+
+    Returns:
+        Dictionary containing:
+        - success: Whether the request succeeded
+        - data: List of author's papers with metadata
+        - error: Error details if request failed
+
+    Next Steps:
+        - Scan the publication list for themes or collaborations
+        - Request summaries of standout papers for a quick brief
+        - Compare with other authors to spot overlapping research
 
     Returns:
         Dictionary containing author's papers
@@ -924,13 +1124,24 @@ async def search_authors(
     """
     Search for authors by name.
 
+    Searches the Semantic Scholar database for researchers matching the query,
+    returning author profiles with basic metrics.
+
     Args:
         query: Author name search query
-        limit: Maximum number of results
-        offset: Pagination offset
+        limit: Maximum number of results to return (1-100, default: 10)
+        offset: Pagination offset (default: 0)
 
     Returns:
-        Dictionary containing search results
+        Dictionary containing:
+        - success: Whether the search succeeded
+        - data: List of matching author profiles
+        - error: Error details if search failed
+
+    Next Steps:
+        - Inspect the candidate list and shortlist promising researchers
+        - Request get_author for profiles you want to explore
+        - Note emerging topics or institutions tied to each author
     """
     with RequestContext():
         try:
@@ -974,13 +1185,24 @@ async def get_recommendations_for_paper(
     """
     Get paper recommendations based on a given paper.
 
+    Uses Semantic Scholar's recommendation algorithm to find related papers
+    based on content similarity and citation patterns.
+
     Args:
-        paper_id: Paper ID to base recommendations on
-        limit: Maximum number of recommendations
-        fields: Fields to include in response
+        paper_id: Semantic Scholar paper ID, DOI, or ArXiv ID to base recommendations on
+        limit: Maximum number of recommendations to return (1-100, default: 10)
+        fields: Fields to include in response (optional)
 
     Returns:
-        Dictionary containing recommended papers
+        Dictionary containing:
+        - success: Whether the request succeeded
+        - data: List of recommended papers
+        - error: Error details if request failed
+
+    Next Steps:
+        - Review recommended papers and note recurring concepts
+        - Ask for summaries or contrasts with the source paper
+        - Queue follow-up searches for promising recommendations
     """
     with RequestContext():
         try:
@@ -1016,12 +1238,24 @@ async def batch_get_papers(
     """
     Get multiple papers in a single request.
 
+    Efficiently retrieves details for multiple papers in a single API call,
+    useful for batch processing and reducing API overhead.
+
     Args:
-        paper_ids: List of paper IDs (max 500)
-        fields: Optional list of fields to include (supports dot notation)
+        paper_ids: List of paper IDs - Semantic Scholar IDs, DOIs, or
+            ArXiv IDs (max 500)
+        fields: Optional list of fields to include, supports dot notation
 
     Returns:
-        Dictionary containing paper details
+        Dictionary containing:
+        - success: Whether the request succeeded
+        - data: List of paper details
+        - error: Error details if request failed
+
+    Next Steps:
+        - Check that each requested paper is present and complete
+        - Ask for a synthesis across the batch to spot shared themes
+        - Plan deeper dives using get_paper where more detail is needed
     """
     with RequestContext():
         try:
@@ -1091,19 +1325,32 @@ async def bulk_search_papers(
     """
     Bulk search papers with advanced filtering (unlimited results).
 
+    Performs comprehensive search across Semantic Scholar with multiple filter criteria,
+    suitable for large-scale research analysis and dataset creation.
+
     Args:
         query: Search query string
-        fields: Optional list of fields to include (supports dot notation)
+        fields: Optional list of fields to include, supports dot notation
         publication_types: Types of publications to include
+            (e.g., 'JournalArticle', 'Conference')
         fields_of_study: Academic fields to filter by
-        year_range: Publication year range
-        venue: Publication venue
+            (e.g., 'Computer Science', 'Medicine')
+        year_range: Publication year range (e.g., '2020-2023', '2020-', '-2023')
+        venue: Publication venue to filter by
         min_citation_count: Minimum citation threshold
-        open_access_pdf: Filter by open access availability
-        sort: Sort order for results
+        open_access_pdf: Filter by open access PDF availability
+        sort: Sort order - "relevance", "citationCount", or "publicationDate"
 
     Returns:
-        Dictionary containing search results
+        Dictionary containing:
+        - success: Whether the search succeeded
+        - data: Search results with papers matching all criteria
+        - error: Error details if search failed
+
+    Next Steps:
+        - Inspect aggregated hits and decide which query succeeded
+        - Ask for focused summaries of the best-performing results
+        - Iterate on the weaker queries with refined keywords
     """
     with RequestContext():
         try:
@@ -1132,6 +1379,8 @@ async def bulk_search_papers(
                     paper_dict = apply_field_selection(paper_dict, actual_fields)
                 papers_data.append(paper_dict)
 
+            _record_search_insights(query, papers_data)
+
             return {
                 "success": True,
                 "data": {
@@ -1157,12 +1406,23 @@ async def search_papers_match(
     """
     Search papers by title matching.
 
+    Finds papers with titles that closely match the provided string,
+    useful for finding specific papers when you know the title.
+
     Args:
-        title: Paper title to search for
-        fields: Optional list of fields to include (supports dot notation)
+        title: Paper title to search for (exact or partial match)
+        fields: Optional list of fields to include, supports dot notation
 
     Returns:
-        Dictionary containing matching papers
+        Dictionary containing:
+        - success: Whether the search succeeded
+        - data: List of papers with matching titles
+        - error: Error details if search failed
+
+    Next Steps:
+        - Verify the matching titles to confirm precision
+        - Request details on the closest matches for validation
+        - Adjust the exact title or add identifiers if results are sparse
     """
     with RequestContext():
         try:
@@ -1182,6 +1442,8 @@ async def search_papers_match(
                 if actual_fields:
                     paper_dict = apply_field_selection(paper_dict, actual_fields)
                 papers_data.append(paper_dict)
+
+            _record_search_insights(title, papers_data)
 
             return {
                 "success": True,
@@ -1205,12 +1467,22 @@ async def autocomplete_query(
     """
     Get query autocompletion suggestions.
 
+    Provides search query completions to help refine and improve your search terms.
+
     Args:
-        query: Partial query string
-        limit: Maximum number of suggestions
+        query: Partial query string to complete
+        limit: Maximum number of suggestions to return (1-50, default: 10)
 
     Returns:
-        Dictionary containing suggestions
+        Dictionary containing:
+        - success: Whether the request succeeded
+        - data: List of suggested query completions
+        - error: Error details if request failed
+
+    Next Steps:
+        - Use the suggestions to craft a clearer search prompt
+        - Ask for the pros and cons of the top suggested phrases
+        - Run search_papers with the selected completion
     """
     with RequestContext():
         try:
@@ -1242,13 +1514,24 @@ async def search_snippets(
     """
     Search text snippets in papers.
 
+    Searches for specific text passages within papers, returning contextual snippets
+    around matches to help assess relevance quickly.
+
     Args:
         query: Search query string
-        limit: Maximum number of snippets
-        offset: Pagination offset
+        limit: Maximum number of snippets to return (1-100, default: 10)
+        offset: Pagination offset (default: 0)
 
     Returns:
-        Dictionary containing snippets
+        Dictionary containing:
+        - success: Whether the search succeeded
+        - data: List of text snippets with context
+        - error: Error details if search failed
+
+    Next Steps:
+        - Read snippet contexts to judge relevance quickly
+        - Ask for full paper details on the most compelling snippets
+        - Consider refining keywords if noise remains high
     """
     with RequestContext():
         try:
@@ -1281,11 +1564,22 @@ async def batch_get_authors(
     """
     Get multiple authors in a single request.
 
+    Efficiently retrieves profiles for multiple researchers in a single API call,
+    useful for batch processing and comparative analysis.
+
     Args:
-        author_ids: List of author IDs (max 1000)
+        author_ids: List of Semantic Scholar author IDs (max 1000)
 
     Returns:
-        Dictionary containing author details
+        Dictionary containing:
+        - success: Whether the request succeeded
+        - data: List of author profiles with metrics
+        - error: Error details if request failed
+
+    Next Steps:
+        - Confirm that each requested author profile is included
+        - Ask for a comparative overview across these researchers
+        - Plan next queries such as get_author_papers per person
     """
     with RequestContext():
         try:
@@ -1329,13 +1623,25 @@ async def get_recommendations_batch(
     """
     Get advanced recommendations based on positive and negative examples.
 
+    Uses machine learning to recommend papers similar to positive examples
+    while avoiding papers similar to negative examples.
+
     Args:
-        positive_paper_ids: Paper IDs to use as positive examples
+        positive_paper_ids: Paper IDs to use as positive examples (what you want)
         negative_paper_ids: Paper IDs to use as negative examples
-        limit: Maximum number of recommendations
+            (what to avoid, optional)
+        limit: Maximum number of recommendations to return (default: 10)
 
     Returns:
-        Dictionary containing recommended papers
+        Dictionary containing:
+        - success: Whether the request succeeded
+        - data: List of recommended papers ranked by relevance
+        - error: Error details if request failed
+
+    Next Steps:
+        - Scan recommended sets for consensus picks
+        - Ask for clusters or themes spanning the recommendations
+        - Prioritize papers for closer reading or follow-up calls
     """
     with RequestContext():
         try:
@@ -1367,8 +1673,19 @@ async def get_dataset_releases() -> dict[str, Any]:
     """
     Get available dataset releases.
 
+    Lists all available Semantic Scholar dataset releases with version information
+    and release dates.
+
     Returns:
-        Dictionary containing dataset release information
+        Dictionary containing:
+        - success: Whether the request succeeded
+        - data: List of available dataset releases with metadata
+        - error: Error details if request failed
+
+    Next Steps:
+        - Identify the release that matches your research needs
+        - Ask for differences between adjacent releases if unsure
+        - Fetch detailed metadata via get_dataset_info
     """
     with RequestContext():
         try:
@@ -1394,11 +1711,22 @@ async def get_dataset_info(release_id: str) -> dict[str, Any]:
     """
     Get dataset release information.
 
+    Retrieves detailed metadata for a specific dataset release, including
+    file counts, sizes, and content descriptions.
+
     Args:
-        release_id: Dataset release ID
+        release_id: Dataset release ID (from get_dataset_releases)
 
     Returns:
-        Dictionary containing dataset information
+        Dictionary containing:
+        - success: Whether the request succeeded
+        - data: Dataset metadata including size, files, and coverage
+        - error: Error details if request failed
+
+    Next Steps:
+        - Review dataset size, modality, and coverage carefully
+        - Ask for implications or usage tips for this dataset
+        - Proceed to get_dataset_download_links when ready
     """
     with RequestContext():
         try:
@@ -1423,12 +1751,22 @@ async def get_dataset_download_links(
     """
     Get download links for a specific dataset.
 
+    Retrieves S3 URLs and download information for a specific dataset within a release.
+
     Args:
-        release_id: Dataset release ID
-        dataset_name: Name of the dataset
+        release_id: Dataset release ID (from get_dataset_releases)
+        dataset_name: Name of the dataset to download
 
     Returns:
-        Dictionary containing download links
+        Dictionary containing:
+        - success: Whether the request succeeded
+        - data: Download URLs and file information
+        - error: Error details if request failed
+
+    Next Steps:
+        - Record the download URLs and any authentication notes
+        - Ask for guidance on verifying file integrity
+        - Plan storage or processing steps before downloading
     """
     with RequestContext():
         try:
@@ -1447,9 +1785,9 @@ async def get_dataset_download_links(
             return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
-@with_tool_instructions("get_markdown_from_pdf")
+@with_tool_instructions("get_paper_fulltext")
 @mcp.tool()
-async def get_markdown_from_pdf(
+async def get_paper_fulltext(
     paper_id: str = Field(..., description="Semantic Scholar paper ID or DOI"),
     output_mode: str | None = Field(
         default=None,
@@ -1472,7 +1810,44 @@ async def get_markdown_from_pdf(
         description="Force re-download and regeneration of artifacts.",
     ),
 ) -> dict[str, Any]:
-    """Download an open-access PDF and expose Markdown content to MCP clients."""
+    """
+    Download an open-access PDF and expose Markdown content to MCP clients.
+
+    Converts academic PDFs to Markdown format with optional chunking and
+    image extraction,
+    enabling text analysis and content summarization. Results are cached for efficiency.
+
+    Args:
+        paper_id: Semantic Scholar paper ID or DOI
+        output_mode: Output format - 'markdown', 'chunks', or 'both'
+            (default: server config)
+        include_images: Whether to extract images from the PDF (default: False)
+        max_pages: Limit pages to convert, defaults to server configuration
+        force_refresh: Force re-download and regeneration of artifacts (default: False)
+
+    Returns:
+        Dictionary containing:
+        - success: Whether the conversion succeeded
+        - content: Markdown text and/or chunks
+        - artifacts: File paths for cached PDF, Markdown, images
+        - metadata: Paper title, author, conversion stats
+        - error: Error details if conversion failed
+
+    Next Steps:
+        - Read the Markdown file: When available, use the Read tool with
+          the path from artifacts.markdown_path to view the converted content;
+          this path is only returned if Markdown artifacts are enabled
+        - Access chunks: Request output_mode="chunks" or "both" to populate
+          content.chunks with structured text segments for analysis
+        - Analyze findings: Ask for summaries, key concepts, or specific
+          sections from the paper
+        - Check artifacts: PDF, Markdown, and chunks are saved in
+          .semantic_scholar_mcp/artifacts/ with SHA-1 partitioned paths
+        - View images: If include_images=true, extracted images are in
+          artifacts.images_dir
+        - Leverage caching: Subsequent requests use cached artifacts unless
+          force_refresh=true is specified
+    """
     with RequestContext():
         try:
             if config is None or api_client is None:
@@ -1566,12 +1941,24 @@ async def get_paper_with_embeddings(
     """
     Get paper with embedding vectors for semantic analysis.
 
+    Retrieves paper metadata along with SPECTER embedding vectors for
+    semantic similarity analysis and clustering.
+
     Args:
-        paper_id: Paper ID
-        embedding_type: Type of embedding model to use
+        paper_id: Semantic Scholar paper ID, DOI, or ArXiv ID
+        embedding_type: Embedding model - "specter_v1" or "specter_v2"
+            (default: "specter_v2")
 
     Returns:
-        Dictionary containing paper with embeddings
+        Dictionary containing:
+        - success: Whether the request succeeded
+        - data: Paper details with embedding vector
+        - error: Error details if request failed
+
+    Next Steps:
+        - Use the embedding vector for similarity searches or clustering
+        - Ask for interpretation of key metadata linked to the vector
+        - Combine with search_papers_with_embeddings to expand the set
     """
     with RequestContext():
         try:
@@ -1615,18 +2002,31 @@ async def search_papers_with_embeddings(
     """
     Search papers with embeddings for semantic analysis.
 
+    Searches papers and returns results with SPECTER embedding vectors,
+    enabling semantic similarity analysis and clustering.
+
     Args:
-        query: Search query
-        embedding_type: Type of embedding model
-        limit: Number of results
-        offset: Pagination offset
+        query: Search query string
+        embedding_type: Embedding model - "specter_v1" or "specter_v2"
+            (default: "specter_v2")
+        limit: Number of results to return (1-100, default: 10)
+        offset: Pagination offset (default: 0)
         publication_types: Publication type filters
-        fields_of_study: Field of study filters
-        year_range: Year range filter
-        min_citation_count: Minimum citation count
+            (e.g., 'JournalArticle', 'Conference')
+        fields_of_study: Field of study filters (e.g., 'Computer Science', 'Medicine')
+        year_range: Year range filter (e.g., '2020-2023')
+        min_citation_count: Minimum citation count threshold
 
     Returns:
-        Dictionary containing search results with embeddings
+        Dictionary containing:
+        - success: Whether the search succeeded
+        - data: Search results with papers and embedding vectors
+        - error: Error details if search failed
+
+    Next Steps:
+        - Check each match score to gauge semantic proximity
+        - Ask for a narrative summary of the closest matches
+        - Feed chosen IDs into get_paper for full context
     """
     with RequestContext():
         try:
@@ -1662,12 +2062,14 @@ async def search_papers_with_embeddings(
                     query=search_query, embedding_type=embedding_type
                 )
 
+            papers_data = [paper.model_dump(exclude_none=True) for paper in result.data]
+
+            _record_search_insights(query, papers_data)
+
             return {
                 "success": True,
                 "data": {
-                    "papers": [
-                        paper.model_dump(exclude_none=True) for paper in result.data
-                    ],
+                    "papers": papers_data,
                     "total": result.total,
                     "offset": result.offset,
                     "limit": result.limit,
@@ -1690,13 +2092,24 @@ async def get_incremental_dataset_updates(
     """
     Get incremental dataset updates between releases.
 
+    Retrieves the differences between two dataset releases, useful for
+    efficiently updating your local dataset copy.
+
     Args:
-        start_release_id: Starting release ID
-        end_release_id: Ending release ID
+        start_release_id: Starting release ID (older version)
+        end_release_id: Ending release ID (newer version)
         dataset_name: Name of the dataset
 
     Returns:
-        Dictionary containing incremental updates
+        Dictionary containing:
+        - success: Whether the request succeeded
+        - data: Incremental update information and download links
+        - error: Error details if request failed
+
+    Next Steps:
+        - Examine update windows to schedule data refreshes
+        - Ask for change summaries between the releases
+        - Decide whether a full or incremental download is needed
     """
     with RequestContext():
         try:
@@ -1723,8 +2136,19 @@ async def check_api_key_status() -> dict[str, Any]:
     """
     Check the API key configuration status and usage.
 
+    Verifies whether an API key is configured and provides guidance on
+    rate limits and best practices for API usage.
+
     Returns:
-        Dictionary containing API key status information
+        Dictionary containing:
+        - success: Whether the check succeeded
+        - data: API key status, configuration guidance, and rate limit info
+        - error: Error details if check failed
+
+    Next Steps:
+        - Review the API key status and rate limit guidance provided
+        - Set or rotate SEMANTIC_SCHOLAR_API_KEY if configuration is missing
+        - Ask for usage recommendations or next steps after updating credentials
     """
     import os
 
@@ -2066,6 +2490,27 @@ def main():
             python_version=sys.version,
             working_directory=str(Path.cwd()),
         )
+
+    # Start Dashboard if enabled
+    global dashboard_thread, dashboard_port
+    if dashboard_api and config and config.dashboard.enabled:
+        try:
+            dashboard_thread, dashboard_port = dashboard_api.run_in_thread(
+                host=config.dashboard.host,
+                port=config.dashboard.port,
+            )
+            logger.info(
+                f"Dashboard started at http://{config.dashboard.host}:{dashboard_port}/dashboard/"
+            )
+            if config.dashboard.open_on_launch:
+                browser_host = config.dashboard.host
+                if browser_host in {"0.0.0.0", "::"}:  # noqa: S104
+                    browser_host = "127.0.0.1"
+                dashboard_url = f"http://{browser_host}:{dashboard_port}/dashboard/"
+                _launch_dashboard_browser(dashboard_url)
+                logger.info("Opening dashboard in default browser", url=dashboard_url)
+        except Exception as e:
+            logger.error(f"Failed to start Dashboard: {e}")
 
     # Run the server
     try:

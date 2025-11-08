@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Semantic Scholar MCP Dashboard</title>
+    <link rel="stylesheet" href="/dashboard/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>⚡ Semantic Scholar MCP Dashboard</h1>
+            <div class="header-info">
+                <span id="uptime">Uptime: 0s</span>
+                <span id="api-status">API: ✓</span>
+                <span id="total-calls">Calls: 0</span>
+                <button id="theme-toggle" class="theme-toggle">🌓</button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Server Status Section -->
+            <section class="section">
+                <h2>📊 Server Status</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Total Tool Calls</div>
+                        <div class="stat-value" id="stat-total-calls">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Total Errors</div>
+                        <div class="stat-value" id="stat-total-errors">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Cache Hit Rate</div>
+                        <div class="stat-value" id="stat-cache-rate">0%</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">PDF Conversions</div>
+                        <div class="stat-value" id="stat-pdf-count">0</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Real-time Logs Section -->
+            <section class="section">
+                <div class="section-header">
+                    <h2>📜 Real-time Logs</h2>
+                    <div>
+                        <button id="load-logs" class="btn btn-primary">Load Logs</button>
+                        <button id="auto-scroll-toggle" class="btn btn-secondary">Auto-scroll: ON</button>
+                    </div>
+                </div>
+                <div id="log-viewer" class="log-viewer">
+                    <div class="log-placeholder">Click "Load Logs" to fetch messages</div>
+                </div>
+            </section>
+
+            <!-- Tool Usage Statistics -->
+            <section class="section">
+                <h2>🔧 Tool Usage Statistics</h2>
+                <div id="tool-stats-container">
+                    <div class="stats-placeholder">No tool statistics available yet</div>
+                </div>
+            </section>
+
+            <!-- Search Analytics -->
+            <section class="section">
+                <h2>🔍 Search Analytics</h2>
+                <div class="analytics-grid">
+                    <div class="analytics-card">
+                        <h3>Top Search Queries</h3>
+                        <ul id="top-queries-list" class="analytics-list">
+                            <li class="placeholder">No queries yet</li>
+                        </ul>
+                    </div>
+                    <div class="analytics-card">
+                        <h3>Most Accessed Papers</h3>
+                        <ul id="top-papers-list" class="analytics-list">
+                            <li class="placeholder">No papers yet</li>
+                        </ul>
+                    </div>
+                    <div class="analytics-card">
+                        <h3>Field Distribution</h3>
+                        <canvas id="field-chart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Performance Metrics -->
+            <section class="section">
+                <h2>⚡ Performance Metrics</h2>
+                <div class="performance-grid">
+                    <div class="performance-card">
+                        <h3>Cache Performance</h3>
+                        <div class="metric">
+                            <span>API Cache Hit Rate:</span>
+                            <span id="perf-cache-rate">0%</span>
+                        </div>
+                        <div class="metric">
+                            <span>PDF Cache Hit Rate:</span>
+                            <span id="perf-pdf-cache-rate">0%</span>
+                        </div>
+                    </div>
+                    <div class="performance-card">
+                        <h3>API Call Timeline</h3>
+                        <canvas id="timeline-chart"></canvas>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/dashboard/js/app.js"></script>
+</body>
+</html>

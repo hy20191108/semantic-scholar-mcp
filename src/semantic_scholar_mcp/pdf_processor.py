@@ -54,7 +54,7 @@ class _CachedArtifacts:
     images_dir: Path | None
 
 
-async def get_markdown_from_pdf(
+async def get_paper_fulltext(
     paper_id: str,
     *,
     client: SemanticScholarClient,
@@ -320,7 +320,7 @@ async def _generate_markdown_artifacts(
 
     memory_path: Path | None = None
     if pdf_config.enable_memory_capture and not cache_hit:
-        memory_path = _write_memory_entry(
+        memory_path = _persist_processed_paper(
             paper=paper,
             markdown_text=stored_markdown,
             chunks=raw_chunks,
@@ -331,7 +331,7 @@ async def _generate_markdown_artifacts(
             pdf_config=pdf_config,
         )
 
-    _update_index(
+    _update_artifact_cache_index(
         pdf_config=pdf_config,
         hashed_id=hashed_id,
         prefix=prefix,
@@ -458,7 +458,7 @@ def _convert_pdf_to_chunks(
     return pymupdf4llm.to_markdown(str(pdf_path), **conversion_kwargs)  # type: ignore[return-value]
 
 
-def _write_memory_entry(
+def _persist_processed_paper(
     *,
     paper: Paper,
     markdown_text: str,
@@ -504,7 +504,7 @@ def _write_memory_entry(
     return memory_path
 
 
-def _update_index(
+def _update_artifact_cache_index(
     *,
     pdf_config: PDFProcessingConfig,
     hashed_id: str,

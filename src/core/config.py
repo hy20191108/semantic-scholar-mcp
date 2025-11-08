@@ -190,6 +190,20 @@ class PDFProcessingConfig(BaseModel):
     chunk_preview_length: int = Field(default=280, ge=64, le=2000)
 
 
+class DashboardConfig(BaseModel):
+    """Dashboard configuration."""
+
+    enabled: bool = False
+    host: str = Field(default="0.0.0.0")  # noqa: S104
+    port: int = Field(
+        default=25000, ge=1024, le=65535
+    )  # Changed from 24282 to avoid Serena conflict
+    auto_refresh_seconds: int = Field(default=5, ge=1)
+    max_log_messages: int = Field(default=1000, ge=100)
+    enable_log_collection: bool = True
+    open_on_launch: bool = True
+
+
 class ServerConfig(BaseModel):
     """MCP server configuration."""
 
@@ -234,6 +248,7 @@ class ApplicationConfig(BaseSettings):
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     pdf_processing: PDFProcessingConfig = Field(default_factory=PDFProcessingConfig)
+    dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
 
     # Feature flags
     enable_cache: bool = True

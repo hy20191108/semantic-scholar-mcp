@@ -402,7 +402,7 @@ async def batch_analysis():
 
 ### 3. PDF to Markdown Conversion
 
-Use the `get_markdown_from_pdf` tool to fetch an open-access paper's PDF and convert it to Markdown or semantic chunks. The server caches artifacts on disk, so subsequent requests reuse the existing conversion unless you set `force_refresh=true`.
+Use the `get_paper_fulltext` tool to fetch an open-access paper's PDF and convert it to Markdown or semantic chunks. The server caches artifacts on disk, so subsequent requests reuse the existing conversion unless you set `force_refresh=true`.
 
 **Available parameters**
 - `paper_id` (required): Semantic Scholar paper ID, arXiv ID, or DOI
@@ -418,7 +418,7 @@ Convert the PDF for paper 649def34f8be52c8b66281af98ae884c09aef38b into Markdown
 
 **Example (CLI invocation)**
 ```bash
-uv run semantic-scholar-mcp --tool get_markdown_from_pdf --argument '{
+uv run semantic-scholar-mcp --tool get_paper_fulltext --argument '{
    "paper_id": "649def34f8be52c8b66281af98ae884c09aef38b",
    "output_mode": "both",
    "include_images": true
@@ -427,7 +427,7 @@ uv run semantic-scholar-mcp --tool get_markdown_from_pdf --argument '{
 
 **Example (Chunk-only response)**
 ```bash
-uv run semantic-scholar-mcp --tool get_markdown_from_pdf --argument '{
+uv run semantic-scholar-mcp --tool get_paper_fulltext --argument '{
    "paper_id": "649def34f8be52c8b66281af98ae884c09aef38b",
    "output_mode": "chunks"
 }'

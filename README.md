@@ -74,7 +74,7 @@ Ask in natural language:
 | ----------------------- | ---------------------------------------------- | ------------------------------------------------------ |
 | `search_papers`         | Search papers with filters                     | *"Search for deep learning papers from 2023"*          |
 | `get_paper`             | Get detailed paper info                        | *"Get full details for paper ID abc123"*               |
-| `get_markdown_from_pdf` | Convert open-access PDFs to Markdown or chunks | *"Convert the PDF for paper abc123 into Markdown"*     |
+| `get_paper_fulltext` | Convert open-access PDFs to Markdown or chunks | *"Convert the PDF for paper abc123 into Markdown"*     |
 | `get_paper_citations`   | Get papers citing this paper                   | *"Find papers that cite the attention paper"*          |
 | `get_paper_references`  | Get papers this paper cites                    | *"Show references from the BERT paper"*                |
 | `get_paper_authors`     | Get detailed author info for paper             | *"Show authors of paper abc123"*                       |
@@ -172,20 +172,20 @@ Ask in natural language:
 
 MIT License - see [LICENSE](LICENSE) for details.
 
-> ⚠️ The `get_markdown_from_pdf` tool relies on [PyMuPDF4LLM](https://github.com/pymupdf/PyMuPDF4LLM), which is AGPL licensed. Commercial usage of the PDF conversion feature may require a commercial PyMuPDF license.
+> ⚠️ The `get_paper_fulltext` tool relies on [PyMuPDF4LLM](https://github.com/pymupdf/PyMuPDF4LLM), which is AGPL licensed. Commercial usage of the PDF conversion feature may require a commercial PyMuPDF license.
 
 ### PDF Markdown Tips
 
 - **Chunk-only output**
   ```bash
-  uv run semantic-scholar-mcp --tool get_markdown_from_pdf --argument '{
+  uv run semantic-scholar-mcp --tool get_paper_fulltext --argument '{
     "paper_id": "649def34f8be52c8b66281af98ae884c09aef38b",
     "output_mode": "chunks"
   }'
   ```
 - **Include extracted images**
   ```bash
-  uv run semantic-scholar-mcp --tool get_markdown_from_pdf --argument '{
+  uv run semantic-scholar-mcp --tool get_paper_fulltext --argument '{
     "paper_id": "649def34f8be52c8b66281af98ae884c09aef38b",
     "output_mode": "both",
     "include_images": true

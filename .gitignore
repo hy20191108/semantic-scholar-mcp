@@ -170,3 +170,4 @@ src/semantic_scholar_mcp/_version.py
 
 tmp/
 .serena/
+serena/
