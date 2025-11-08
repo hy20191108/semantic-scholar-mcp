@@ -6,6 +6,25 @@
 
 Access millions of academic papers from Semantic Scholar using the Model Context Protocol (MCP). Works with Claude Code, Claude Desktop, Cursor, VS Code, and other MCP-compatible editors.
 
+## Response Schema (Contract)
+
+All tools return a compact JSON object shaped around a top-level `data` key. Pagination metadata is included only when applicable:
+
+- Always: `data`
+- Paginated endpoints (e.g., `search_papers`, `search_authors`, `search_snippets`): `total`, `offset`, `limit`, `has_more`
+- Count-only endpoints (e.g., recommendations, batch ops, datasets list): `count`
+- Non-paginated single-item endpoints (e.g., `get_paper`, `get_author`, dataset info): only `data`
+
+This keeps payloads predictable and compact for MCP clients.
+
+## Instruction Templates (SSOT)
+
+Tool guidance (“Next Steps”) is injected from YAML files and treated as the single source of truth (SSOT):
+
+- Location: `src/semantic_scholar_mcp/resources/tool_instructions/**/*.yml`
+- Server auto-injects guidance into tool descriptions and responses
+- Markdown templates are kept only for backward compatibility
+
 ## Features
 
 - **Smart Search**: Search papers with filters for year, fields of study, and sorting

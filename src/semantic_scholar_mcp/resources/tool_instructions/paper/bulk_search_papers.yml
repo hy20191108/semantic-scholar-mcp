@@ -1,0 +1,7 @@
+tool_name: bulk_search_papers
+category: paper
+description: ''
+next_steps:
+- Inspect aggregated hits and decide which query succeeded.
+- Ask for focused summaries of the best-performing results.
+- Iterate on the weaker queries with refined keywords.

@@ -1,17 +1,25 @@
 """MCP server implementation for Semantic Scholar API."""
 
 import asyncio
+import json
 import logging
 import multiprocessing
 import os
 import sys
 import threading
 import webbrowser
-from collections.abc import Awaitable, Callable, MutableMapping
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    MutableMapping,
+    Sequence,
+)
+from contextlib import asynccontextmanager, suppress
 from functools import wraps
 from pathlib import Path
 from time import perf_counter
-from typing import Any, ParamSpec, cast
+from typing import Any, ParamSpec, TypeVar, cast
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
@@ -19,9 +27,8 @@ from pydantic import Field
 from core.config import ApplicationConfig, get_config
 from core.core import InMemoryCache
 from core.error_handler import MCPErrorHandler, mcp_error_handler
-from core.exceptions import NotFoundError, ValidationError
+from core.exceptions import ValidationError
 from core.logging import (
-    RequestContext,
     TextFormatter,
     get_logger,
     initialize_logging,
@@ -30,7 +37,7 @@ from core.metrics_collector import MetricsCollector
 
 from .api_client import SemanticScholarClient
 from .dashboard import DashboardAPI, DashboardStats
-from .instruction_loader import load_tool_instructions
+from .instruction_loader import inject_yaml_instructions, load_all_instructions
 from .models import (
     SearchFilters,
     SearchQuery,
@@ -39,69 +46,31 @@ from .pdf_processor import OutputMode
 from .pdf_processor import get_paper_fulltext as process_pdf_markdown
 from .utils import (
     apply_field_selection,
+    create_search_filters,
     extract_field_value,
-    format_error_response,
-    format_success_response,
-    parse_year_range,
     validate_batch_size,
 )
 
+# Type definitions for Serena compliance
+TResult = TypeVar("TResult")
+ToolResult = dict[str, Any]  # Type alias for tool results
+logger = get_logger(__name__)
 
-async def execute_api_with_error_handling(
-    operation_name: str,
-    operation_func: Callable[[], Awaitable[Any]],
-    *,
-    context: MutableMapping[str, Any] | None = None,
-):
-    """Execute API operation with standardized error handling."""
-
-    try:
-        async with api_client:
-            return await operation_func()
-    except Exception as exc:  # pragma: no cover - defensive safety net
-        logger.error("Error in %s: %s", operation_name, exc)
-        if error_handler:
-            return await error_handler.handle_mcp_tool_error(
-                error=exc,
-                tool_name=operation_name,
-                arguments={},
-                context={"operation": operation_name, **(context or {})},
-            )
-        return {
-            "success": False,
-            "error": {"type": "error", "message": str(exc)},
-        }
-
-
-def extract_pagination_params(limit=None, offset=None, default_limit=10):
-    """Extract pagination parameters from Field objects."""
-    actual_limit = extract_field_value(limit) if limit is not None else default_limit
-    actual_offset = extract_field_value(offset) if offset is not None else 0
-    return actual_limit, actual_offset
-
-
-# Initialize FastMCP server
-mcp = FastMCP(
-    name="semantic-scholar-mcp",
-    instructions="MCP server for accessing Semantic Scholar academic database",
+# Initial MCP instructions (visible to MCP clients that honor server instructions)
+INITIAL_MCP_INSTRUCTIONS = (
+    "You are connected to the Semantic Scholar MCP Server.\n"
+    "Guidelines:\n"
+    "- Prefer compact JSON. Use data/total/offset/limit/has_more when applicable.\n"
+    "- Respect API limits (~1 rps anonymous). Prefer pagination over large limits.\n"
+    "- Use 'fields' to reduce payload size.\n"
+    "- Suggest next steps (refine query, open refs/citations, summarize).\n"
+    "- For details, use get_paper; cite requested fields in summaries.\n"
 )
 
-# Early initialization of logging for debugging
+# Initialize MCP server with initial instructions (Serena-style)
+mcp = FastMCP(name="semantic-scholar-mcp", instructions=INITIAL_MCP_INSTRUCTIONS)
 
-if os.getenv("DEBUG_MCP_MODE", "false").lower() == "true":
-    # Initialize logging early for module-level debugging
-    temp_config = get_config()
-    initialize_logging(temp_config.logging)
-    temp_logger = get_logger("mcp.init")
-    temp_logger.debug_mcp(
-        "FastMCP instance created",
-        mcp_instance=str(mcp),
-        mcp_type=str(type(mcp)),
-        has_tool_method=hasattr(mcp, "tool"),
-    )
-
-# Global instances
-logger = get_logger(__name__)
+# Global instances (initialized in initialize_server)
 config: ApplicationConfig | None = None
 api_client: SemanticScholarClient | None = None
 error_handler: MCPErrorHandler | None = None
@@ -112,6 +81,121 @@ dashboard_thread = None
 dashboard_port = None
 dashboard_log_messages: list[str] = []
 dashboard_log_handler: logging.Handler | None = None
+
+
+def extract_pagination_params(limit=None, offset=None, default_limit=10):
+    """Extract pagination parameters from Field objects."""
+    actual_limit = extract_field_value(limit) if limit is not None else default_limit
+    actual_offset = extract_field_value(offset) if offset is not None else 0
+    return actual_limit, actual_offset
+
+
+def _require_config() -> ApplicationConfig:
+    """Return the loaded application config or raise an error."""
+
+    if config is None:
+        raise RuntimeError(
+            "Server configuration has not been initialized. "
+            "Call initialize_server() first."
+        )
+    return config
+
+
+def _require_api_client() -> SemanticScholarClient:
+    """Return the initialized API client or raise an error."""
+
+    if api_client is None:
+        raise RuntimeError(
+            "API client is not initialized. "
+            "Call initialize_server() before invoking tools."
+        )
+    return api_client
+
+
+@asynccontextmanager
+async def _use_api_client() -> AsyncIterator[SemanticScholarClient]:
+    """Async context manager that yields the configured API client."""
+
+    client = _require_api_client()
+    async with client:
+        yield client
+
+
+async def _with_api_client(
+    runner: Callable[[SemanticScholarClient], Awaitable[TResult]],
+) -> TResult:
+    """Execute an API client coroutine while guaranteeing initialization."""
+
+    async with _use_api_client() as client:
+        return await runner(client)
+
+
+async def _call_client_method(
+    method_name: str,
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """Invoke a method on the Semantic Scholar API client in a safe context."""
+
+    async def _runner(client: SemanticScholarClient) -> Any:
+        method = getattr(client, method_name)
+        return await method(*args, **kwargs)
+
+    return await _with_api_client(_runner)
+
+
+def _model_to_dict(payload: Any) -> dict[str, Any]:
+    """Convert Pydantic models or mappings to plain dictionaries."""
+
+    if hasattr(payload, "model_dump"):
+        return cast(dict[str, Any], payload.model_dump(exclude_none=True))
+    if isinstance(payload, MutableMapping):
+        return dict(payload)
+    raise TypeError(f"Unsupported payload type: {type(payload)!r}")
+
+
+def _success_payload(data: Any, **extra: Any) -> ToolResult:
+    """Create a standard success response for MCP tools."""
+
+    payload: ToolResult = {"success": True, "data": data}
+    if extra:
+        payload.update(extra)
+    return payload
+
+
+def _validation_error_payload(exc: ValidationError) -> ToolResult:
+    """Format validation errors consistently across tools."""
+
+    return {
+        "success": False,
+        "error": {
+            "type": "validation_error",
+            "message": str(exc),
+            "details": getattr(exc, "details", None),
+        },
+    }
+
+
+def _serialize_items(
+    items: Sequence[Any],
+    fields: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Convert iterable payloads to dictionaries with optional field filtering."""
+
+    serialized: list[dict[str, Any]] = []
+    for item in items:
+        try:
+            item_dict = _model_to_dict(item)
+        except TypeError:
+            logger.warning("Skipping unserializable payload", payload_type=type(item))
+            continue
+
+        if fields:
+            item_dict = apply_field_selection(item_dict, fields)
+
+        serialized.append(item_dict)
+
+    return serialized
 
 
 class DashboardLogHandler(logging.Handler):
@@ -137,52 +221,6 @@ class DashboardLogHandler(logging.Handler):
                 del self._buffer[:overflow]
 
 
-def _record_search_insights(
-    query: str | None,
-    papers: list[MutableMapping[str, Any]],
-) -> None:
-    """Record aggregated analytics for search-style tools."""
-
-    if not dashboard_stats or not papers:
-        return
-
-    if query:
-        dashboard_stats.record_search_query(query)
-
-    for paper in papers:
-        paper_identifier = (
-            paper.get("paperId") or paper.get("paper_id") or paper.get("id")
-        )
-        if paper_identifier:
-            dashboard_stats.record_paper_access(str(paper_identifier))
-
-        fields = paper.get("fieldsOfStudy") or paper.get("fields_of_study") or []
-        if isinstance(fields, list):
-            for field in fields:
-                if field:
-                    dashboard_stats.record_field_of_study(str(field))
-
-
-def _record_paper_metadata(
-    paper_id: str | None,
-    payload: MutableMapping[str, Any],
-) -> None:
-    """Record metadata analytics for single-paper responses."""
-
-    if not dashboard_stats:
-        return
-
-    paper_identifier = payload.get("paperId") or payload.get("paper_id") or paper_id
-    if paper_identifier:
-        dashboard_stats.record_paper_access(str(paper_identifier))
-
-    fields = payload.get("fieldsOfStudy") or payload.get("fields_of_study") or []
-    if isinstance(fields, list):
-        for field in fields:
-            if field:
-                dashboard_stats.record_field_of_study(str(field))
-
-
 def _launch_dashboard_browser(url: str) -> None:
     """Open dashboard URL in a separate process, Serena-style."""
 
@@ -198,11 +236,9 @@ def _launch_dashboard_browser(url: str) -> None:
             # Fall back silently if redirecting fails
             pass
 
-        try:
+        # Swallow exceptions to avoid noisy stderr in subprocess; parent logs success
+        with suppress(Exception):
             webbrowser.open(url, new=2, autoraise=True)
-        except Exception:
-            # Swallow exceptions to avoid noisy stderr in subprocess; parent logs success
-            pass
 
     process = multiprocessing.Process(target=_open, daemon=True)
     process.start()
@@ -371,9 +407,11 @@ async def initialize_server():
                 "get_dataset_releases",
                 "get_dataset_info",
                 "get_dataset_download_links",
+                "get_paper_fulltext",
                 "get_paper_with_embeddings",
                 "search_papers_with_embeddings",
                 "get_incremental_dataset_updates",
+                "check_api_key_status",
             ],
             mcp_resources=["papers/{paper_id}", "authors/{author_id}"],
             mcp_prompts=[
@@ -394,18 +432,41 @@ P = ParamSpec("P")
 ToolCoroutine = Callable[P, Awaitable[MutableMapping[str, Any]]]
 
 
-# Load tool instructions from external template files
+# Load tool instructions from external template files (YAML/Markdown)
 # This is done at module level to benefit from caching
-TOOL_INSTRUCTIONS: dict[str, str] = load_tool_instructions()
+TOOL_INSTRUCTIONS = load_all_instructions()
+TOOL_INSTRUCTION_KEYS = set(TOOL_INSTRUCTIONS.keys())
 
 
 REGISTERED_TOOL_NAMES: set[str] = set()
 
 
 def _inject_instructions(
-    result: MutableMapping[str, Any], instruction_text: str
-) -> MutableMapping[str, Any]:
+    result: Any, instruction_text: str
+) -> Any:
     """Attach instructions to successful tool responses."""
+
+    # If the tool returned a JSON string, try to inject into the parsed object
+    if isinstance(result, str):
+        try:
+            parsed = json.loads(result)
+        except Exception:
+            return result
+        if isinstance(parsed, MutableMapping):
+            # Normalize to ensure `data` top-level exists
+            if "data" not in parsed:
+                parsed = {"data": parsed}
+            parsed.setdefault("instructions", instruction_text)
+            return json.dumps(parsed, ensure_ascii=False, indent=2)
+        return result
+
+    # Only inject into mapping-like results
+    if not isinstance(result, MutableMapping):
+        return result
+
+    # Normalize mapping return to ensure `data` exists
+    if "data" not in result:
+        result = {"data": result}
 
     if not instruction_text:
         logger.debug("No instruction_text provided, skipping injection")
@@ -436,9 +497,17 @@ def with_tool_instructions(tool_name: str) -> Callable[[ToolCoroutine], ToolCoro
     Implements Serena-style instruction injection by appending guidance
     to tool docstrings for better LLM interaction.
     """
-    from .instruction_loader import get_instruction
+    from .instruction_loader import get_instruction, get_next_steps_text
 
-    instruction_text = TOOL_INSTRUCTIONS.get(tool_name) or get_instruction(tool_name)
+    # Support both YAML-based and Markdown-based instruction sources
+    _raw = TOOL_INSTRUCTIONS.get(tool_name)
+    if isinstance(_raw, dict):
+        # YAML dict: format Next Steps text from YAML
+        category = _raw.get("category", "")
+        instruction_text = get_next_steps_text(tool_name, category)
+    else:
+        # Markdown string fallback
+        instruction_text = _raw or get_instruction(tool_name)
 
     def decorator(func: ToolCoroutine) -> ToolCoroutine:
         if not asyncio.iscoroutinefunction(func):
@@ -460,7 +529,7 @@ def with_tool_instructions(tool_name: str) -> Callable[[ToolCoroutine], ToolCoro
             func.__doc__ = original_doc + instructions_section
 
             logger.debug(
-                "Appended instructions to docstring",
+                "Appended instructions to tool docstring",
                 tool_name=tool_name,
                 original_doc_length=len(original_doc),
                 instructions_length=len(instruction_text),
@@ -501,14 +570,16 @@ def with_tool_instructions(tool_name: str) -> Callable[[ToolCoroutine], ToolCoro
         @wraps(func)
         async def async_wrapper(
             *args: P.args, **kwargs: P.kwargs
-        ) -> MutableMapping[str, Any]:
+        ) -> Any:
             start = perf_counter()
-            result: MutableMapping[str, Any]
+            result: Any
             success_flag = False
 
             try:
                 result = await func(*args, **kwargs)
-                success_flag = bool(result.get("success", True))
+                success_flag = bool(
+                    result.get("success", True)
+                ) if isinstance(result, MutableMapping) else True
             except Exception:
                 if dashboard_stats:
                     dashboard_stats.record_tool_call(
@@ -533,6 +604,7 @@ def with_tool_instructions(tool_name: str) -> Callable[[ToolCoroutine], ToolCoro
     return decorator
 
 
+@inject_yaml_instructions("search_papers", "paper")
 @with_tool_instructions("search_papers")
 @mcp.tool()
 @mcp_error_handler(tool_name="search_papers")
@@ -553,7 +625,7 @@ async def search_papers(
         default=None,
         description="Fields to include in response (supports dot notation)",
     ),
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Search Semantic Scholar papers with optional filters.
 
@@ -570,10 +642,12 @@ async def search_papers(
         fields: Specific fields to include in response, supports dot notation (optional)
 
     Returns:
-        Dictionary containing:
-        - success: Whether the search succeeded
-        - data: Search results with papers list, total count, pagination info
-        - error: Error details if search failed
+        JSON object with:
+        - data: list[Paper] search results
+        - total: int total hits (from API)
+        - offset: int request offset
+        - limit: int page size
+        - has_more: bool whether more results are available
 
     Next Steps:
         - Review the returned papers list and identify items worth reading
@@ -581,154 +655,66 @@ async def search_papers(
         - Refine your search query or add filters if results are too broad
         - Use pagination (offset/limit) to explore more results if needed
     """
+    logger.debug_mcp(
+        "Search papers requested",
+        query=query,
+        limit=limit,
+        offset=offset,
+        year=year,
+        fields_of_study=fields_of_study,
+        sort=sort,
+    )
 
-    with RequestContext():
-        try:
-            logger.debug_mcp(
-                "Starting search_papers tool execution",
-                query=query,
-                limit=limit,
-                offset=offset,
-                year=year,
-                fields_of_study=fields_of_study,
-                sort=sort,
-            )
+    actual_limit, actual_offset = extract_pagination_params(limit, offset, 10)
+    actual_sort = extract_field_value(sort)
+    actual_year = extract_field_value(year)
+    actual_fields_of_study = extract_field_value(fields_of_study)
+    actual_fields = extract_field_value(fields)
 
-            actual_limit, actual_offset = extract_pagination_params(limit, offset, 10)
-            actual_sort = extract_field_value(sort)
-            actual_year = extract_field_value(year)
-            actual_fields_of_study = extract_field_value(fields_of_study)
-            actual_fields = extract_field_value(fields)
+    logger.debug_mcp(
+        "Extracted parameters",
+        actual_limit=actual_limit,
+        actual_offset=actual_offset,
+        actual_sort=actual_sort,
+        actual_year=actual_year,
+        actual_fields_of_study=actual_fields_of_study,
+        requested_fields=actual_fields,
+    )
 
-            logger.debug_mcp(
-                "Resolved search parameters",
-                actual_limit=actual_limit,
-                actual_offset=actual_offset,
-                actual_sort=actual_sort,
-                actual_year=actual_year,
-                actual_fields_of_study=actual_fields_of_study,
-                requested_fields=actual_fields,
-            )
+    search_query = SearchQuery(
+        query=query,
+        limit=actual_limit,
+        offset=actual_offset,
+        sort=actual_sort,
+        fields=actual_fields,
+    )
 
-            search_query = SearchQuery(
-                query=query,
-                limit=actual_limit,
-                offset=actual_offset,
-                sort=actual_sort,
-                fields=actual_fields,
-            )
+    filters_kwargs: dict[str, Any] = {}
+    if actual_year is not None:
+        filters_kwargs["year"] = str(actual_year)
+    if actual_fields_of_study:
+        filters_kwargs["fields_of_study"] = actual_fields_of_study
 
-            if actual_year or actual_fields_of_study:
-                search_query.filters = SearchFilters(
-                    year=actual_year,
-                    fields_of_study=actual_fields_of_study,
-                )
-                logger.debug_mcp(
-                    "Applied search filters",
-                    filters=search_query.filters.model_dump()
-                    if search_query.filters
-                    else None,
-                )
+    if filters_kwargs:
+        search_query.filters = SearchFilters(**filters_kwargs)
+        logger.debug_mcp(
+            "Applied search filters",
+            filters=search_query.filters.model_dump() if search_query.filters else None,
+        )
 
-            result = await execute_api_with_error_handling(
-                "search_papers",
-                lambda: api_client.search_papers(search_query),
-            )
-
-            if isinstance(result, dict):
-                return result
-
-            if not hasattr(result, "data"):
-                logger.error(
-                    "Invalid API response: missing data attribute",
-                    response_type=type(result),
-                )
-                return {
-                    "success": False,
-                    "error": {
-                        "type": "error",
-                        "message": "Invalid API response format",
-                    },
-                }
-
-            papers_data: list[dict[str, Any]] = []
-            for paper in result.data or []:
-                if hasattr(paper, "model_dump"):
-                    paper_dict = cast(
-                        MutableMapping[str, Any], paper.model_dump(exclude_none=True)
-                    )
-                elif isinstance(paper, MutableMapping):
-                    paper_dict = dict(paper)
-                else:
-                    logger.warning(
-                        "Skipping unexpected paper payload",
-                        paper_type=type(paper),
-                    )
-                    continue
-
-                if actual_fields:
-                    paper_dict = apply_field_selection(paper_dict, actual_fields)
-                papers_data.append(paper_dict)
-
-            total = getattr(result, "total", len(papers_data))
-            has_more = getattr(
-                result,
-                "has_more",
-                (getattr(result, "offset", 0) + getattr(result, "limit", 0)) < total,
-            )
-
-            logger.debug_mcp(
-                "Search completed",
-                result_count=len(papers_data),
-                total=total,
-                has_more=has_more,
-            )
-
-            _record_search_insights(query, papers_data)
-
-            return {
-                "success": True,
-                "data": {
-                    "papers": papers_data,
-                    "total": total,
-                    "offset": getattr(result, "offset", actual_offset),
-                    "limit": getattr(result, "limit", actual_limit),
-                    "has_more": has_more,
-                },
-            }
-
-        except ValidationError as exc:
-            logger.log_with_stack_trace(
-                logging.ERROR,
-                "Validation error in search_papers",
-                exception=exc,
-                tool_name="search_papers",
-                query=query,
-                validation_details=exc.details,
-            )
-            return {
-                "success": False,
-                "error": {
-                    "type": "validation_error",
-                    "message": str(exc),
-                    "details": exc.details,
-                },
-            }
-        except Exception as exc:
-            logger.log_with_stack_trace(
-                logging.ERROR,
-                "Error searching papers",
-                exception=exc,
-                tool_name="search_papers",
-                query=query,
-                exception_type=type(exc).__name__,
-            )
-            return {
-                "success": False,
-                "error": {"type": "error", "message": str(exc)},
-            }
+    result = await _with_api_client(lambda client: client.search_papers(search_query))
+    papers_data = _serialize_items(result.data, actual_fields)
+    payload = {
+        "data": papers_data,
+        "total": result.total,
+        "offset": result.offset,
+        "limit": result.limit,
+        "has_more": result.has_more,
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("get_paper", "paper")
 @with_tool_instructions("get_paper")
 @mcp.tool()
 @mcp_error_handler(tool_name="get_paper")
@@ -744,7 +730,7 @@ async def get_paper(
     include_references: bool = Field(
         default=False, description="Include reference details"
     ),
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Retrieve detailed information about a specific paper.
 
@@ -758,72 +744,33 @@ async def get_paper(
         include_references: Whether to include reference details (default: False)
 
     Returns:
-        Dictionary containing:
-        - success: Whether the request succeeded
-        - data: Paper details with requested fields
-        - error: Error details if request failed
+        JSON object with:
+        - data: Paper (filtered by fields if specified)
 
     Next Steps:
         - Examine the abstract, authors, and venue to confirm relevance
         - Request a summary of specific sections or findings
         - Consider checking citations or references for deeper context
     """
+    actual_fields = extract_field_value(fields)
 
-    with RequestContext():
-        try:
-            actual_fields = extract_field_value(fields)
-
-            paper = await execute_api_with_error_handling(
-                "get_paper",
-                lambda: api_client.get_paper(
-                    paper_id=paper_id,
-                    fields=actual_fields,
-                    include_citations=include_citations,
-                    include_references=include_references,
-                ),
-                context={"paper_id": paper_id},
-            )
-
-            if isinstance(paper, dict):
-                return paper
-
-            if hasattr(paper, "model_dump"):
-                paper_dict = paper.model_dump(exclude_none=True)
-            elif isinstance(paper, MutableMapping):
-                paper_dict = dict(paper)
-            else:
-                return {
-                    "success": False,
-                    "error": {
-                        "type": "error",
-                        "message": "Invalid paper response format",
-                    },
-                }
-
-            if actual_fields:
-                paper_dict = apply_field_selection(paper_dict, actual_fields)
-
-            _record_paper_metadata(paper_id, paper_dict)
-
-            return {"success": True, "data": paper_dict}
-
-        except ValidationError as exc:
-            logger.error("Validation error in get_paper", exception=exc)
-            return {
-                "success": False,
-                "error": {
-                    "type": "validation_error",
-                    "message": str(exc),
-                    "details": exc.details,
-                },
-            }
-        except Exception as exc:
-            logger.error("Error getting paper", exception=exc)
-            return {"success": False, "error": {"type": "error", "message": str(exc)}}
+    paper = await _call_client_method(
+            "get_paper",
+            paper_id=paper_id,
+            fields=actual_fields,
+            include_citations=include_citations,
+            include_references=include_references,
+        )
+    paper_dict = _model_to_dict(paper)
+    if actual_fields:
+        paper_dict = apply_field_selection(paper_dict, actual_fields)
+    return json.dumps({"data": paper_dict}, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("get_paper_citations", "paper")
 @with_tool_instructions("get_paper_citations")
 @mcp.tool()
+@mcp_error_handler(tool_name="get_paper_citations")
 async def get_paper_citations(
     paper_id: str,
     limit: int = Field(
@@ -833,7 +780,7 @@ async def get_paper_citations(
         description="Number of citations to return (max 9999)",
     ),
     offset: int = Field(default=0, ge=0, description="Offset for pagination"),
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Get citations for a specific paper.
 
@@ -846,60 +793,46 @@ async def get_paper_citations(
         offset: Pagination offset (default: 0)
 
     Returns:
-        Dictionary containing:
-        - success: Whether the request succeeded
-        - data: List of citing papers with metadata
-        - error: Error details if request failed
+        JSON object with:
+        - data: list[Citation]
+        - count: int number of items returned in this page
+        - offset: int request offset
+        - limit: int page size
 
     Next Steps:
         - Review citing papers to understand follow-up research
         - Ask for a comparison between key citing works
         - Use get_paper on notable citations to inspect details
     """
+    actual_limit, actual_offset = extract_pagination_params(limit, offset, 100)
 
-    with RequestContext():
-        try:
-            actual_limit, actual_offset = extract_pagination_params(limit, offset, 100)
-
-            citations = await execute_api_with_error_handling(
-                "get_paper_citations",
-                lambda: api_client.get_paper_citations(
-                    paper_id=paper_id,
-                    limit=actual_limit,
-                    offset=actual_offset,
-                ),
-                context={"paper_id": paper_id},
-            )
-
-            citations_data = [cite.model_dump(exclude_none=True) for cite in citations]
-
-            for payload in citations_data:
-                _record_paper_metadata(None, payload)
-
-            _record_paper_metadata(paper_id, {"paperId": paper_id})
-
-            return {
-                "success": True,
-                "data": {
-                    "citations": citations_data,
-                    "count": len(citations),
-                },
-            }
-
-        except Exception as exc:
-            logger.error("Error getting citations", exception=exc)
-            return {"success": False, "error": {"type": "error", "message": str(exc)}}
+    citations = await _call_client_method(
+        "get_paper_citations",
+            paper_id=paper_id,
+            limit=actual_limit,
+            offset=actual_offset,
+        )
+    citations_data = _serialize_items(citations)
+    payload = {
+        "data": citations_data,
+        "count": len(citations_data),
+        "offset": actual_offset,
+        "limit": actual_limit,
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("get_paper_references", "paper")
 @with_tool_instructions("get_paper_references")
 @mcp.tool()
+@mcp_error_handler(tool_name="get_paper_references")
 async def get_paper_references(
     paper_id: str,
     limit: int = Field(
         default=100, ge=1, le=1000, description="Number of references to return"
     ),
     offset: int = Field(default=0, ge=0, description="Offset for pagination"),
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Get references for a specific paper.
 
@@ -912,56 +845,46 @@ async def get_paper_references(
         offset: Pagination offset (default: 0)
 
     Returns:
-        Dictionary containing:
-        - success: Whether the request succeeded
-        - data: List of referenced papers with metadata
-        - error: Error details if request failed
+        JSON object with:
+        - data: list[Reference]
+        - count: int number of items returned in this page
+        - offset: int request offset
+        - limit: int page size
 
     Next Steps:
         - Scan referenced papers to map the foundational work
         - Ask for brief summaries of the most influential references
         - Retrieve full details for any reference with get_paper
     """
-    with RequestContext():
-        try:
-            actual_limit, actual_offset = extract_pagination_params(limit, offset, 100)
+    actual_limit, actual_offset = extract_pagination_params(limit, offset, 100)
 
-            references = await execute_api_with_error_handling(
-                "get_paper_references",
-                lambda: api_client.get_paper_references(
-                    paper_id=paper_id, limit=actual_limit, offset=actual_offset
-                ),
-            )
-
-            references_data = [ref.model_dump(exclude_none=True) for ref in references]
-
-            for payload in references_data:
-                _record_paper_metadata(None, payload)
-
-            _record_paper_metadata(paper_id, {"paperId": paper_id})
-
-            return {
-                "success": True,
-                "data": {
-                    "references": references_data,
-                    "count": len(references),
-                },
-            }
-
-        except Exception as e:
-            logger.error("Error getting references", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+    references = await _call_client_method(
+        "get_paper_references",
+            paper_id=paper_id,
+            limit=actual_limit,
+            offset=actual_offset,
+        )
+    references_data = _serialize_items(references)
+    payload = {
+        "data": references_data,
+        "count": len(references_data),
+        "offset": actual_offset,
+        "limit": actual_limit,
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("get_paper_authors", "paper")
 @with_tool_instructions("get_paper_authors")
 @mcp.tool()
+@mcp_error_handler(tool_name="get_paper_authors")
 async def get_paper_authors(
     paper_id: str,
     limit: int = Field(
         default=100, ge=1, le=1000, description="Number of authors to return"
     ),
     offset: int = Field(default=0, ge=0, description="Offset for pagination"),
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Get detailed author information for a specific paper.
 
@@ -974,10 +897,12 @@ async def get_paper_authors(
         offset: Pagination offset (default: 0)
 
     Returns:
-        Dictionary containing:
-        - success: Whether the request succeeded
-        - data: List of author profiles with metrics
-        - error: Error details if request failed
+        JSON object with:
+        - data: list[Author]
+        - total: int total authors (from API)
+        - offset: int request offset
+        - limit: int page size
+        - has_more: bool whether more results are available
 
     Next Steps:
         - Identify recurring collaborators or leading authors
@@ -985,42 +910,31 @@ async def get_paper_authors(
         - Follow up with get_author_papers for a selected researcher
 
     Returns:
-        Dictionary containing paper authors
+        JSON object as described above.
     """
-    with RequestContext():
-        try:
-            actual_limit, actual_offset = extract_pagination_params(limit, offset, 100)
+    actual_limit, actual_offset = extract_pagination_params(limit, offset, 100)
 
-            result = await execute_api_with_error_handling(
-                "get_paper_authors",
-                lambda: api_client.get_paper_authors(
-                    paper_id=paper_id,
-                    limit=actual_limit,
-                    offset=actual_offset,
-                ),
-            )
-
-            return {
-                "success": True,
-                "data": {
-                    "authors": [
-                        author.model_dump(exclude_none=True) for author in result.data
-                    ],
-                    "total": result.total,
-                    "offset": result.offset,
-                    "limit": result.limit,
-                    "has_more": result.has_more,
-                },
-            }
-
-        except Exception as e:
-            logger.error("Error getting paper authors", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+    result = await _call_client_method(
+        "get_paper_authors",
+            paper_id=paper_id,
+            limit=actual_limit,
+            offset=actual_offset,
+        )
+    authors_data = _serialize_items(result.data)
+    return json.dumps({
+        "data": authors_data,
+        "total": result.total,
+        "offset": result.offset,
+        "limit": result.limit,
+        "has_more": result.has_more,
+    }, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("get_author", "author")
 @with_tool_instructions("get_author")
 @mcp.tool()
-async def get_author(author_id: str) -> dict[str, Any]:
+@mcp_error_handler(tool_name="get_author")
+async def get_author(author_id: str) -> ToolResult:
     """
     Get detailed information about an author.
 
@@ -1031,37 +945,29 @@ async def get_author(author_id: str) -> dict[str, Any]:
         author_id: Semantic Scholar author ID
 
     Returns:
-        Dictionary containing:
-        - success: Whether the request succeeded
-        - data: Author profile with metrics and affiliations
-        - error: Error details if request failed
+        JSON object with:
+        - data: Author
 
     Next Steps:
         - Review the author metrics and affiliations provided
         - Ask for trends or notable publications in their portfolio
         - Use get_author_papers for recent work or specific years
     """
-    with RequestContext():
-        try:
-            async with api_client:
-                author = await api_client.get_author(author_id=author_id)
-
-            return {"success": True, "data": author.model_dump(exclude_none=True)}
-
-        except Exception as e:
-            logger.error("Error getting author", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+    author = await _call_client_method("get_author", author_id=author_id)
+    return json.dumps({"data": _model_to_dict(author)}, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("get_author_papers", "author")
 @with_tool_instructions("get_author_papers")
 @mcp.tool()
+@mcp_error_handler(tool_name="get_author_papers")
 async def get_author_papers(
     author_id: str,
     limit: int = Field(
         default=100, ge=1, le=1000, description="Number of papers to return"
     ),
     offset: int = Field(default=0, ge=0, description="Offset for pagination"),
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Get papers by a specific author.
 
@@ -1074,10 +980,12 @@ async def get_author_papers(
         offset: Pagination offset (default: 0)
 
     Returns:
-        Dictionary containing:
-        - success: Whether the request succeeded
-        - data: List of author's papers with metadata
-        - error: Error details if request failed
+        JSON object with:
+        - data: list[Paper]
+        - total: int total papers (from API)
+        - offset: int request offset
+        - limit: int page size
+        - has_more: bool whether more results are available
 
     Next Steps:
         - Scan the publication list for themes or collaborations
@@ -1085,42 +993,35 @@ async def get_author_papers(
         - Compare with other authors to spot overlapping research
 
     Returns:
-        Dictionary containing author's papers
+        JSON object as described above.
     """
-    with RequestContext():
-        try:
-            async with api_client:
-                result = await api_client.get_author_papers(
-                    author_id=author_id, limit=limit, offset=offset
-                )
-
-            return {
-                "success": True,
-                "data": {
-                    "papers": [
-                        paper.model_dump(exclude_none=True) for paper in result.data
-                    ],
-                    "total": result.total,
-                    "offset": result.offset,
-                    "limit": result.limit,
-                    "has_more": result.has_more,
-                },
-            }
-
-        except Exception as e:
-            logger.error("Error getting author papers", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+    result = await _call_client_method(
+        "get_author_papers",
+        author_id=author_id,
+        limit=limit,
+        offset=offset,
+    )
+    papers_data = _serialize_items(result.data)
+    return json.dumps({
+        "data": papers_data,
+        "total": result.total,
+        "offset": result.offset,
+        "limit": result.limit,
+        "has_more": result.has_more,
+    }, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("search_authors", "author")
 @with_tool_instructions("search_authors")
 @mcp.tool()
+@mcp_error_handler(tool_name="search_authors")
 async def search_authors(
     query: str,
     limit: int = Field(
         default=10, ge=1, le=100, description="Number of results to return"
     ),
     offset: int = Field(default=0, ge=0, description="Offset for pagination"),
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Search for authors by name.
 
@@ -1133,46 +1034,41 @@ async def search_authors(
         offset: Pagination offset (default: 0)
 
     Returns:
-        Dictionary containing:
-        - success: Whether the search succeeded
-        - data: List of matching author profiles
-        - error: Error details if search failed
+        JSON object with:
+        - data: list[Author]
+        - total: int total hits (from API)
+        - offset: int request offset
+        - limit: int page size
+        - has_more: bool whether more results are available
 
     Next Steps:
         - Inspect the candidate list and shortlist promising researchers
         - Request get_author for profiles you want to explore
         - Note emerging topics or institutions tied to each author
     """
-    with RequestContext():
-        try:
-            # Extract actual values from Field objects if needed
-            actual_offset = extract_field_value(offset)
+    # Extract actual values from Field objects if needed
+    actual_offset = extract_field_value(offset)
 
-            async with api_client:
-                result = await api_client.search_authors(
-                    query=query, limit=limit, offset=actual_offset
-                )
-
-            return {
-                "success": True,
-                "data": {
-                    "authors": [
-                        author.model_dump(exclude_none=True) for author in result.data
-                    ],
-                    "total": result.total,
-                    "offset": result.offset,
-                    "limit": result.limit,
-                    "has_more": result.has_more,
-                },
-            }
-
-        except Exception as e:
-            logger.error("Error searching authors", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+    result = await _call_client_method(
+        "search_authors",
+        query=query,
+        limit=limit,
+        offset=actual_offset,
+    )
+    authors_data = _serialize_items(result.data)
+    return json.dumps({
+        "data": authors_data,
+        "total": result.total,
+        "offset": result.offset,
+        "limit": result.limit,
+        "has_more": result.has_more,
+    }, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("get_recommendations_for_paper", "prompts")
 @with_tool_instructions("get_recommendations_for_paper")
 @mcp.tool()
+@mcp_error_handler(tool_name="get_recommendations_for_paper")
 async def get_recommendations_for_paper(
     paper_id: str,
     limit: int = Field(
@@ -1181,7 +1077,7 @@ async def get_recommendations_for_paper(
     fields: list[str] | None = Field(
         default=None, description="Fields to include in response"
     ),
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Get paper recommendations based on a given paper.
 
@@ -1194,47 +1090,37 @@ async def get_recommendations_for_paper(
         fields: Fields to include in response (optional)
 
     Returns:
-        Dictionary containing:
-        - success: Whether the request succeeded
-        - data: List of recommended papers
-        - error: Error details if request failed
+        JSON object with:
+        - data: list[Paper]
+        - count: int number of recommendations returned
 
     Next Steps:
         - Review recommended papers and note recurring concepts
         - Ask for summaries or contrasts with the source paper
         - Queue follow-up searches for promising recommendations
     """
-    with RequestContext():
-        try:
-            async with api_client:
-                papers = await api_client.get_recommendations_for_paper(
-                    paper_id=paper_id, limit=limit, fields=fields
-                )
-
-            return {
-                "success": True,
-                "data": {
-                    "recommendations": [
-                        paper.model_dump(exclude_none=True) for paper in papers
-                    ],
-                    "count": len(papers),
-                },
-            }
-
-        except Exception as e:
-            logger.error("Error getting recommendations", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+    papers = await _call_client_method(
+        "get_recommendations_for_paper",
+        paper_id=paper_id,
+        limit=limit,
+        fields=fields,
+    )
+    papers_data = _serialize_items(papers, extract_field_value(fields))
+    payload = {"data": papers_data, "count": len(papers_data)}
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("batch_get_papers", "paper")
 @with_tool_instructions("batch_get_papers")
 @mcp.tool()
+@mcp_error_handler(tool_name="batch_get_papers")
 async def batch_get_papers(
     paper_ids: list[str],
     fields: list[str] | None = Field(
         default=None,
         description="Fields to include in response (supports dot notation)",
     ),
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Get multiple papers in a single request.
 
@@ -1247,54 +1133,32 @@ async def batch_get_papers(
         fields: Optional list of fields to include, supports dot notation
 
     Returns:
-        Dictionary containing:
-        - success: Whether the request succeeded
-        - data: List of paper details
-        - error: Error details if request failed
+        JSON object with:
+        - data: list[Paper]
+        - count: int number of papers returned
 
     Next Steps:
         - Check that each requested paper is present and complete
         - Ask for a synthesis across the batch to spot shared themes
         - Plan deeper dives using get_paper where more detail is needed
     """
-    with RequestContext():
-        try:
-            validate_batch_size(paper_ids, 500)
+    validate_batch_size(paper_ids, 500)
+    actual_fields = extract_field_value(fields)
 
-            # Extract actual field value
-            actual_fields = extract_field_value(fields)
-
-            async with api_client:
-                papers = await api_client.batch_get_papers(
-                    paper_ids=paper_ids, fields=actual_fields
-                )
-
-            # Format response with field selection
-            papers_data = []
-            for paper in papers:
-                paper_dict = paper.model_dump(exclude_none=True)
-                # Apply field selection if requested
-                if actual_fields:
-                    paper_dict = apply_field_selection(paper_dict, actual_fields)
-                papers_data.append(paper_dict)
-
-            return format_success_response(
-                {
-                    "papers": papers_data,
-                    "count": len(papers),
-                }
-            )
-
-        except ValidationError as e:
-            logger.error("Validation error in batch_get_papers", exception=e)
-            return format_error_response(e, "validation_error")
-        except Exception as e:
-            logger.error("Error in batch get papers", exception=e)
-            return format_error_response(e)
+    papers = await _call_client_method(
+        "batch_get_papers",
+        paper_ids=paper_ids,
+        fields=actual_fields,
+    )
+    papers_data = _serialize_items(papers, actual_fields)
+    payload = {"data": papers_data, "count": len(papers_data)}
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("bulk_search_papers", "paper")
 @with_tool_instructions("bulk_search_papers")
 @mcp.tool()
+@mcp_error_handler(tool_name="bulk_search_papers")
 async def bulk_search_papers(
     query: str,
     fields: list[str] | None = Field(
@@ -1321,7 +1185,7 @@ async def bulk_search_papers(
         default=None,
         description="Sort order (relevance, citationCount, publicationDate)",
     ),
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Bulk search papers with advanced filtering (unlimited results).
 
@@ -1342,67 +1206,46 @@ async def bulk_search_papers(
         sort: Sort order - "relevance", "citationCount", or "publicationDate"
 
     Returns:
-        Dictionary containing:
-        - success: Whether the search succeeded
-        - data: Search results with papers matching all criteria
-        - error: Error details if search failed
+        JSON object with:
+        - data: list[Paper]
+        - count: int number of papers returned
 
     Next Steps:
         - Inspect aggregated hits and decide which query succeeded
         - Ask for focused summaries of the best-performing results
         - Iterate on the weaker queries with refined keywords
     """
-    with RequestContext():
-        try:
-            # Extract actual field value
-            actual_fields = extract_field_value(fields)
+    # Extract actual field value
+    actual_fields = extract_field_value(fields)
 
-            async with api_client:
-                papers = await api_client.search_papers_bulk(
-                    query=query,
-                    fields=actual_fields,
-                    publication_types=publication_types,
-                    fields_of_study=fields_of_study,
-                    year_range=year_range,
-                    venue=venue,
-                    min_citation_count=min_citation_count,
-                    open_access_pdf=open_access_pdf,
-                    sort=sort,
-                )
-
-            # Format response with field selection
-            papers_data = []
-            for paper in papers:
-                paper_dict = paper.model_dump(exclude_none=True)
-                # Apply field selection if requested
-                if actual_fields:
-                    paper_dict = apply_field_selection(paper_dict, actual_fields)
-                papers_data.append(paper_dict)
-
-            _record_search_insights(query, papers_data)
-
-            return {
-                "success": True,
-                "data": {
-                    "papers": papers_data,
-                    "count": len(papers),
-                },
-            }
-
-        except Exception as e:
-            logger.error("Error in bulk paper search", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+    papers = await _call_client_method(
+        "search_papers_bulk",
+        query=query,
+        fields=actual_fields,
+        publication_types=publication_types,
+        fields_of_study=fields_of_study,
+        year_range=year_range,
+        venue=venue,
+        min_citation_count=min_citation_count,
+        open_access_pdf=open_access_pdf,
+        sort=sort,
+    )
+    papers_data = _serialize_items(papers, actual_fields)
+    payload = {"data": papers_data, "count": len(papers_data)}
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("search_papers_match", "paper")
 @with_tool_instructions("search_papers_match")
 @mcp.tool()
+@mcp_error_handler(tool_name="search_papers_match")
 async def search_papers_match(
     title: str,
     fields: list[str] | None = Field(
         default=None,
         description="Fields to include in response (supports dot notation)",
     ),
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Search papers by title matching.
 
@@ -1414,56 +1257,36 @@ async def search_papers_match(
         fields: Optional list of fields to include, supports dot notation
 
     Returns:
-        Dictionary containing:
-        - success: Whether the search succeeded
-        - data: List of papers with matching titles
-        - error: Error details if search failed
+        JSON object with:
+        - data: list[Paper]
+        - count: int number of papers returned
 
     Next Steps:
         - Verify the matching titles to confirm precision
         - Request details on the closest matches for validation
         - Adjust the exact title or add identifiers if results are sparse
     """
-    with RequestContext():
-        try:
-            # Extract actual field value
-            actual_fields = extract_field_value(fields)
+    # Extract actual field value
+    actual_fields = extract_field_value(fields)
 
-            async with api_client:
-                papers = await api_client.search_papers_match(
-                    title=title, fields=actual_fields
-                )
-
-            # Format response with field selection
-            papers_data = []
-            for paper in papers:
-                paper_dict = paper.model_dump(exclude_none=True)
-                # Apply field selection if requested
-                if actual_fields:
-                    paper_dict = apply_field_selection(paper_dict, actual_fields)
-                papers_data.append(paper_dict)
-
-            _record_search_insights(title, papers_data)
-
-            return {
-                "success": True,
-                "data": {
-                    "papers": papers_data,
-                    "count": len(papers),
-                },
-            }
-
-        except Exception as e:
-            logger.error("Error in title search", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+    papers = await _call_client_method(
+        "search_papers_match",
+        title=title,
+        fields=actual_fields,
+    )
+    papers_data = _serialize_items(papers, actual_fields)
+    payload = {"data": papers_data, "count": len(papers_data)}
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("autocomplete_query", "prompts")
 @with_tool_instructions("autocomplete_query")
 @mcp.tool()
+@mcp_error_handler(tool_name="autocomplete_query")
 async def autocomplete_query(
     query: str,
     limit: int = Field(default=10, ge=1, le=50, description="Number of suggestions"),
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Get query autocompletion suggestions.
 
@@ -1474,43 +1297,33 @@ async def autocomplete_query(
         limit: Maximum number of suggestions to return (1-50, default: 10)
 
     Returns:
-        Dictionary containing:
-        - success: Whether the request succeeded
-        - data: List of suggested query completions
-        - error: Error details if request failed
+        JSON object with:
+        - data: list[str]
+        - count: int number of suggestions
 
     Next Steps:
         - Use the suggestions to craft a clearer search prompt
         - Ask for the pros and cons of the top suggested phrases
         - Run search_papers with the selected completion
     """
-    with RequestContext():
-        try:
-            async with api_client:
-                suggestions = await api_client.autocomplete_query(
-                    query=query, limit=limit
-                )
-
-            return {
-                "success": True,
-                "data": {
-                    "suggestions": suggestions,
-                    "count": len(suggestions),
-                },
-            }
-
-        except Exception as e:
-            logger.error("Error in query autocomplete", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+    suggestions = await _call_client_method(
+        "autocomplete_query",
+        query=query,
+        limit=limit,
+    )
+    payload = {"data": suggestions, "count": len(suggestions)}
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("search_snippets", "prompts")
 @with_tool_instructions("search_snippets")
 @mcp.tool()
+@mcp_error_handler(tool_name="search_snippets")
 async def search_snippets(
     query: str,
     limit: int = Field(default=10, ge=1, le=100, description="Number of snippets"),
     offset: int = Field(default=0, ge=0, description="Offset for pagination"),
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Search text snippets in papers.
 
@@ -1523,44 +1336,40 @@ async def search_snippets(
         offset: Pagination offset (default: 0)
 
     Returns:
-        Dictionary containing:
-        - success: Whether the search succeeded
-        - data: List of text snippets with context
-        - error: Error details if search failed
+        JSON object with:
+        - data: list[dict] snippets
+        - total: int total hits (from API)
+        - offset: int request offset
+        - limit: int page size
+        - has_more: bool whether more results are available
 
     Next Steps:
         - Read snippet contexts to judge relevance quickly
         - Ask for full paper details on the most compelling snippets
         - Consider refining keywords if noise remains high
     """
-    with RequestContext():
-        try:
-            async with api_client:
-                result = await api_client.search_snippets(
-                    query=query, limit=limit, offset=offset
-                )
-
-            return {
-                "success": True,
-                "data": {
-                    "snippets": result.data,
-                    "total": result.total,
-                    "offset": result.offset,
-                    "limit": result.limit,
-                    "has_more": result.has_more,
-                },
-            }
-
-        except Exception as e:
-            logger.error("Error in snippet search", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+    result = await _call_client_method(
+        "search_snippets",
+        query=query,
+        limit=limit,
+        offset=offset,
+    )
+    return json.dumps({
+        "data": result.data,
+        "total": result.total,
+        "offset": result.offset,
+        "limit": result.limit,
+        "has_more": result.has_more,
+    }, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("batch_get_authors", "author")
 @with_tool_instructions("batch_get_authors")
 @mcp.tool()
+@mcp_error_handler(tool_name="batch_get_authors")
 async def batch_get_authors(
     author_ids: list[str],
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Get multiple authors in a single request.
 
@@ -1571,55 +1380,34 @@ async def batch_get_authors(
         author_ids: List of Semantic Scholar author IDs (max 1000)
 
     Returns:
-        Dictionary containing:
-        - success: Whether the request succeeded
-        - data: List of author profiles with metrics
-        - error: Error details if request failed
+        JSON object with:
+        - data: list[Author]
+        - count: int number of authors returned
 
     Next Steps:
         - Confirm that each requested author profile is included
         - Ask for a comparative overview across these researchers
         - Plan next queries such as get_author_papers per person
     """
-    with RequestContext():
-        try:
-            validate_batch_size(author_ids, 1000)
-
-            async with api_client:
-                authors = await api_client.batch_get_authors(author_ids=author_ids)
-
-            return {
-                "success": True,
-                "data": {
-                    "authors": [
-                        author.model_dump(exclude_none=True) for author in authors
-                    ],
-                    "count": len(authors),
-                },
-            }
-
-        except ValidationError as e:
-            logger.error("Validation error in batch_get_authors", exception=e)
-            return {
-                "success": False,
-                "error": {
-                    "type": "validation_error",
-                    "message": str(e),
-                    "details": e.details,
-                },
-            }
-        except Exception as e:
-            logger.error("Error in batch get authors", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+    validate_batch_size(author_ids, 1000)
+    authors = await _call_client_method(
+        "batch_get_authors",
+        author_ids=author_ids,
+    )
+    authors_data = _serialize_items(authors)
+    payload = {"data": authors_data, "count": len(authors_data)}
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("get_recommendations_batch", "prompts")
 @with_tool_instructions("get_recommendations_batch")
 @mcp.tool()
+@mcp_error_handler(tool_name="get_recommendations_batch")
 async def get_recommendations_batch(
     positive_paper_ids: list[str],
     negative_paper_ids: list[str] | None = None,
     limit: int = 10,
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Get advanced recommendations based on positive and negative examples.
 
@@ -1633,43 +1421,31 @@ async def get_recommendations_batch(
         limit: Maximum number of recommendations to return (default: 10)
 
     Returns:
-        Dictionary containing:
-        - success: Whether the request succeeded
-        - data: List of recommended papers ranked by relevance
-        - error: Error details if request failed
+        JSON object with:
+        - data: list[Paper]
+        - count: int number of recommendations returned
 
     Next Steps:
         - Scan recommended sets for consensus picks
         - Ask for clusters or themes spanning the recommendations
         - Prioritize papers for closer reading or follow-up calls
     """
-    with RequestContext():
-        try:
-            async with api_client:
-                papers = await api_client.get_recommendations_batch(
-                    positive_paper_ids=positive_paper_ids,
-                    negative_paper_ids=negative_paper_ids,
-                    limit=limit,
-                )
-
-            return {
-                "success": True,
-                "data": {
-                    "recommendations": [
-                        paper.model_dump(exclude_none=True) for paper in papers
-                    ],
-                    "count": len(papers),
-                },
-            }
-
-        except Exception as e:
-            logger.error("Error getting advanced recommendations", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+    papers = await _call_client_method(
+        "get_recommendations_batch",
+        positive_paper_ids=positive_paper_ids,
+        negative_paper_ids=negative_paper_ids,
+        limit=limit,
+    )
+    recs = _serialize_items(papers)
+    payload = {"data": recs, "count": len(recs)}
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("get_dataset_releases", "dataset")
 @with_tool_instructions("get_dataset_releases")
 @mcp.tool()
-async def get_dataset_releases() -> dict[str, Any]:
+@mcp_error_handler(tool_name="get_dataset_releases")
+async def get_dataset_releases() -> ToolResult:
     """
     Get available dataset releases.
 
@@ -1677,37 +1453,26 @@ async def get_dataset_releases() -> dict[str, Any]:
     and release dates.
 
     Returns:
-        Dictionary containing:
-        - success: Whether the request succeeded
-        - data: List of available dataset releases with metadata
-        - error: Error details if request failed
+        JSON object with:
+        - data: list[dict] dataset releases
+        - count: int number of releases returned
 
     Next Steps:
         - Identify the release that matches your research needs
         - Ask for differences between adjacent releases if unsure
         - Fetch detailed metadata via get_dataset_info
     """
-    with RequestContext():
-        try:
-            async with api_client:
-                releases = await api_client.get_dataset_releases()
-
-            return {
-                "success": True,
-                "data": {
-                    "releases": releases,
-                    "count": len(releases),
-                },
-            }
-
-        except Exception as e:
-            logger.error("Error getting dataset releases", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+    releases = await _call_client_method("get_dataset_releases")
+    releases_data = _serialize_items(releases)
+    payload = {"data": releases_data, "count": len(releases_data)}
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("get_dataset_info", "dataset")
 @with_tool_instructions("get_dataset_info")
 @mcp.tool()
-async def get_dataset_info(release_id: str) -> dict[str, Any]:
+@mcp_error_handler(tool_name="get_dataset_info")
+async def get_dataset_info(release_id: str) -> ToolResult:
     """
     Get dataset release information.
 
@@ -1715,39 +1480,29 @@ async def get_dataset_info(release_id: str) -> dict[str, Any]:
     file counts, sizes, and content descriptions.
 
     Args:
-        release_id: Dataset release ID (from get_dataset_releases)
+    release_id: Dataset release ID (from get_dataset_releases)
 
     Returns:
-        Dictionary containing:
-        - success: Whether the request succeeded
-        - data: Dataset metadata including size, files, and coverage
-        - error: Error details if request failed
+        JSON object with:
+        - data: dict dataset metadata
 
     Next Steps:
         - Review dataset size, modality, and coverage carefully
         - Ask for implications or usage tips for this dataset
         - Proceed to get_dataset_download_links when ready
     """
-    with RequestContext():
-        try:
-            async with api_client:
-                info = await api_client.get_dataset_info(release_id=release_id)
-
-            return {
-                "success": True,
-                "data": info,
-            }
-
-        except Exception as e:
-            logger.error("Error getting dataset info", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+    info = await _call_client_method(
+        "get_dataset_info",
+        release_id=release_id,
+    )
+    return json.dumps({"data": _model_to_dict(info)}, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("get_dataset_download_links", "dataset")
 @with_tool_instructions("get_dataset_download_links")
 @mcp.tool()
-async def get_dataset_download_links(
-    release_id: str, dataset_name: str
-) -> dict[str, Any]:
+@mcp_error_handler(tool_name="get_dataset_download_links")
+async def get_dataset_download_links(release_id: str, dataset_name: str) -> ToolResult:
     """
     Get download links for a specific dataset.
 
@@ -1758,35 +1513,31 @@ async def get_dataset_download_links(
         dataset_name: Name of the dataset to download
 
     Returns:
-        Dictionary containing:
-        - success: Whether the request succeeded
-        - data: Download URLs and file information
-        - error: Error details if request failed
+        JSON object with:
+        - data: dict download information
 
     Next Steps:
         - Record the download URLs and any authentication notes
         - Ask for guidance on verifying file integrity
         - Plan storage or processing steps before downloading
     """
-    with RequestContext():
-        try:
-            async with api_client:
-                links = await api_client.get_dataset_download_links(
-                    release_id=release_id, dataset_name=dataset_name
-                )
-
-            return {
-                "success": True,
-                "data": links,
-            }
-
-        except Exception as e:
-            logger.error("Error getting dataset download links", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+    links = await _call_client_method(
+        "get_dataset_download_links",
+        release_id=release_id,
+        dataset_name=dataset_name,
+    )
+    # links is likely a mapping; convert if needed
+    try:
+        links_dict = _model_to_dict(links)  # if Pydantic model
+    except TypeError:
+        links_dict = links  # already a plain mapping
+    return json.dumps({"data": links_dict}, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("get_paper_fulltext", "pdf")
 @with_tool_instructions("get_paper_fulltext")
 @mcp.tool()
+@mcp_error_handler(tool_name="get_paper_fulltext")
 async def get_paper_fulltext(
     paper_id: str = Field(..., description="Semantic Scholar paper ID or DOI"),
     output_mode: str | None = Field(
@@ -1809,7 +1560,7 @@ async def get_paper_fulltext(
         default=False,
         description="Force re-download and regeneration of artifacts.",
     ),
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Download an open-access PDF and expose Markdown content to MCP clients.
 
@@ -1826,12 +1577,13 @@ async def get_paper_fulltext(
         force_refresh: Force re-download and regeneration of artifacts (default: False)
 
     Returns:
-        Dictionary containing:
-        - success: Whether the conversion succeeded
-        - content: Markdown text and/or chunks
-        - artifacts: File paths for cached PDF, Markdown, images
-        - metadata: Paper title, author, conversion stats
-        - error: Error details if conversion failed
+        JSON object with:
+        - data: {
+            paper: Basic paper metadata,
+            artifacts: paths for cached PDF/Markdown/chunks/images,
+            content: optional markdown/chunks,
+            metadata: conversion stats
+          }
 
     Next Steps:
         - Read the Markdown file: When available, use the Read tool with
@@ -1848,96 +1600,77 @@ async def get_paper_fulltext(
         - Leverage caching: Subsequent requests use cached artifacts unless
           force_refresh=true is specified
     """
-    with RequestContext():
-        try:
-            if config is None or api_client is None:
-                raise ValidationError(
-                    "Server configuration has not been initialized",
-                    field="config",
-                )
+    app_config = _require_config()
+    pdf_config = app_config.pdf_processing
+    if not pdf_config.enabled:
+        raise ValidationError(
+            "PDF processing is disabled in configuration",
+            field="pdf_processing.enabled",
+        )
 
-            pdf_config = config.pdf_processing
-            if not pdf_config.enabled:
-                raise ValidationError(
-                    "PDF processing is disabled in configuration",
-                    field="pdf_processing.enabled",
-                )
+    selected_mode = (output_mode or pdf_config.default_output_mode).lower()
+    valid_modes: set[str] = {"markdown", "chunks", "both"}
+    if selected_mode not in valid_modes:
+        raise ValidationError(
+            "output_mode must be one of 'markdown', 'chunks', or 'both'",
+            field="output_mode",
+            value=selected_mode,
+        )
 
-            selected_mode = (output_mode or pdf_config.default_output_mode).lower()
-            valid_modes: set[str] = {"markdown", "chunks", "both"}
-            if selected_mode not in valid_modes:
-                raise ValidationError(
-                    "output_mode must be one of 'markdown', 'chunks', or 'both'",
-                    field="output_mode",
-                    value=selected_mode,
-                )
+    typed_mode: OutputMode = cast(OutputMode, selected_mode)
 
-            typed_mode: OutputMode = cast(OutputMode, selected_mode)
+    async def _runner(client: SemanticScholarClient):
+        return await process_pdf_markdown(
+            paper_id=paper_id,
+            client=client,
+            app_config=app_config,
+            output_mode=typed_mode,
+            include_images=include_images,
+            max_pages=max_pages,
+            force_refresh=force_refresh,
+        )
+    result = await _with_api_client(_runner)
 
-            async with api_client:
-                result = await process_pdf_markdown(
-                    paper_id=paper_id,
-                    client=api_client,
-                    app_config=config,
-                    output_mode=typed_mode,
-                    include_images=include_images,
-                    max_pages=max_pages,
-                    force_refresh=force_refresh,
-                )
+    content: dict[str, Any] = {}
+    if result.markdown is not None:
+        content["markdown"] = result.markdown
+    if result.chunks is not None:
+        content["chunks"] = result.chunks
 
-            content: dict[str, Any] = {}
-            if result.markdown is not None:
-                content["markdown"] = result.markdown
-            if result.chunks is not None:
-                content["chunks"] = result.chunks
-
-            payload = {
-                "paper": {
-                    "paper_id": result.paper.paper_id,
-                    "title": result.paper.title,
-                    "year": result.paper.year,
-                    "venue": result.paper.venue,
-                    "authors": [author.name for author in result.paper.authors],
-                },
-                "artifacts": {
-                    "pdf_path": str(result.pdf_path),
-                    "markdown_path": str(result.markdown_path)
-                    if result.markdown_path
-                    else None,
-                    "chunks_path": str(result.chunks_path)
-                    if result.chunks_path
-                    else None,
-                    "images_dir": str(result.images_dir) if result.images_dir else None,
-                    "memory_path": str(result.memory_path)
-                    if result.memory_path
-                    else None,
-                },
-                "content": content,
-                "metadata": result.metadata,
-            }
-
-            return format_success_response(payload)
-
-        except (ValidationError, NotFoundError) as error:
-            logger.error("PDF to Markdown conversion failed", exception=error)
-            return format_error_response(error)
-        except Exception as error:
-            logger.error(
-                "Unexpected error while converting PDF to Markdown",
-                exception=error,
-            )
-            return format_error_response(error)
+    payload = {
+        "paper": {
+            "paper_id": result.paper.paper_id,
+            "title": result.paper.title,
+            "year": result.paper.year,
+            "venue": result.paper.venue,
+            "authors": [author.name for author in result.paper.authors],
+        },
+        "artifacts": {
+            "pdf_path": str(result.pdf_path),
+            "markdown_path": (
+                str(result.markdown_path) if result.markdown_path else None
+            ),
+            "chunks_path": str(result.chunks_path) if result.chunks_path else None,
+            "images_dir": str(result.images_dir) if result.images_dir else None,
+            "memory_path": str(result.memory_path) if result.memory_path else None,
+        },
+        "content": content,
+        "metadata": result.metadata,
+    }
+    return json.dumps({"data": payload}, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("get_paper_with_embeddings", "paper")
 @with_tool_instructions("get_paper_with_embeddings")
 @mcp.tool()
+@mcp_error_handler(tool_name="get_paper_with_embeddings")
 async def get_paper_with_embeddings(
     paper_id: str,
     embedding_type: str = Field(
         default="specter_v2",
         description="Embedding model type (specter_v1 or specter_v2)",
     ),
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Get paper with embedding vectors for semantic analysis.
 
@@ -1960,25 +1693,18 @@ async def get_paper_with_embeddings(
         - Ask for interpretation of key metadata linked to the vector
         - Combine with search_papers_with_embeddings to expand the set
     """
-    with RequestContext():
-        try:
-            async with api_client:
-                paper = await api_client.get_paper_with_embeddings(
-                    paper_id=paper_id, embedding_type=embedding_type
-                )
-
-            return {
-                "success": True,
-                "data": paper.model_dump(exclude_none=True),
-            }
-
-        except Exception as e:
-            logger.error("Error getting paper with embeddings", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+    paper = await _call_client_method(
+        "get_paper_with_embeddings",
+        paper_id=paper_id,
+        embedding_type=embedding_type,
+    )
+    return json.dumps({"data": _model_to_dict(paper)}, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("search_papers_with_embeddings", "paper")
 @with_tool_instructions("search_papers_with_embeddings")
 @mcp.tool()
+@mcp_error_handler(tool_name="search_papers_with_embeddings")
 async def search_papers_with_embeddings(
     query: str,
     embedding_type: str = Field(
@@ -1998,7 +1724,7 @@ async def search_papers_with_embeddings(
     min_citation_count: int | None = Field(
         default=None, description="Minimum citation count"
     ),
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Search papers with embeddings for semantic analysis.
 
@@ -2018,77 +1744,56 @@ async def search_papers_with_embeddings(
         min_citation_count: Minimum citation count threshold
 
     Returns:
-        Dictionary containing:
-        - success: Whether the search succeeded
-        - data: Search results with papers and embedding vectors
-        - error: Error details if search failed
+        JSON object with:
+        - data: list[Paper] results (with embeddings)
+        - total: int total hits (from API)
+        - offset: int request offset
+        - limit: int page size
+        - has_more: bool whether more results are available
 
     Next Steps:
         - Check each match score to gauge semantic proximity
         - Ask for a narrative summary of the closest matches
         - Feed chosen IDs into get_paper for full context
     """
-    with RequestContext():
-        try:
-            from .models import (
-                PublicationType,
-                SearchFilters,
-                SearchQuery,
-            )
+    filters = create_search_filters(
+        publication_types=publication_types,
+        fields_of_study=fields_of_study,
+        year_range=year_range,
+        min_citation_count=min_citation_count,
+    )
 
-            # Create filters
-            filters = None
-            if any(
-                [publication_types, fields_of_study, year_range, min_citation_count]
-            ):
-                filters = SearchFilters(
-                    publication_types=[
-                        PublicationType(pt) for pt in (publication_types or [])
-                    ],
-                    fields_of_study=fields_of_study,
-                    year_range=parse_year_range(year_range) if year_range else None,
-                    min_citation_count=min_citation_count,
-                )
+    search_query = SearchQuery(
+        query=query,
+        limit=extract_field_value(limit),
+        offset=extract_field_value(offset),
+        filters=filters,
+    )
 
-            search_query = SearchQuery(
-                query=query,
-                limit=extract_field_value(limit),
-                offset=extract_field_value(offset),
-                filters=filters,
-            )
-
-            async with api_client:
-                result = await api_client.search_papers_with_embeddings(
-                    query=search_query, embedding_type=embedding_type
-                )
-
-            papers_data = [paper.model_dump(exclude_none=True) for paper in result.data]
-
-            _record_search_insights(query, papers_data)
-
-            return {
-                "success": True,
-                "data": {
-                    "papers": papers_data,
-                    "total": result.total,
-                    "offset": result.offset,
-                    "limit": result.limit,
-                    "has_more": result.has_more,
-                },
-            }
-
-        except Exception as e:
-            logger.error("Error searching papers with embeddings", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+    result = await _call_client_method(
+        "search_papers_with_embeddings",
+        query=search_query,
+        embedding_type=embedding_type,
+    )
+    payload = {
+        "data": _serialize_items(result.data),
+        "total": result.total,
+        "offset": result.offset,
+        "limit": result.limit,
+        "has_more": result.has_more,
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("get_incremental_dataset_updates", "dataset")
 @with_tool_instructions("get_incremental_dataset_updates")
 @mcp.tool()
+@mcp_error_handler(tool_name="get_incremental_dataset_updates")
 async def get_incremental_dataset_updates(
     start_release_id: str,
     end_release_id: str,
     dataset_name: str,
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Get incremental dataset updates between releases.
 
@@ -2101,38 +1806,32 @@ async def get_incremental_dataset_updates(
         dataset_name: Name of the dataset
 
     Returns:
-        Dictionary containing:
-        - success: Whether the request succeeded
-        - data: Incremental update information and download links
-        - error: Error details if request failed
+        JSON object with:
+        - data: dict incremental update information
 
     Next Steps:
         - Examine update windows to schedule data refreshes
         - Ask for change summaries between the releases
         - Decide whether a full or incremental download is needed
     """
-    with RequestContext():
-        try:
-            async with api_client:
-                updates = await api_client.get_incremental_dataset_updates(
-                    start_release_id=start_release_id,
-                    end_release_id=end_release_id,
-                    dataset_name=dataset_name,
-                )
-
-            return {
-                "success": True,
-                "data": updates,
-            }
-
-        except Exception as e:
-            logger.error("Error getting incremental dataset updates", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+    updates = await _call_client_method(
+        "get_incremental_dataset_updates",
+        start_release_id=start_release_id,
+        end_release_id=end_release_id,
+        dataset_name=dataset_name,
+    )
+    try:
+        updates_dict = _model_to_dict(updates)
+    except TypeError:
+        updates_dict = updates
+    return json.dumps({"data": updates_dict}, ensure_ascii=False, indent=2)
 
 
+@inject_yaml_instructions("check_api_key_status", "prompts")
 @with_tool_instructions("check_api_key_status")
 @mcp.tool()
-async def check_api_key_status() -> dict[str, Any]:
+@mcp_error_handler(tool_name="check_api_key_status")
+async def check_api_key_status() -> ToolResult:
     """
     Check the API key configuration status and usage.
 
@@ -2140,10 +1839,8 @@ async def check_api_key_status() -> dict[str, Any]:
     rate limits and best practices for API usage.
 
     Returns:
-        Dictionary containing:
-        - success: Whether the check succeeded
+        JSON object with:
         - data: API key status, configuration guidance, and rate limit info
-        - error: Error details if check failed
 
     Next Steps:
         - Review the API key status and rate limit guidance provided
@@ -2154,84 +1851,69 @@ async def check_api_key_status() -> dict[str, Any]:
 
     from core.config import get_config
 
-    with RequestContext():
-        try:
-            # Check environment variable
-            api_key_env = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
+    # Check environment variable
+    api_key_env = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
 
-            # Get configuration
-            config = get_config()
-            api_key_configured = bool(config.semantic_scholar.api_key)
+    # Get configuration
+    config = get_config()
+    api_key_configured = bool(config.semantic_scholar.api_key)
 
-            # Get API client configuration
-            # Note: Free tier API keys have 1 req/s limit (same as anonymous)
-            # Premium API keys would have higher limits (e.g., 100 req/s)
-            rate_limit_info = {
-                "requests_per_second": 1,  # Free tier and anonymous both have 1 req/s
-                "daily_limit": (
-                    "Unlimited (1 req/s)" if api_key_configured else "5,000 requests"
-                ),
-                "mode": (
-                    "authenticated (free tier)" if api_key_configured else "anonymous"
-                ),
-            }
+    # Get API client configuration
+    # Note: Free tier API keys have 1 req/s limit (same as anonymous)
+    # Premium API keys would have higher limits (e.g., 100 req/s)
+    rate_limit_info = {
+        "requests_per_second": 1,  # Free tier and anonymous both have 1 req/s
+        "daily_limit": (
+            "Unlimited (1 req/s)" if api_key_configured else "5,000 requests"
+        ),
+        "mode": ("authenticated (free tier)" if api_key_configured else "anonymous"),
+    }
 
-            # Check actual API key value (masked)
-            api_key_preview = None
-            if api_key_configured and config.semantic_scholar.api_key:
-                # Show first 4 and last 4 characters only
-                # Get the actual string value from SecretStr
-                key_value = config.semantic_scholar.api_key.get_secret_value()
-                if len(key_value) > 10:
-                    api_key_preview = f"{key_value[:4]}...{key_value[-4:]}"
-                else:
-                    api_key_preview = "***SET***"
+    # Check actual API key value (masked)
+    api_key_preview = None
+    if api_key_configured and config.semantic_scholar.api_key:
+        # Show first 4 and last 4 characters only
+        # Get the actual string value from SecretStr
+        key_value = config.semantic_scholar.api_key.get_secret_value()
+        if len(key_value) > 10:
+            api_key_preview = f"{key_value[:4]}...{key_value[-4:]}"
+        else:
+            api_key_preview = "***SET***"
 
-            return {
-                "success": True,
-                "data": {
-                    "api_key_configured": api_key_configured,
-                    "api_key_source": (
-                        "environment_variable" if api_key_env else "not_set"
-                    ),
-                    "api_key_preview": api_key_preview,
-                    "rate_limits": rate_limit_info,
-                    "benefits_with_key": [
-                        "No daily request limit (unlimited requests at 1 req/s)",
-                        "More stable service (authenticated requests)",
-                        "Access to all endpoints",
-                        "Required for production applications",
-                    ],
-                    "current_status": (
-                        "API key is configured ✓"
-                        if api_key_configured
-                        else "No API key configured (using anonymous mode)"
-                    ),
-                    "recommendation": (
-                        None
-                        if api_key_configured
-                        else (
-                            "Consider adding SEMANTIC_SCHOLAR_API_KEY "
-                            "for better performance"
-                        )
-                    ),
-                },
-            }
+    payload = {
+        "api_key_configured": api_key_configured,
+        "api_key_source": "environment_variable" if api_key_env else "not_set",
+        "api_key_preview": api_key_preview,
+        "rate_limits": rate_limit_info,
+        "benefits_with_key": [
+            "No daily request limit (unlimited requests at 1 req/s)",
+            "More stable service (authenticated requests)",
+            "Access to all endpoints",
+            "Required for production applications",
+        ],
+        "current_status": (
+            "API key is configured ✓"
+            if api_key_configured
+            else "No API key configured (using anonymous mode)"
+        ),
+        "recommendation": (
+            None
+            if api_key_configured
+            else "Consider adding SEMANTIC_SCHOLAR_API_KEY for better performance"
+        ),
+    }
 
-        except Exception as e:
-            logger.error("Error checking API key status", exception=e)
-            return {"success": False, "error": {"type": "error", "message": str(e)}}
+    return _success_payload(payload)
 
 
-_TOOL_INSTRUCTION_KEYS = set(TOOL_INSTRUCTIONS.keys())
-_UNUSED_INSTRUCTION_KEYS = _TOOL_INSTRUCTION_KEYS - REGISTERED_TOOL_NAMES
+_UNUSED_INSTRUCTION_KEYS = TOOL_INSTRUCTION_KEYS - REGISTERED_TOOL_NAMES
 if _UNUSED_INSTRUCTION_KEYS:
     raise ValueError(
         "TOOL_INSTRUCTIONS contains keys that do not correspond to registered tools: "
         + ", ".join(sorted(_UNUSED_INSTRUCTION_KEYS))
     )
 
-_MISSING_INSTRUCTION_KEYS = REGISTERED_TOOL_NAMES - _TOOL_INSTRUCTION_KEYS
+_MISSING_INSTRUCTION_KEYS = REGISTERED_TOOL_NAMES - TOOL_INSTRUCTION_KEYS
 if _MISSING_INSTRUCTION_KEYS:
     logger.warning(
         "Missing explicit tool instructions; default instructions will be used",
@@ -2253,32 +1935,26 @@ async def get_paper_resource(paper_id: str) -> str:
     Returns:
         Formatted paper information
     """
-    try:
-        async with api_client:
-            paper = await api_client.get_paper(paper_id=paper_id)
+    paper = await _call_client_method("get_paper", paper_id=paper_id)
 
-        # Format paper as markdown
-        lines = [
-            f"# {paper.title}",
-            "",
-            f"**Authors**: {', '.join([a.name for a in paper.authors])}",
-            f"**Year**: {paper.year}",
-            f"**Venue**: {paper.venue or 'N/A'}",
-            f"**Citations**: {paper.citation_count}",
-            "",
-            "## Abstract",
-            paper.abstract or "No abstract available.",
-            "",
-        ]
+    # Format paper as markdown
+    lines = [
+        f"# {paper.title}",
+        "",
+        f"**Authors**: {', '.join([a.name for a in paper.authors])}",
+        f"**Year**: {paper.year}",
+        f"**Venue**: {paper.venue or 'N/A'}",
+        f"**Citations**: {paper.citation_count}",
+        "",
+        "## Abstract",
+        paper.abstract or "No abstract available.",
+        "",
+    ]
 
-        if paper.url:
-            lines.append(f"**URL**: {paper.url}")
+    if paper.url:
+        lines.append(f"**URL**: {paper.url}")
 
-        return "\n".join(lines)
-
-    except Exception as e:
-        logger.error(f"Error getting paper resource: {e}")
-        return f"Error: Could not retrieve paper {paper_id}"
+    return "\n".join(lines)
 
 
 @mcp.resource("authors/{author_id}")
@@ -2292,31 +1968,25 @@ async def get_author_resource(author_id: str) -> str:
     Returns:
         Formatted author information
     """
-    try:
-        async with api_client:
-            author = await api_client.get_author(author_id=author_id)
+    author = await _call_client_method("get_author", author_id=author_id)
 
-        # Format author as markdown
-        lines = [
-            f"# {author.name}",
-            "",
-            f"**H-Index**: {author.h_index or 'N/A'}",
-            f"**Citation Count**: {author.citation_count or 0}",
-            f"**Paper Count**: {author.paper_count or 0}",
-            "",
-        ]
+    # Format author as markdown
+    lines = [
+        f"# {author.name}",
+        "",
+        f"**H-Index**: {author.h_index or 'N/A'}",
+        f"**Citation Count**: {author.citation_count or 0}",
+        f"**Paper Count**: {author.paper_count or 0}",
+        "",
+    ]
 
-        if author.affiliations:
-            lines.append(f"**Affiliations**: {', '.join(author.affiliations)}")
+    if author.affiliations:
+        lines.append(f"**Affiliations**: {', '.join(author.affiliations)}")
 
-        if author.homepage:
-            lines.append(f"**Homepage**: {author.homepage}")
+    if author.homepage:
+        lines.append(f"**Homepage**: {author.homepage}")
 
-        return "\n".join(lines)
-
-    except Exception as e:
-        logger.error(f"Error getting author resource: {e}")
-        return f"Error: Could not retrieve author {author_id}"
+    return "\n".join(lines)
 
 
 # Prompt implementations
@@ -2493,8 +2163,8 @@ def main():
 
     # Start Dashboard if enabled
     global dashboard_thread, dashboard_port
-    if dashboard_api and config and config.dashboard.enabled:
-        try:
+    try:
+        if dashboard_api and config and config.dashboard.enabled:
             dashboard_thread, dashboard_port = dashboard_api.run_in_thread(
                 host=config.dashboard.host,
                 port=config.dashboard.port,
@@ -2509,8 +2179,8 @@ def main():
                 dashboard_url = f"http://{browser_host}:{dashboard_port}/dashboard/"
                 _launch_dashboard_browser(dashboard_url)
                 logger.info("Opening dashboard in default browser", url=dashboard_url)
-        except Exception as e:
-            logger.error(f"Failed to start Dashboard: {e}")
+    except Exception as e:
+        logger.error(f"Failed to start Dashboard: {e}")
 
     # Run the server
     try:

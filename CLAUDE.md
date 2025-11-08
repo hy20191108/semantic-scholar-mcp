@@ -5,6 +5,11 @@ Explain in japanese.
 Use Serena MCP.
 Use uv for Python tooling.
 
+## Response Schema & Instructions Policy
+
+- Return Schema: Every tool returns a compact JSON with top-level `data`. Paginated endpoints include `total`, `offset`, `limit`, `has_more`. Batch/recommendation endpoints expose `count`. Single-resource endpoints only return `data`.
+- Instruction SSOT: Tool guidance (Next Steps) is sourced from YAML in `src/semantic_scholar_mcp/resources/tool_instructions/**/*.yml`. Treat YAML as the single source of truth; Markdown templates exist for compatibility only.
+
 **CRITICAL**: Always update the "Important Information Tracking" section with:
 - Current PyPI version when checking releases
 - Any critical discoveries or issues found during development

@@ -1,0 +1,7 @@
+tool_name: get_recommendations_for_paper
+category: prompts
+description: ''
+next_steps:
+- Review recommended papers and note recurring concepts.
+- Ask for summaries or contrasts with the source paper.
+- Queue follow-up searches for promising recommendations.
