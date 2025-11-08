@@ -38,7 +38,14 @@ from core.types import (
     PaperId,
 )
 
-from .models import Author, Citation, PaginatedResponse, Paper, Reference, SearchQuery
+from .models import (
+    Author,
+    Citation,
+    PaginatedResponse,
+    Paper,
+    Reference,
+    SearchQuery,
+)
 
 T = TypeVar("T")
 
@@ -919,11 +926,24 @@ class SemanticScholarClient:
         return []
 
     async def search_papers_match(
-        self, title: str, fields: Fields | None = None
-    ) -> list[Paper]:
-        """Search papers by title matching."""
+        self, title: str, fields: Fields | None = None, limit: int = 10
+    ) -> PaginatedResponse[Paper]:
+        """Search papers by title matching.
+
+        Args:
+            title: Paper title to search for
+            fields: Optional list of fields to include
+            limit: Maximum number of results (default: 10)
+
+        Returns:
+            Paginated response with matched papers
+        """
         fields = fields or BASIC_PAPER_FIELDS
-        params = {"query": title, "fields": ",".join(fields)}
+        params = {
+            "query": title,
+            "fields": ",".join(fields),
+            "limit": limit,
+        }
 
         data = await self._make_request("GET", "/paper/search/match", params=params)
 
@@ -942,7 +962,12 @@ class SemanticScholarClient:
 
             papers.append(paper)
 
-        return papers
+        return PaginatedResponse[Paper](
+            data=papers,
+            total=data.get("total", len(papers)),
+            offset=data.get("offset", 0),
+            limit=limit,
+        )
 
     async def autocomplete_query(self, query: str, limit: int = 10) -> list[str]:
         """Get query autocompletion suggestions."""
@@ -954,18 +979,36 @@ class SemanticScholarClient:
     async def search_snippets(
         self,
         query: str,
-        fields: Fields | None = None,
+        snippet_fields: list[str] | None = None,
         limit: int = 10,
         offset: int = 0,
     ) -> PaginatedResponse[dict[str, Any]]:
-        """Search text snippets in papers."""
-        fields = fields or BASIC_PAPER_FIELDS
-        params = {
+        """Search text snippets in papers.
+
+        Args:
+            query: Search query string
+            snippet_fields: Optional snippet-specific fields
+                (e.g. ["snippet.text", "snippet.snippetKind"])
+            limit: Maximum number of results
+            offset: Offset for pagination
+
+        Returns:
+            Paginated response with snippet data (paper info always included)
+
+        Note:
+            Paper info (corpusId, title, authors, openAccessInfo) and score
+            are always returned. The snippet_fields parameter only controls
+            snippet-specific fields returned.
+        """
+        params: dict[str, Any] = {
             "query": query,
-            "fields": ",".join(fields),
             "limit": limit,
             "offset": offset,
         }
+
+        # Only add fields parameter if snippet-specific fields are provided
+        if snippet_fields:
+            params["fields"] = ",".join(snippet_fields)
 
         data = await self._make_request("GET", "/snippet/search", params=params)
         snippets = data.get("data", [])

@@ -177,12 +177,24 @@ class Paper(BaseModel):
     @field_validator("year")
     @classmethod
     def validate_year(cls, v):
-        """Validate publication year is reasonable."""
-        if v is not None:
+        """Validate publication year is reasonable.
+
+        Args:
+            v: Year value (int, None, or 0)
+
+        Returns:
+            Valid year or None
+
+        Note:
+            Invalid years (< 1900 or > current_year + 10) are converted to None
+            instead of raising an error, as API sometimes returns invalid data.
+        """
+        if v is not None and v != 0:
             current_year = datetime.now().year
-            if v < 1900 or v > current_year + 1:
-                raise ValueError("Invalid publication year")
-        return v
+            # Allow wider range and convert invalid to None instead of raising
+            if v < 1900 or v > current_year + 10:
+                return None  # Convert invalid year to None
+        return v if v != 0 else None  # Convert 0 to None
 
     venue: str | None = None
 
