@@ -1062,10 +1062,14 @@ class SemanticScholarClient:
             )
             return []
 
-    async def get_dataset_releases(self) -> list[dict[str, Any]]:
-        """Get available dataset releases."""
+    async def get_dataset_releases(self) -> list[str]:
+        """Get available dataset releases.
+
+        Returns:
+            List of release IDs (e.g., ['2022-05-10', '2022-05-17', ...])
+        """
         data = await self._make_request("GET", "/datasets/v1/release/")
-        # API returns a list directly, not a dict with "releases" key
+        # API returns a list of release ID strings directly
         return data if isinstance(data, list) else []
 
     async def get_dataset_info(self, release_id: str) -> dict[str, Any]:
