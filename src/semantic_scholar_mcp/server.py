@@ -441,9 +441,7 @@ TOOL_INSTRUCTION_KEYS = set(TOOL_INSTRUCTIONS.keys())
 REGISTERED_TOOL_NAMES: set[str] = set()
 
 
-def _inject_instructions(
-    result: Any, instruction_text: str
-) -> Any:
+def _inject_instructions(result: Any, instruction_text: str) -> Any:
     """Attach instructions to successful tool responses."""
 
     # If the tool returned a JSON string, try to inject into the parsed object
@@ -568,18 +566,18 @@ def with_tool_instructions(tool_name: str) -> Callable[[ToolCoroutine], ToolCoro
         update_tool_description()
 
         @wraps(func)
-        async def async_wrapper(
-            *args: P.args, **kwargs: P.kwargs
-        ) -> Any:
+        async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> Any:
             start = perf_counter()
             result: Any
             success_flag = False
 
             try:
                 result = await func(*args, **kwargs)
-                success_flag = bool(
-                    result.get("success", True)
-                ) if isinstance(result, MutableMapping) else True
+                success_flag = (
+                    bool(result.get("success", True))
+                    if isinstance(result, MutableMapping)
+                    else True
+                )
             except Exception:
                 if dashboard_stats:
                     dashboard_stats.record_tool_call(
@@ -755,12 +753,12 @@ async def get_paper(
     actual_fields = extract_field_value(fields)
 
     paper = await _call_client_method(
-            "get_paper",
-            paper_id=paper_id,
-            fields=actual_fields,
-            include_citations=include_citations,
-            include_references=include_references,
-        )
+        "get_paper",
+        paper_id=paper_id,
+        fields=actual_fields,
+        include_citations=include_citations,
+        include_references=include_references,
+    )
     paper_dict = _model_to_dict(paper)
     if actual_fields:
         paper_dict = apply_field_selection(paper_dict, actual_fields)
@@ -808,10 +806,10 @@ async def get_paper_citations(
 
     citations = await _call_client_method(
         "get_paper_citations",
-            paper_id=paper_id,
-            limit=actual_limit,
-            offset=actual_offset,
-        )
+        paper_id=paper_id,
+        limit=actual_limit,
+        offset=actual_offset,
+    )
     citations_data = _serialize_items(citations)
     payload = {
         "data": citations_data,
@@ -860,10 +858,10 @@ async def get_paper_references(
 
     references = await _call_client_method(
         "get_paper_references",
-            paper_id=paper_id,
-            limit=actual_limit,
-            offset=actual_offset,
-        )
+        paper_id=paper_id,
+        limit=actual_limit,
+        offset=actual_offset,
+    )
     references_data = _serialize_items(references)
     payload = {
         "data": references_data,
@@ -916,18 +914,22 @@ async def get_paper_authors(
 
     result = await _call_client_method(
         "get_paper_authors",
-            paper_id=paper_id,
-            limit=actual_limit,
-            offset=actual_offset,
-        )
+        paper_id=paper_id,
+        limit=actual_limit,
+        offset=actual_offset,
+    )
     authors_data = _serialize_items(result.data)
-    return json.dumps({
-        "data": authors_data,
-        "total": result.total,
-        "offset": result.offset,
-        "limit": result.limit,
-        "has_more": result.has_more,
-    }, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {
+            "data": authors_data,
+            "total": result.total,
+            "offset": result.offset,
+            "limit": result.limit,
+            "has_more": result.has_more,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 @inject_yaml_instructions("get_author", "author")
@@ -1002,13 +1004,17 @@ async def get_author_papers(
         offset=offset,
     )
     papers_data = _serialize_items(result.data)
-    return json.dumps({
-        "data": papers_data,
-        "total": result.total,
-        "offset": result.offset,
-        "limit": result.limit,
-        "has_more": result.has_more,
-    }, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {
+            "data": papers_data,
+            "total": result.total,
+            "offset": result.offset,
+            "limit": result.limit,
+            "has_more": result.has_more,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 @inject_yaml_instructions("search_authors", "author")
@@ -1056,13 +1062,17 @@ async def search_authors(
         offset=actual_offset,
     )
     authors_data = _serialize_items(result.data)
-    return json.dumps({
-        "data": authors_data,
-        "total": result.total,
-        "offset": result.offset,
-        "limit": result.limit,
-        "has_more": result.has_more,
-    }, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {
+            "data": authors_data,
+            "total": result.total,
+            "offset": result.offset,
+            "limit": result.limit,
+            "has_more": result.has_more,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 @inject_yaml_instructions("get_recommendations_for_paper", "prompts")
@@ -1354,13 +1364,17 @@ async def search_snippets(
         limit=limit,
         offset=offset,
     )
-    return json.dumps({
-        "data": result.data,
-        "total": result.total,
-        "offset": result.offset,
-        "limit": result.limit,
-        "has_more": result.has_more,
-    }, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {
+            "data": result.data,
+            "total": result.total,
+            "offset": result.offset,
+            "limit": result.limit,
+            "has_more": result.has_more,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 @inject_yaml_instructions("batch_get_authors", "author")
@@ -1629,6 +1643,7 @@ async def get_paper_fulltext(
             max_pages=max_pages,
             force_refresh=force_refresh,
         )
+
     result = await _with_api_client(_runner)
 
     content: dict[str, Any] = {}
