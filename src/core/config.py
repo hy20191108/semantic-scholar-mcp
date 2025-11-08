@@ -80,12 +80,24 @@ class CircuitBreakerConfig(BaseModel):
     )
 
 
-class SemanticScholarConfig(BaseModel):
-    """Semantic Scholar API configuration."""
+class SemanticScholarConfig(BaseSettings):
+    """Semantic Scholar API configuration.
+
+    Automatically loads settings from environment variables.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
     base_url: str = "https://api.semanticscholar.org/graph/v1"
     api_key: SecretStr | None = Field(
-        default=None, json_schema_extra={"env": "SEMANTIC_SCHOLAR_API_KEY"}
+        default=None,
+        alias="SEMANTIC_SCHOLAR_API_KEY",
+        validation_alias="SEMANTIC_SCHOLAR_API_KEY",
     )
     timeout: float = Field(default=30.0, gt=0)
     max_connections: int = Field(default=100, ge=1)
