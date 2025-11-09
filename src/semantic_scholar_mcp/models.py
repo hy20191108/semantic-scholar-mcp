@@ -492,11 +492,6 @@ class PaginatedResponse(BaseModel, Generic[T]):
             return False
         return (self.offset + self.limit) < self.total
 
-    @property
-    def has_more(self) -> bool:
-        """Check if there are more items available."""
-        return (self.offset + self.limit) < self.total
-
 
 # =============================================================================
 # DATASET MODELS
