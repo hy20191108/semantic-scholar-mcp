@@ -43,7 +43,7 @@ def main():
     ]
 
     print("\nFixing indentation...")
-    for line_num, indent_spaces in fixes:
+    for line_num, _indent_spaces in fixes:
         if line_num <= len(lines):
             line_idx = line_num - 1
             # Check if line needs fixing (starts with too many spaces)

@@ -56,7 +56,7 @@ def main():
     # Find the end of imports
     import_end = 0
     for i, line in enumerate(new_lines):
-        if line.startswith("from ") or line.startswith("import "):
+        if line.startswith(("from ", "import ")):
             import_end = i
 
     # Insert after imports

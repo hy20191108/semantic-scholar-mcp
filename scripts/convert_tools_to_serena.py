@@ -92,9 +92,7 @@ def find_function_in_source(source: str, func_name: str) -> tuple[int, int] | No
             line
             and not line[0].isspace()
             and (
-                line.startswith("@")
-                or line.startswith("async def")
-                or line.startswith("def")
+                line.startswith(("@", "async def", "def"))
             )
         ):
             end_line = i
@@ -123,10 +121,9 @@ def transform_tool_function(source_lines: list[str], tool: ToolInfo) -> list[str
     inside_except = False
     inside_request_context = False
     context_indent = 0
-    try_indent = 0
     skip_lines = 0
 
-    for i, line in enumerate(source_lines):
+    for _i, line in enumerate(source_lines):
         if skip_lines > 0:
             skip_lines -= 1
             continue
@@ -157,7 +154,7 @@ def transform_tool_function(source_lines: list[str], tool: ToolInfo) -> list[str
         if line.strip() == "try:":
             if inside_request_context:
                 inside_try = True
-                try_indent = len(line) - len(line.lstrip())
+                len(line) - len(line.lstrip())
                 continue
 
         # 6. Skip except blocks entirely
