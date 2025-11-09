@@ -93,16 +93,16 @@ class PublicationVenue(BaseModel):
 class TLDR(BaseModel):
     """TL;DR summary of a paper."""
 
-    text: str
+    text: str | None = None
     model: str | None = None
 
     @field_validator("text")
     @classmethod
     def validate_text(cls, v):
         """Validate TLDR text is not empty."""
-        if not v or not v.strip():
+        if v is not None and (not v or not v.strip()):
             raise ValueError("TLDR text cannot be empty")
-        return v.strip()
+        return v.strip() if v else None
 
 
 class OpenAccessPdf(BaseModel):
@@ -272,6 +272,15 @@ class Paper(BaseModel):
 
     # Additional fields
     fields_of_study: list[str] = Field(default_factory=list, alias="fieldsOfStudy")
+
+    @field_validator("fields_of_study", mode="before")
+    @classmethod
+    def validate_fields_of_study(cls, v):
+        """Convert fields_of_study to list if None."""
+        if v is None:
+            return []
+        return v
+
     tldr: TLDR | None = None
     is_open_access: bool = Field(False, alias="isOpenAccess")
     open_access_pdf: OpenAccessPdf | None = Field(None, alias="openAccessPdf")

@@ -43,7 +43,6 @@ from .models import (
     SearchQuery,
 )
 from .pdf_processor import OutputMode
-from .pdf_processor import get_paper_fulltext as process_pdf_markdown
 from .utils import (
     apply_field_selection,
     create_search_filters,
@@ -53,7 +52,7 @@ from .utils import (
 
 # Type definitions for Serena compliance
 TResult = TypeVar("TResult")
-ToolResult = dict[str, Any]  # Type alias for tool results
+ToolResult = str  # Type alias for tool results (Serena-style string responses)
 logger = get_logger(__name__)
 
 # Initial MCP instructions (visible to MCP clients that honor server instructions)
@@ -86,6 +85,8 @@ dashboard_log_handler: logging.Handler | None = None
 async def execute_api_with_error_handling(operation_name: str, operation_func):
     """Execute API operation with standardized error handling."""
     try:
+        if api_client is None:
+            raise RuntimeError("API client is not initialized")
         async with api_client:
             return await operation_func()
     except Exception as e:
@@ -158,25 +159,40 @@ def _model_to_dict(payload: Any) -> dict[str, Any]:
     """Convert Pydantic models or mappings to plain dictionaries."""
 
     if hasattr(payload, "model_dump"):
-        return cast(dict[str, Any], payload.model_dump(exclude_none=True))
+        # Try different combinations for compatibility with various
+        # Pydantic versions and mocks
+        try:
+            return cast(
+                dict[str, Any],
+                payload.model_dump(mode="json", exclude_none=True),
+            )
+        except TypeError:
+            try:
+                return cast(dict[str, Any], payload.model_dump(exclude_none=True))
+            except TypeError:
+                # Fallback for basic mock objects that only have
+                # model_dump() without parameters
+                return cast(dict[str, Any], payload.model_dump())
     if isinstance(payload, MutableMapping):
         return dict(payload)
     raise TypeError(f"Unsupported payload type: {type(payload)!r}")
 
 
-def _success_payload(data: Any, **extra: Any) -> ToolResult:
+def _success_payload(data: Any, **extra: Any) -> str:
     """Create a standard success response for MCP tools."""
+    import json
 
-    payload: ToolResult = {"success": True, "data": data}
+    payload = {"success": True, "data": data}
     if extra:
         payload.update(extra)
-    return payload
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-def _validation_error_payload(exc: ValidationError) -> ToolResult:
+def _validation_error_payload(exc: ValidationError) -> str:
     """Format validation errors consistently across tools."""
+    import json
 
-    return {
+    payload = {
         "success": False,
         "error": {
             "type": "validation_error",
@@ -184,6 +200,7 @@ def _validation_error_payload(exc: ValidationError) -> ToolResult:
             "details": getattr(exc, "details", None),
         },
     }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def _serialize_items(
@@ -633,7 +650,7 @@ async def search_papers(
         default=None,
         description="Fields to include in response (supports dot notation)",
     ),
-) -> ToolResult:
+) -> str:
     """
     Search Semantic Scholar papers with optional filters.
 
@@ -738,7 +755,7 @@ async def get_paper(
     include_references: bool = Field(
         default=False, description="Include reference details"
     ),
-) -> ToolResult:
+) -> str:
     """
     Retrieve detailed information about a specific paper.
 
@@ -788,7 +805,7 @@ async def get_paper_citations(
         description="Number of citations to return (max 9999)",
     ),
     offset: int = Field(default=0, ge=0, description="Offset for pagination"),
-) -> ToolResult:
+) -> str:
     """
     Get citations for a specific paper.
 
@@ -842,7 +859,7 @@ async def get_paper_references(
         default=100, ge=1, le=1000, description="Number of references to return"
     ),
     offset: int = Field(default=0, ge=0, description="Offset for pagination"),
-) -> ToolResult:
+) -> str:
     """
     Get references for a specific paper.
 
@@ -874,7 +891,8 @@ async def get_paper_references(
         limit=actual_limit,
         offset=actual_offset,
     )
-    references_data = _serialize_items(references.data)
+    # Handle None or empty data gracefully
+    references_data = _serialize_items(references.data or [])
     payload = {
         "data": references_data,
         "total": references.total,
@@ -896,7 +914,7 @@ async def get_paper_authors(
         default=100, ge=1, le=1000, description="Number of authors to return"
     ),
     offset: int = Field(default=0, ge=0, description="Offset for pagination"),
-) -> ToolResult:
+) -> str:
     """
     Get detailed author information for a specific paper.
 
@@ -947,7 +965,7 @@ async def get_paper_authors(
 @with_tool_instructions("get_author")
 @mcp.tool()
 @mcp_error_handler(tool_name="get_author")
-async def get_author(author_id: str) -> ToolResult:
+async def get_author(author_id: str) -> str:
     """
     Get detailed information about an author.
 
@@ -980,7 +998,7 @@ async def get_author_papers(
         default=100, ge=1, le=1000, description="Number of papers to return"
     ),
     offset: int = Field(default=0, ge=0, description="Offset for pagination"),
-) -> ToolResult:
+) -> str:
     """
     Get papers by a specific author.
 
@@ -1035,7 +1053,7 @@ async def search_authors(
         default=10, ge=1, le=100, description="Number of results to return"
     ),
     offset: int = Field(default=0, ge=0, description="Offset for pagination"),
-) -> ToolResult:
+) -> str:
     """
     Search for authors by name.
 
@@ -1095,7 +1113,7 @@ async def get_recommendations_for_paper(
     fields: list[str] | None = Field(
         default=None, description="Fields to include in response"
     ),
-) -> ToolResult:
+) -> str:
     """
     Get paper recommendations based on a given paper.
 
@@ -1138,7 +1156,7 @@ async def batch_get_papers(
         default=None,
         description="Fields to include in response (supports dot notation)",
     ),
-) -> ToolResult:
+) -> str:
     """
     Get multiple papers in a single request.
 
@@ -1203,7 +1221,7 @@ async def bulk_search_papers(
         default=None,
         description="Sort order (relevance, citationCount, publicationDate)",
     ),
-) -> ToolResult:
+) -> str:
     """
     Bulk search papers with advanced filtering (unlimited results).
 
@@ -1263,7 +1281,7 @@ async def search_papers_match(
         default=None,
         description="Fields to include in response (supports dot notation)",
     ),
-) -> ToolResult:
+) -> str:
     """
     Search papers by title matching.
 
@@ -1310,7 +1328,7 @@ async def search_papers_match(
 async def autocomplete_query(
     query: str,
     limit: int = Field(default=10, ge=1, le=50, description="Number of suggestions"),
-) -> ToolResult:
+) -> str:
     """
     Get query autocompletion suggestions.
 
@@ -1347,7 +1365,7 @@ async def search_snippets(
     query: str,
     limit: int = Field(default=10, ge=1, le=100, description="Number of snippets"),
     offset: int = Field(default=0, ge=0, description="Offset for pagination"),
-) -> ToolResult:
+) -> str:
     """
     Search text snippets in papers.
 
@@ -1397,7 +1415,7 @@ async def search_snippets(
 @mcp_error_handler(tool_name="batch_get_authors")
 async def batch_get_authors(
     author_ids: list[str],
-) -> ToolResult:
+) -> str:
     """
     Get multiple authors in a single request.
 
@@ -1435,7 +1453,7 @@ async def get_recommendations_batch(
     positive_paper_ids: list[str],
     negative_paper_ids: list[str] | None = None,
     limit: int = 10,
-) -> ToolResult:
+) -> str:
     """
     Get advanced recommendations based on positive and negative examples.
 
@@ -1473,7 +1491,7 @@ async def get_recommendations_batch(
 @with_tool_instructions("get_dataset_releases")
 @mcp.tool()
 @mcp_error_handler(tool_name="get_dataset_releases")
-async def get_dataset_releases() -> ToolResult:
+async def get_dataset_releases() -> str:
     """
     Get available dataset releases.
 
@@ -1500,7 +1518,7 @@ async def get_dataset_releases() -> ToolResult:
 @with_tool_instructions("get_dataset_info")
 @mcp.tool()
 @mcp_error_handler(tool_name="get_dataset_info")
-async def get_dataset_info(release_id: str) -> ToolResult:
+async def get_dataset_info(release_id: str) -> str:
     """
     Get dataset release information.
 
@@ -1530,7 +1548,7 @@ async def get_dataset_info(release_id: str) -> ToolResult:
 @with_tool_instructions("get_dataset_download_links")
 @mcp.tool()
 @mcp_error_handler(tool_name="get_dataset_download_links")
-async def get_dataset_download_links(release_id: str, dataset_name: str) -> ToolResult:
+async def get_dataset_download_links(release_id: str, dataset_name: str) -> str:
     """
     Get download links for a specific dataset.
 
@@ -1588,7 +1606,7 @@ async def get_paper_fulltext(
         default=False,
         description="Force re-download and regeneration of artifacts.",
     ),
-) -> ToolResult:
+) -> str:
     """
     Download an open-access PDF and expose Markdown content to MCP clients.
 
@@ -1636,7 +1654,8 @@ async def get_paper_fulltext(
             field="pdf_processing.enabled",
         )
 
-    selected_mode = (output_mode or pdf_config.default_output_mode).lower()
+    actual_output_mode = extract_field_value(output_mode)
+    selected_mode = (actual_output_mode or pdf_config.default_output_mode).lower()
     valid_modes: set[str] = {"markdown", "chunks", "both"}
     if selected_mode not in valid_modes:
         raise ValidationError(
@@ -1648,14 +1667,16 @@ async def get_paper_fulltext(
     typed_mode: OutputMode = cast(OutputMode, selected_mode)
 
     async def _runner(client: SemanticScholarClient):
-        return await process_pdf_markdown(
+        from .pdf_processor import get_paper_fulltext as pdf_get_paper_fulltext
+
+        return await pdf_get_paper_fulltext(
             paper_id=paper_id,
             client=client,
             app_config=app_config,
             output_mode=typed_mode,
-            include_images=include_images,
-            max_pages=max_pages,
-            force_refresh=force_refresh,
+            include_images=extract_field_value(include_images),
+            max_pages=extract_field_value(max_pages),
+            force_refresh=extract_field_value(force_refresh),
         )
 
     result = await _with_api_client(_runner)
@@ -1699,7 +1720,7 @@ async def get_paper_with_embeddings(
         default="specter_v2",
         description="Embedding model type (specter_v1 or specter_v2)",
     ),
-) -> ToolResult:
+) -> str:
     """
     Get paper with embedding vectors for semantic analysis.
 
@@ -1753,7 +1774,7 @@ async def search_papers_with_embeddings(
     min_citation_count: int | None = Field(
         default=None, description="Minimum citation count"
     ),
-) -> ToolResult:
+) -> str:
     """
     Search papers with embeddings for semantic analysis.
 
@@ -1822,7 +1843,7 @@ async def get_incremental_dataset_updates(
     start_release_id: str,
     end_release_id: str,
     dataset_name: str,
-) -> ToolResult:
+) -> str:
     """
     Get incremental dataset updates between releases.
 
@@ -1860,7 +1881,7 @@ async def get_incremental_dataset_updates(
 @with_tool_instructions("check_api_key_status")
 @mcp.tool()
 @mcp_error_handler(tool_name="check_api_key_status")
-async def check_api_key_status() -> ToolResult:
+async def check_api_key_status() -> str:
     """
     Check the API key configuration status and usage.
 
@@ -1876,6 +1897,7 @@ async def check_api_key_status() -> ToolResult:
         - Set or rotate SEMANTIC_SCHOLAR_API_KEY if configuration is missing
         - Ask for usage recommendations or next steps after updating credentials
     """
+    import json
     import os
 
     from core.config import get_config
@@ -1932,7 +1954,7 @@ async def check_api_key_status() -> ToolResult:
         ),
     }
 
-    return _success_payload(payload)
+    return json.dumps({"success": True, "data": payload}, ensure_ascii=False, indent=2)
 
 
 _UNUSED_INSTRUCTION_KEYS = TOOL_INSTRUCTION_KEYS - REGISTERED_TOOL_NAMES

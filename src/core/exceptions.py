@@ -227,8 +227,11 @@ class RateLimitError(SemanticScholarMCPError):
             reset_time: When rate limit resets
             **kwargs: Additional arguments for base exception
         """
+        self.retry_after = retry_after
+        self.daily_limit = kwargs.pop("daily_limit", None)
+        self.requests_per_second = kwargs.pop("requests_per_second", None)
+
         details = kwargs.pop("details", {})
-        kwargs.pop("error_code", None)  # Remove any existing error_code
 
         if retry_after is not None:
             details["retry_after"] = retry_after
@@ -239,10 +242,12 @@ class RateLimitError(SemanticScholarMCPError):
         if reset_time:
             details["reset_time"] = reset_time.isoformat()
 
+        if "error_code" not in kwargs:
+            kwargs["error_code"] = ErrorCode.RATE_LIMIT_EXCEEDED
+
         super().__init__(
             message=message,
             details=details,
-            error_code=ErrorCode.RATE_LIMIT_EXCEEDED,
             **kwargs,
         )
 
