@@ -1,0 +1,7 @@
+tool_name: get_incremental_dataset_updates
+category: dataset
+description: ''
+next_steps:
+- Examine update windows to schedule data refreshes.
+- Ask for change summaries between the releases.
+- Decide whether a full or incremental download is needed.

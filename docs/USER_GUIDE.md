@@ -400,6 +400,51 @@ async def batch_analysis():
         print(f"{paper.title}: {paper.citation_count} citations")
 ```
 
+### 3. PDF to Markdown Conversion
+
+Use the `get_paper_fulltext` tool to fetch an open-access paper's PDF and convert it to Markdown or semantic chunks. The server caches artifacts on disk, so subsequent requests reuse the existing conversion unless you set `force_refresh=true`.
+
+**Available parameters**
+- `paper_id` (required): Semantic Scholar paper ID, arXiv ID, or DOI
+- `output_mode`: `markdown`, `chunks`, or `both` (defaults to server config)
+- `include_images`: Extract images to a local directory (`False` by default)
+- `max_pages`: Limit the number of pages to process
+- `force_refresh`: Re-download and re-convert even if cached artifacts exist
+
+**Example (Claude prompt)**
+```
+Convert the PDF for paper 649def34f8be52c8b66281af98ae884c09aef38b into Markdown and chunk summaries.
+```
+
+**Example (CLI invocation)**
+```bash
+uv run semantic-scholar-mcp --tool get_paper_fulltext --argument '{
+   "paper_id": "649def34f8be52c8b66281af98ae884c09aef38b",
+   "output_mode": "both",
+   "include_images": true
+}'
+```
+
+**Example (Chunk-only response)**
+```bash
+uv run semantic-scholar-mcp --tool get_paper_fulltext --argument '{
+   "paper_id": "649def34f8be52c8b66281af98ae884c09aef38b",
+   "output_mode": "chunks"
+}'
+```
+
+> ⚠️ Image extraction uses PyMuPDF4LLM's `image_path` option. The generated files are stored under `.semantic_scholar_mcp/artifacts/markdown/` alongside the Markdown and chunk JSON artifacts.
+
+**TTL & Cleanup**
+- Configure automatic expiration via `PDF_PROCESSING__ARTIFACT_TTL_HOURS` (set in your `.env` or environment variables).
+- Trigger manual cleanup when needed:
+  ```bash
+  uv run python -c "from semantic_scholar_mcp.pdf_processor import cleanup_pdf_cache; cleanup_pdf_cache()"
+  ```
+- Cleanup removes expired PDFs, Markdown, chunk JSON, and extracted images to keep the cache tidy.
+
+> ℹ️ PyMuPDF4LLM is AGPL licensed. Review [commercial licensing guidance](https://pymupdf.readthedocs.io/en/latest/faq.html#what-are-the-licensing-options) if you distribute outputs or build closed-source tooling on top of the PDF conversion feature.
+
 ### 3. Citation Network Analysis
 
 Explore citation relationships:

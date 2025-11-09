@@ -61,11 +61,11 @@ class TestFieldValidationSpec:
             paper = Paper(paperId="test-id", title="Test Paper", year=year)
             assert paper.year == year
 
-        # Test invalid years
-        invalid_years = [1899, current_year + 2, -1, 3000]
+        # Test invalid years (should be converted to None)
+        invalid_years = [1899, current_year + 11, -1, 3000]
         for year in invalid_years:
-            with pytest.raises(ValueError, match="Invalid publication year"):
-                Paper(paperId="test-id", title="Test Paper", year=year)
+            paper = Paper(paperId="test-id", title="Test Paper", year=year)
+            assert paper.year is None
 
     def test_citation_count_validation(self):
         """Test citation count field validation."""

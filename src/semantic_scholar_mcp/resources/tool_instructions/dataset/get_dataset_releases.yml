@@ -1,0 +1,7 @@
+tool_name: get_dataset_releases
+category: dataset
+description: ''
+next_steps:
+- Identify the release that matches your research needs.
+- Ask for differences between adjacent releases if unsure.
+- Fetch detailed metadata via `get_dataset_info`.

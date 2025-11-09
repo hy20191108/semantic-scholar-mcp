@@ -9,7 +9,7 @@ from typing import Any, TypeVar
 
 import httpx
 
-from core.config import SemanticScholarConfig
+from core.config import RateLimitConfig, RetryConfig, SemanticScholarConfig
 from core.exceptions import (
     CircuitBreakerError,
     NetworkError,
@@ -38,7 +38,14 @@ from core.types import (
     PaperId,
 )
 
-from .models import Author, Citation, PaginatedResponse, Paper, Reference, SearchQuery
+from .models import (
+    Author,
+    Citation,
+    PaginatedResponse,
+    Paper,
+    Reference,
+    SearchQuery,
+)
 
 T = TypeVar("T")
 
@@ -285,14 +292,25 @@ class SemanticScholarClient:
     def __init__(
         self,
         config: SemanticScholarConfig,
+        rate_limit_config: RateLimitConfig | None = None,
+        retry_config: RetryConfig | None = None,
         logger: ILogger | None = None,
         cache: ICache | None = None,
         metrics: IMetricsCollector | None = None,
+        **legacy_kwargs,
     ):
         self.config = config
         self.logger = logger or get_logger(__name__)
         self.cache = cache
         self.metrics = metrics
+        self._rate_limit_config = rate_limit_config
+        self._retry_config = retry_config
+
+        if legacy_kwargs:
+            self.logger.debug(
+                "Ignoring deprecated SemanticScholarClient kwargs",
+                ignored_arguments=list(legacy_kwargs.keys()),
+            )
 
         # Initialize resilience components
         self.circuit_breaker = CircuitBreaker(
@@ -305,23 +323,53 @@ class SemanticScholarClient:
             logger=self.logger.with_context(component="circuit_breaker"),
         )
 
+        # Resolve rate limit configuration. Always allow explicit overrides but
+        # fall back to sensible defaults based on whether an API key is present.
+        resolved_rate_config = self._rate_limit_config
+        if resolved_rate_config is None and hasattr(config, "rate_limit"):
+            resolved_rate_config = config.rate_limit
+
+        api_key_present = bool(
+            getattr(config, "api_key", None) and config.api_key.get_secret_value()
+        )
+
+        # Semantic Scholar allows higher throughput when an API key is supplied.
+        default_rate_limit = 5.0 if api_key_present else 1.0
+        burst_size = 10
+        configured_rate_limit: float | None = None
+
+        self._rate_limit_enabled = True
+
+        if resolved_rate_config is not None:
+            burst_size = resolved_rate_config.burst_size
+            self._rate_limit_enabled = resolved_rate_config.enabled
+            if resolved_rate_config.enabled:
+                configured_rate_limit = resolved_rate_config.requests_per_second
+
+        rate_limit = configured_rate_limit or default_rate_limit
+        self._resolved_rate_limit = rate_limit
+        self._resolved_burst_size = burst_size
+
         self.rate_limiter = TokenBucketRateLimiter(
-            rate=config.rate_limit.requests_per_second
-            if hasattr(config, "rate_limit")
-            else 1.0,
-            burst=config.rate_limit.burst_size if hasattr(config, "rate_limit") else 10,
+            rate=rate_limit,
+            burst=burst_size,
             logger=self.logger.with_context(component="rate_limiter"),
         )
 
+        resolved_retry_config = self._retry_config
+        if resolved_retry_config is None and hasattr(config, "retry"):
+            resolved_retry_config = config.retry
+        if resolved_retry_config is None:
+            resolved_retry_config = RetryConfig()
+
+        self._retry_config = resolved_retry_config
+        self._max_retry_attempts = resolved_retry_config.max_attempts
+
         self.retry_strategy = ExponentialBackoffRetryStrategy(
-            initial_delay=config.retry.initial_delay
-            if hasattr(config, "retry")
-            else 1.0,
-            max_delay=config.retry.max_delay if hasattr(config, "retry") else 60.0,
-            exponential_base=config.retry.exponential_base
-            if hasattr(config, "retry")
-            else 2.0,
-            jitter=config.retry.jitter if hasattr(config, "retry") else True,
+            initial_delay=resolved_retry_config.initial_delay,
+            max_delay=resolved_retry_config.max_delay,
+            exponential_base=resolved_retry_config.exponential_base,
+            jitter=resolved_retry_config.jitter,
         )
 
         self._client: httpx.AsyncClient | None = None
@@ -372,7 +420,8 @@ class SemanticScholarClient:
             raise RuntimeError("Client not initialized. Use async context manager.")
 
         # Rate limiting
-        await self.rate_limiter.wait_if_needed()
+        if self._rate_limit_enabled:
+            await self.rate_limiter.wait_if_needed()
 
         # Build request context
         request_id = f"{method}:{path}:{time.time()}"
@@ -401,7 +450,11 @@ class SemanticScholarClient:
                     url=full_url,
                     params=params,
                     retry_attempt=retry_count,
-                    rate_limit_tokens=self.rate_limiter.available_tokens,
+                    rate_limit_tokens=(
+                        self.rate_limiter.available_tokens
+                        if self._rate_limit_enabled
+                        else None
+                    ),
                 )
 
                 try:
@@ -486,9 +539,7 @@ class SemanticScholarClient:
             return await self.circuit_breaker.call(_execute_request)
         except (RateLimitError, ServiceUnavailableError, NetworkError) as e:
             # Retry with exponential backoff
-            max_attempts = (
-                self.config.retry.max_attempts if hasattr(self.config, "retry") else 3
-            )
+            max_attempts = self._max_retry_attempts
             if retry_count < max_attempts:
                 delay = self.retry_strategy.get_delay(retry_count + 1)
                 self.logger.debug_mcp(
@@ -547,10 +598,10 @@ class SemanticScholarClient:
         # Make request
         data = await self._make_request("GET", "/paper/search", params=params)
 
-        # Parse response
+        # Parse response - API returns items in 'data' field
         papers = [Paper(**paper_data) for paper_data in data.get("data", [])]
         response = PaginatedResponse[Paper](
-            items=papers,
+            data=papers,
             total=data.get("total", 0),
             offset=query.offset,
             limit=query.limit,
@@ -593,12 +644,12 @@ class SemanticScholarClient:
 
         # Fetch additional data if requested
         if include_citations:
-            citations = await self.get_paper_citations(paper_id)
-            paper.citations = citations
+            citations_response = await self.get_paper_citations(paper_id)
+            paper.citations = citations_response.data
 
         if include_references:
-            references = await self.get_paper_references(paper_id)
-            paper.references = references
+            references_response = await self.get_paper_references(paper_id)
+            paper.references = references_response.data
 
         # Cache result
         if self.cache and not (include_citations or include_references):
@@ -612,8 +663,21 @@ class SemanticScholarClient:
         fields: Fields | None = None,
         offset: int = 0,
         limit: int = 100,
-    ) -> list[Citation]:
-        """Get citations for a paper."""
+    ) -> PaginatedResponse[Citation]:
+        """Get citations for a paper.
+
+        Args:
+            paper_id: Paper identifier
+            fields: Optional fields to include in response
+            offset: Pagination offset
+            limit: Maximum number of results
+
+        Returns:
+            Paginated response with Citation objects
+
+        Note:
+            Filters out citations without valid paperId.
+        """
         fields = fields or CITATION_FIELDS
         params = {"fields": ",".join(fields), "offset": offset, "limit": limit}
 
@@ -621,7 +685,19 @@ class SemanticScholarClient:
             "GET", f"/paper/{paper_id}/citations", params=params
         )
 
-        return [Citation(**cite) for cite in data.get("data", [])]
+        # Extract citingPaper from nested response structure
+        citations = []
+        for cite_data in data.get("data", []):
+            citing_paper = cite_data.get("citingPaper", {})
+            if citing_paper and citing_paper.get("paperId"):
+                citations.append(Citation(**citing_paper))
+
+        return PaginatedResponse[Citation](
+            data=citations,
+            total=data.get("total", len(citations)),
+            offset=offset,
+            limit=limit,
+        )
 
     async def get_paper_references(
         self,
@@ -629,8 +705,21 @@ class SemanticScholarClient:
         fields: Fields | None = None,
         offset: int = 0,
         limit: int = 100,
-    ) -> list[Reference]:
-        """Get references for a paper."""
+    ) -> PaginatedResponse[Reference]:
+        """Get references for a paper.
+
+        Args:
+            paper_id: Paper identifier
+            fields: Optional fields to include in response
+            offset: Pagination offset
+            limit: Maximum number of results
+
+        Returns:
+            Paginated response with Reference objects
+
+        Note:
+            Filters out references without valid paperId.
+        """
         fields = fields or CITATION_FIELDS
         params = {"fields": ",".join(fields), "offset": offset, "limit": limit}
 
@@ -638,7 +727,19 @@ class SemanticScholarClient:
             "GET", f"/paper/{paper_id}/references", params=params
         )
 
-        return [Reference(**ref) for ref in data.get("data", [])]
+        # Extract citedPaper from nested response structure
+        references = []
+        for ref_data in data.get("data", []):
+            cited_paper = ref_data.get("citedPaper", {})
+            if cited_paper and cited_paper.get("paperId"):
+                references.append(Reference(**cited_paper))
+
+        return PaginatedResponse[Reference](
+            data=references,
+            total=data.get("total", len(references)),
+            offset=offset,
+            limit=limit,
+        )
 
     async def get_paper_authors(
         self,
@@ -646,8 +747,8 @@ class SemanticScholarClient:
         fields: Fields | None = None,
         limit: int = 100,
         offset: int = 0,
-    ) -> PaginatedResponse[Author]:
-        """Get paper authors with pagination support."""
+    ) -> list[Author]:
+        """Get paper authors."""
         fields = fields or AUTHOR_FIELDS
         params = {
             "fields": ",".join(fields),
@@ -662,7 +763,7 @@ class SemanticScholarClient:
         authors = [Author(**author_data) for author_data in data.get("data", [])]
 
         return PaginatedResponse[Author](
-            items=authors,
+            data=authors,
             total=data.get("total", 0),
             offset=offset,
             limit=limit,
@@ -767,7 +868,7 @@ class SemanticScholarClient:
         papers = [Paper(**paper_data) for paper_data in data.get("data", [])]
 
         return PaginatedResponse[Paper](
-            items=papers, total=data.get("total", 0), offset=offset, limit=limit
+            data=papers, total=data.get("total", 0), offset=offset, limit=limit
         )
 
     async def search_authors(
@@ -790,7 +891,7 @@ class SemanticScholarClient:
         authors = [Author(**author_data) for author_data in data.get("data", [])]
 
         return PaginatedResponse[Author](
-            items=authors, total=data.get("total", 0), offset=offset, limit=limit
+            data=authors, total=data.get("total", 0), offset=offset, limit=limit
         )
 
     async def get_recommendations_for_paper(
@@ -854,9 +955,12 @@ class SemanticScholarClient:
     def get_rate_limiter_status(self) -> dict[str, Any]:
         """Get rate limiter status."""
         return {
-            "available_tokens": self.rate_limiter.available_tokens,
-            "rate": self.rate_limiter.rate,
-            "burst": self.rate_limiter.burst,
+            "enabled": self._rate_limit_enabled,
+            "available_tokens": (
+                self.rate_limiter.available_tokens if self._rate_limit_enabled else None
+            ),
+            "rate": self._resolved_rate_limit,
+            "burst": self._resolved_burst_size,
         }
 
     async def search_papers_bulk(
@@ -919,11 +1023,24 @@ class SemanticScholarClient:
         return []
 
     async def search_papers_match(
-        self, title: str, fields: Fields | None = None
-    ) -> list[Paper]:
-        """Search papers by title matching."""
+        self, title: str, fields: Fields | None = None, limit: int = 10
+    ) -> PaginatedResponse[Paper]:
+        """Search papers by title matching.
+
+        Args:
+            title: Paper title to search for
+            fields: Optional list of fields to include
+            limit: Maximum number of results (default: 10)
+
+        Returns:
+            Paginated response with matched papers
+        """
         fields = fields or BASIC_PAPER_FIELDS
-        params = {"query": title, "fields": ",".join(fields)}
+        params = {
+            "query": title,
+            "fields": ",".join(fields),
+            "limit": limit,
+        }
 
         data = await self._make_request("GET", "/paper/search/match", params=params)
 
@@ -942,7 +1059,12 @@ class SemanticScholarClient:
 
             papers.append(paper)
 
-        return papers
+        return PaginatedResponse[Paper](
+            data=papers,
+            total=data.get("total", len(papers)),
+            offset=data.get("offset", 0),
+            limit=limit,
+        )
 
     async def autocomplete_query(self, query: str, limit: int = 10) -> list[str]:
         """Get query autocompletion suggestions."""
@@ -954,24 +1076,42 @@ class SemanticScholarClient:
     async def search_snippets(
         self,
         query: str,
-        fields: Fields | None = None,
+        snippet_fields: list[str] | None = None,
         limit: int = 10,
         offset: int = 0,
     ) -> PaginatedResponse[dict[str, Any]]:
-        """Search text snippets in papers."""
-        fields = fields or BASIC_PAPER_FIELDS
-        params = {
+        """Search text snippets in papers.
+
+        Args:
+            query: Search query string
+            snippet_fields: Optional snippet-specific fields
+                (e.g. ["snippet.text", "snippet.snippetKind"])
+            limit: Maximum number of results
+            offset: Offset for pagination
+
+        Returns:
+            Paginated response with snippet data (paper info always included)
+
+        Note:
+            Paper info (corpusId, title, authors, openAccessInfo) and score
+            are always returned. The snippet_fields parameter only controls
+            snippet-specific fields returned.
+        """
+        params: dict[str, Any] = {
             "query": query,
-            "fields": ",".join(fields),
             "limit": limit,
             "offset": offset,
         }
+
+        # Only add fields parameter if snippet-specific fields are provided
+        if snippet_fields:
+            params["fields"] = ",".join(snippet_fields)
 
         data = await self._make_request("GET", "/snippet/search", params=params)
         snippets = data.get("data", [])
 
         return PaginatedResponse[dict[str, Any]](
-            items=snippets, total=data.get("total", 0), offset=offset, limit=limit
+            data=snippets, total=data.get("total", 0), offset=offset, limit=limit
         )
 
     async def batch_get_authors(
@@ -1022,10 +1162,14 @@ class SemanticScholarClient:
             )
             return []
 
-    async def get_dataset_releases(self) -> list[dict[str, Any]]:
-        """Get available dataset releases."""
+    async def get_dataset_releases(self) -> list[str]:
+        """Get available dataset releases.
+
+        Returns:
+            List of release IDs (e.g., ['2022-05-10', '2022-05-17', ...])
+        """
         data = await self._make_request("GET", "/datasets/v1/release/")
-        # API returns a list directly, not a dict with "releases" key
+        # API returns a list of release ID strings directly
         return data if isinstance(data, list) else []
 
     async def get_dataset_info(self, release_id: str) -> dict[str, Any]:
@@ -1095,7 +1239,7 @@ class SemanticScholarClient:
         papers = [Paper(**paper_data) for paper_data in data.get("data", [])]
 
         return PaginatedResponse[Paper](
-            items=papers,
+            data=papers,
             total=data.get("total", 0),
             offset=query.offset,
             limit=query.limit,

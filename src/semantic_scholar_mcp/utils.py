@@ -5,8 +5,21 @@ from typing import Any
 from .models import PublicationType, SearchFilters
 
 
-def parse_year_range(year_range: str) -> tuple[int, int] | None:
-    """Parse year range string like '2020-2023' into tuple."""
+def parse_year_range(year_range: str | None) -> tuple[int, int] | None:
+    """Parse year range string into start and end year tuple.
+
+    Args:
+        year_range: Year range string in format 'YYYY-YYYY' (e.g., '2020-2023')
+
+    Returns:
+        Tuple of (start_year, end_year) or None if invalid
+
+    Examples:
+        >>> parse_year_range('2020-2023')
+        (2020, 2023)
+        >>> parse_year_range('invalid')
+        None
+    """
     if not year_range:
         return None
 
@@ -18,7 +31,7 @@ def parse_year_range(year_range: str) -> tuple[int, int] | None:
                 end = int(parts[1])
                 return (start, end)
             except ValueError:
-                pass
+                return None
 
     return None
 
@@ -99,7 +112,26 @@ def format_paginated_response(
 
 
 def extract_field_value(field_obj: Any) -> Any:
-    """Extract actual value from Pydantic Field object or return the value itself."""
+    """Extract actual value from Pydantic Field object or return value itself.
+
+    This utility handles the case where MCP tools receive Pydantic Field
+    descriptors instead of actual values. It attempts to extract the real
+    value from various Field object types.
+
+    Args:
+        field_obj: Either a simple value or a Pydantic Field object
+
+    Returns:
+        The actual value extracted from Field object, or the input if already a value
+
+    Examples:
+        >>> extract_field_value("simple string")
+        'simple string'
+        >>> extract_field_value(Field(default=["item1"]))
+        ['item1']
+        >>> extract_field_value(None)
+        None
+    """
     # If it's already a simple value, return it
     if isinstance(field_obj, str | int | float | bool | list | dict | type(None)):
         return field_obj
@@ -122,13 +154,38 @@ def extract_field_value(field_obj: Any) -> Any:
 
 
 def validate_batch_size(ids: list[str], max_size: int = 500) -> None:
-    """Validate batch size limits."""
+    """Validate that batch size does not exceed API limits.
+
+    Args:
+        ids: List of IDs to validate
+        max_size: Maximum allowed batch size (default: 500)
+
+    Raises:
+        ValueError: If batch size exceeds maximum
+
+    Examples:
+        >>> validate_batch_size(['id1', 'id2'])  # OK
+        >>> validate_batch_size(['id'] * 501)  # Raises ValueError
+    """
     if len(ids) > max_size:
         raise ValueError(f"Too many IDs: {len(ids)}, maximum allowed: {max_size}")
 
 
 def validate_publication_types(publication_types: list[str]) -> list[PublicationType]:
-    """Validate and convert publication types."""
+    """Validate and convert publication type strings to enum values.
+
+    Args:
+        publication_types: List of publication type strings
+
+    Returns:
+        List of valid PublicationType enum values (invalid types are skipped)
+
+    Examples:
+        >>> validate_publication_types(['JournalArticle', 'Conference'])
+        [PublicationType.JOURNAL_ARTICLE, PublicationType.CONFERENCE]
+        >>> validate_publication_types(['Invalid'])
+        []
+    """
     if not publication_types:
         return []
 
@@ -137,7 +194,7 @@ def validate_publication_types(publication_types: list[str]) -> list[Publication
         try:
             valid_types.append(PublicationType(pt))
         except ValueError:
-            # Skip invalid publication types
+            # Skip invalid publication types silently
             continue
 
     return valid_types

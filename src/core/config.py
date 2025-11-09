@@ -80,12 +80,24 @@ class CircuitBreakerConfig(BaseModel):
     )
 
 
-class SemanticScholarConfig(BaseModel):
-    """Semantic Scholar API configuration."""
+class SemanticScholarConfig(BaseSettings):
+    """Semantic Scholar API configuration.
+
+    Automatically loads settings from environment variables.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
     base_url: str = "https://api.semanticscholar.org/graph/v1"
     api_key: SecretStr | None = Field(
-        default=None, json_schema_extra={"env": "SEMANTIC_SCHOLAR_API_KEY"}
+        default=None,
+        alias="SEMANTIC_SCHOLAR_API_KEY",
+        validation_alias="SEMANTIC_SCHOLAR_API_KEY",
     )
     timeout: float = Field(default=30.0, gt=0)
     max_connections: int = Field(default=100, ge=1)
@@ -145,6 +157,65 @@ class LoggingConfig(BaseModel):
     )
 
 
+class PDFProcessingConfig(BaseModel):
+    """Configuration for PDF processing and artifact storage."""
+
+    enabled: bool = True
+    max_pdf_size_mb: int = Field(default=25, ge=1)
+    max_pages: int | None = Field(default=None, ge=1)
+    request_timeout_seconds: float = Field(default=120.0, gt=0)
+    download_chunk_size: int = Field(default=1024 * 64, ge=4096)
+    pdf_dir: Path = Field(
+        default=Path(".semantic_scholar_mcp/artifacts/pdfs"),
+        json_schema_extra={"env": "PDF_PROCESSING__PDF_DIR"},
+    )
+    markdown_dir: Path = Field(
+        default=Path(".semantic_scholar_mcp/artifacts/markdown"),
+        json_schema_extra={"env": "PDF_PROCESSING__MARKDOWN_DIR"},
+    )
+    cache_index_file: Path = Field(
+        default=Path(".semantic_scholar_mcp/cache/pdf_index.json"),
+        json_schema_extra={"env": "PDF_PROCESSING__CACHE_INDEX_FILE"},
+    )
+    image_dir_name: str = Field(default="images")
+    image_format: str = Field(default="png")
+    artifact_ttl_hours: int | None = Field(
+        default=None,
+        json_schema_extra={"env": "PDF_PROCESSING__ARTIFACT_TTL_HOURS"},
+    )
+    enable_memory_capture: bool = Field(
+        default=True, json_schema_extra={"env": "PDF_PROCESSING__ENABLE_MEMORY_CAPTURE"}
+    )
+    memory_dir: Path = Field(
+        default=Path(".semantic_scholar_mcp/memories"),
+        json_schema_extra={"env": "PDF_PROCESSING__MEMORY_DIR"},
+    )
+    default_output_mode: str = Field(
+        default="chunks", json_schema_extra={"env": "PDF_PROCESSING__DEFAULT_OUTPUT"}
+    )
+    store_markdown_artifacts: bool = Field(
+        default=True, json_schema_extra={"env": "PDF_PROCESSING__STORE_MARKDOWN"}
+    )
+    store_chunk_artifacts: bool = Field(
+        default=True, json_schema_extra={"env": "PDF_PROCESSING__STORE_CHUNKS"}
+    )
+    chunk_preview_length: int = Field(default=280, ge=64, le=2000)
+
+
+class DashboardConfig(BaseModel):
+    """Dashboard configuration."""
+
+    enabled: bool = False
+    host: str = Field(default="0.0.0.0")  # noqa: S104
+    port: int = Field(
+        default=25000, ge=1024, le=65535
+    )  # Changed from 24282 to avoid Serena conflict
+    auto_refresh_seconds: int = Field(default=5, ge=1)
+    max_log_messages: int = Field(default=1000, ge=100)
+    enable_log_collection: bool = True
+    open_on_launch: bool = True
+
+
 class ServerConfig(BaseModel):
     """MCP server configuration."""
 
@@ -172,6 +243,11 @@ class ApplicationConfig(BaseSettings):
         default=Environment.DEVELOPMENT, json_schema_extra={"env": "ENVIRONMENT"}
     )
 
+    # Direct API key field for backward compatibility
+    semantic_scholar_api_key: SecretStr | None = Field(
+        default=None, alias="SEMANTIC_SCHOLAR_API_KEY"
+    )
+
     # Component configurations
     server: ServerConfig = Field(default_factory=ServerConfig)
     semantic_scholar: SemanticScholarConfig = Field(
@@ -183,6 +259,8 @@ class ApplicationConfig(BaseSettings):
     circuit_breaker: CircuitBreakerConfig = Field(default_factory=CircuitBreakerConfig)
     metrics: MetricsConfig = Field(default_factory=MetricsConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    pdf_processing: PDFProcessingConfig = Field(default_factory=PDFProcessingConfig)
+    dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
 
     # Feature flags
     enable_cache: bool = True
@@ -198,6 +276,13 @@ class ApplicationConfig(BaseSettings):
         if isinstance(v, str):
             return Environment.from_string(v)
         return v
+
+    def model_post_init(self, __context: Any) -> None:
+        """Post-initialization to copy API key to nested config."""
+        super().model_post_init(__context)
+        # Copy API key from top-level to nested config if present
+        if self.semantic_scholar_api_key and not self.semantic_scholar.api_key:
+            self.semantic_scholar.api_key = self.semantic_scholar_api_key
 
     def is_production(self) -> bool:
         """Check if running in production."""
