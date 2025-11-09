@@ -17,10 +17,10 @@
 
 ### Prerequisites
 
-- Python 3.9 or higher
+- Python 3.10 or higher
 - Git
+- uv (Python package manager)
 - Docker (optional, for containerized development)
-- Redis (optional, for distributed caching)
 
 ### Initial Setup
 
@@ -30,41 +30,51 @@ git clone https://github.com/hy20191108/semantic-scholar-mcp.git
 cd semantic-scholar-mcp
 ```
 
-2. **Create a virtual environment:**
+2. **Install uv (if not already installed):**
 ```bash
-# Using venv
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# On macOS and Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Using conda
-conda create -n semantic-scholar python=3.9
-conda activate semantic-scholar
+# On Windows
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Or using pip
+pip install uv
 ```
 
-3. **Install development dependencies:**
+3. **Install dependencies using uv:**
 ```bash
-# Install package in editable mode with dev dependencies
-pip install -e ".[dev]"
+# Install all dependencies (including dev dependencies)
+uv sync --all-extras
 
-# Or using pip-tools
-pip-compile requirements.in
-pip-compile requirements-dev.in
-pip-sync requirements.txt requirements-dev.txt
+# Or just runtime dependencies
+uv sync
 ```
 
-4. **Set up pre-commit hooks:**
+4. **Configure environment variables:**
 ```bash
-pre-commit install
-pre-commit run --all-files  # Run on all files to verify setup
+# Create .env file
+cat > .env <<EOF
+# Optional: Semantic Scholar API key for higher rate limits
+SEMANTIC_SCHOLAR_API_KEY=your-api-key-here
+
+# Development settings
+DEBUG_MCP_MODE=true
+LOG_LEVEL=DEBUG
+LOG_MCP_MESSAGES=true
+EOF
 ```
 
-5. **Configure environment variables:**
+5. **Verify installation:**
 ```bash
-# Copy example environment file
-cp .env.example .env
+# Check MCP server
+DEBUG_MCP_MODE=true uv run semantic-scholar-mcp 2>&1 | timeout 3s cat
 
-# Edit .env with your configuration
-# SEMANTIC_SCHOLAR_API_KEY=your_api_key_here
+# Run tests
+uv run --frozen pytest tests/ -v
+
+# Check linting
+uv run --frozen ruff check .
 ```
 
 ### IDE Configuration
@@ -77,28 +87,32 @@ Create `.vscode/settings.json`:
   "python.linting.enabled": true,
   "python.linting.pylintEnabled": false,
   "python.linting.mypyEnabled": true,
-  "python.formatting.provider": "black",
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit",
+      "source.fixAll": "explicit"
+    }
+  },
   "python.testing.pytestEnabled": true,
   "python.testing.unittestEnabled": false,
-  "editor.formatOnSave": true,
-  "editor.codeActionsOnSave": {
-    "source.organizeImports": true
-  },
-  "python.analysis.typeCheckingMode": "strict",
+  "python.analysis.typeCheckingMode": "basic",
   "files.exclude": {
     "**/__pycache__": true,
     "**/.pytest_cache": true,
     "**/.mypy_cache": true,
-    "**/.ruff_cache": true
+    "**/.ruff_cache": true,
+    "**/.venv": true
   }
 }
 ```
 
 #### PyCharm
 
-1. Set Python interpreter to virtual environment
+1. Set Python interpreter to uv-managed virtual environment (.venv)
 2. Enable type checking: Settings → Editor → Inspections → Python → Type checker
-3. Configure Black: Settings → Tools → External Tools → Add Black
+3. Configure Ruff: Settings → Tools → External Tools → Add Ruff
 4. Enable pytest: Settings → Tools → Python Integrated Tools → Testing → pytest
 
 ## Project Structure
@@ -256,7 +270,13 @@ git checkout -b feature/add-recommendation-engine
 
 # Make changes and test
 code .  # Open in editor
-pytest tests/unit/test_recommendations.py
+uv run pytest tests/unit/test_recommendations.py
+
+# Run quality checks before committing
+uv run --frozen ruff check . --fix --unsafe-fixes
+uv run --frozen ruff format .
+uv run --frozen mypy src/
+uv run --frozen pytest tests/ -v
 
 # Commit with conventional commits
 git add .
@@ -273,7 +293,7 @@ git push origin feature/add-recommendation-engine
 ### 2. Code Style
 
 ```python
-# Follow PEP 8 with Black formatting
+# Follow PEP 8 with Ruff formatting (88 character line limit)
 # Good
 async def search_papers(
     query: str,
@@ -801,39 +821,46 @@ def monitor_memory():
 
 ```bash
 # Run server locally
-python -m semantic_scholar_mcp.server
+uv run semantic-scholar-mcp
 
 # Or with environment variables
-LOG_LEVEL=DEBUG CACHE_ENABLED=false python -m semantic_scholar_mcp.server
+DEBUG_MCP_MODE=true LOG_LEVEL=DEBUG uv run semantic-scholar-mcp
+
+# Run in background for testing
+DEBUG_MCP_MODE=true uv run semantic-scholar-mcp 2>&1 | timeout 3s cat
 ```
 
 ### 2. Docker Deployment
 
 ```dockerfile
 # Dockerfile
-FROM python:3.9-slim
+FROM ghcr.io/astral-sh/uv:python3.10-bookworm-slim
 
 WORKDIR /app
 
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
+
 # Install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN uv sync --frozen --no-dev
 
 # Copy application
 COPY src/ ./src/
-COPY pyproject.toml .
 
-# Install package
-RUN pip install --no-cache-dir -e .
+# Install package in editable mode
+RUN uv pip install -e .
 
 # Run server
-CMD ["python", "-m", "semantic_scholar_mcp.server"]
+CMD ["uv", "run", "semantic-scholar-mcp"]
 ```
 
 ```bash
 # Build and run
 docker build -t semantic-scholar-mcp .
 docker run -e SEMANTIC_SCHOLAR_API_KEY=your_key semantic-scholar-mcp
+
+# Or with docker-compose (see below)
+docker-compose up
 ```
 
 ### 3. Production Deployment

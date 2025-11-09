@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 
 [[package]]
@@ -1450,6 +1450,7 @@ wheels = [
 
 [[package]]
 name = "semantic-scholar-mcp"
+version = "0.2.6"
 source = { editable = "." }
 dependencies = [
     { name = "flask" },

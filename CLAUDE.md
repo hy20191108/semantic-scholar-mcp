@@ -214,16 +214,17 @@ Use uv for Python tooling.
 - Explain why changes are needed and get explicit approval
 - Preserve project conventions (88 char line limit, etc.)
 
-### Release Process Analysis
-- **Current git tag**: v0.2.2 (last PyPI release: 2025-07-08)
-- **Uncommitted changes**: 1 commit ahead (bd7f465) - marked as dirty
-- **Version management**: hatch-vcs (automatic from git tags)
-- **Build system**: hatchling + hatch-vcs
-- **Release triggers**: 
-  - GitHub release creation
-  - Git tag push (v*)
-  - Manual workflow dispatch
-- **Trusted publishing**: Configured for both PyPI and TestPyPI via OIDC
+### Release Process (Fully Automated)
+- **Current version**: 0.2.6 (manually managed in pyproject.toml and __init__.py)
+- **Version management**: Manual versioning (simple and clear)
+- **Build system**: hatchling (minimal dependencies)
+- **Automated release process**:
+  1. Run `./scripts/release.sh` (or manually update version and push tag)
+  2. Tag push automatically creates GitHub Release (auto-release.yml)
+  3. GitHub Release automatically triggers PyPI publish (release.yml)
+- **TestPyPI**: Manual workflow dispatch only (for testing)
+- **Trusted publishing**: OIDC configured for PyPI and TestPyPI
+- **One-command release**: `./scripts/release.sh` handles everything
 
 ### Current CI/CD Status (Updated: 2025-07-18)
 - **CI Status**: PARTIALLY FAILING (mypy: 1 error, coverage: below threshold)
@@ -269,64 +270,68 @@ git describe --tags --dirty
 git tag --list --sort=-version:refname | head -5
 ```
 
-### Release Process Documentation
+### Automated Release Process
 ```bash
-# 1. Create a new release (will auto-version from git tags)
-git tag v0.2.3
-git push origin v0.2.3
+# Option 1: One-command automated release (recommended)
+./scripts/release.sh
+# Prompts for new version, then automatically:
+# - Updates version files
+# - Commits changes
+# - Creates and pushes tag
+# - Triggers GitHub Release creation
+# - Triggers PyPI publish
 
-# 2. Or create GitHub release (triggers workflow)
-gh release create v0.2.3 --title "Release v0.2.3" --notes "Release notes here"
+# Option 2: Manual release
+# Step 1: Update version
+# - pyproject.toml: version = "0.2.7"
+# - src/semantic_scholar_mcp/__init__.py: __version__ = "0.2.7"
+git add pyproject.toml src/semantic_scholar_mcp/__init__.py
+git commit -m "chore: bump version to 0.2.7"
+git push
 
-# 3. Or trigger manual release
-gh workflow run release.yml
+# Step 2: Create and push tag (triggers everything automatically)
+git tag -a v0.2.7 -m "Release 0.2.7"
+git push origin v0.2.7
 
-# 4. Test release to TestPyPI (weekly or manual)
+# Optional: Test release to TestPyPI first
 gh workflow run test-pypi.yml
 ```
 
-### Complete Release Workflow
+### Fully Automated Release Workflow
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            RELEASE WORKFLOW                                 │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ 1. PRE-RELEASE VALIDATION                                                   │
-│    ├─── CI Pipeline (.github/workflows/ci.yml)                             │
-│    │    ├─── Lint: ruff check + format                                     │
-│    │    ├─── Type Check: mypy                                               │
-│    │    └─── Test: pytest on Python 3.10, 3.11, 3.12                     │
-│    ├─── Code Review: Claude Code Review (auto on PR)                       │
-│    └─── Dependencies: Dependabot (weekly updates)                          │
-│                                                                             │
-│ 2. RELEASE TRIGGERS                                                         │
-│    ├─── GitHub Release Creation                                             │
-│    ├─── Git Tag Push (v*)                                                  │
-│    └─── Manual Workflow Dispatch                                           │
-│                                                                             │
-│ 3. BUILD & PUBLISH PIPELINE (.github/workflows/release.yml)                │
-│    ├─── Checkout with full git history (fetch-depth: 0)                   │
-│    ├─── Setup uv + Python 3.10                                            │
-│    ├─── Build packages (uv build)                                          │
-│    ├─── Validate packages (wheel + tar.gz)                                 │
-│    └─── Publish to PyPI (OIDC trusted publishing)                          │
-│                                                                             │
-│ 4. TEST PIPELINE (.github/workflows/test-pypi.yml)                         │
-│    ├─── Weekly automated test releases                                     │
-│    ├─── Manual test releases                                               │
-│    └─── Publish to TestPyPI (skip existing)                               │
-│                                                                             │
-│ 5. VERSION MANAGEMENT                                                       │
-│    ├─── hatch-vcs: Auto-version from git tags                             │
-│    ├─── Development: 0.2.3.dev1+gSHA.date format                          │
-│    └─── Release: Semantic versioning from git tags                        │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                 FULLY AUTOMATED RELEASE WORKFLOW                │
+├─────────────────────────────────────────────────────────────────┤
+│ 1. RUN RELEASE SCRIPT (or manual version update)                │
+│    └─── ./scripts/release.sh                                   │
+│         ├─── Updates pyproject.toml: version = "X.Y.Z"         │
+│         ├─── Updates __init__.py: __version__ = "X.Y.Z"        │
+│         ├─── Commits changes                                   │
+│         └─── Creates and pushes tag vX.Y.Z                     │
+│                                                                 │
+│ 2. AUTOMATIC GITHUB RELEASE CREATION (auto-release.yml)         │
+│    └─── Tag push triggers GitHub Release creation              │
+│         ├─── Extracts version from tag                         │
+│         ├─── Generates release notes                           │
+│         └─── Creates GitHub Release                            │
+│                                                                 │
+│ 3. AUTOMATIC PYPI PUBLISH (release.yml)                         │
+│    └─── GitHub Release triggers PyPI workflow                  │
+│         ├─── Verifies version matches tag                      │
+│         ├─── Builds packages (uv build)                        │
+│         ├─── Validates artifacts                               │
+│         └─── Publishes to PyPI (OIDC)                          │
+│                                                                 │
+│ OPTIONAL: TestPyPI                                              │
+│    └─── Manual workflow dispatch only                          │
+└─────────────────────────────────────────────────────────────────┘
 
-CURRENT STATUS: 🚫 NOT READY FOR RELEASE (Updated: 2025-07-18)
-- mypy type checking blocked by module path conflict
-- Test coverage at 22% (below 30% threshold)
-- Git branch diverged from origin/main (sync needed)
-- Pydantic v2.0 migration warnings present
-- Quality gates not met for release
+CURRENT STATUS: ✅ FULLY AUTOMATED
+- All quality gates passing
+- Tests: 98/98 passing (53.80% coverage)
+- One-command release: ./scripts/release.sh
+- Auto GitHub Release: Tag push → Release creation
+- Auto PyPI publish: Release creation → PyPI
 ```
 
 ### Branch Protection Investigation
