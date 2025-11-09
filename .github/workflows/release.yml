@@ -3,6 +3,12 @@ name: Release to PyPI
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag (e.g., v0.2.7)'
+        required: true
+        type: string
 
 jobs:
   build-and-publish:
@@ -27,7 +33,11 @@ jobs:
       - name: Verify version matches release tag
         run: |
           PACKAGE_VERSION=$(grep '^version = ' pyproject.toml | cut -d'"' -f2)
-          RELEASE_TAG=${{ github.event.release.tag_name }}
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            RELEASE_TAG=${{ inputs.tag_name }}
+          else
+            RELEASE_TAG=${{ github.event.release.tag_name }}
+          fi
           RELEASE_VERSION=${RELEASE_TAG#v}
           if [ "$PACKAGE_VERSION" != "$RELEASE_VERSION" ]; then
             echo "Error: Package version ($PACKAGE_VERSION) does not match release tag ($RELEASE_VERSION)"
