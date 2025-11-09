@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "semantic-scholar-mcp"
-version = "0.2.6"
+version = "0.2.7"
 description = "MCP server for Semantic Scholar API integration with Claude Desktop"
 readme = "README.md"
 requires-python = ">=3.10"
