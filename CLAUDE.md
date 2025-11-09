@@ -118,16 +118,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Explain why changes are needed and get explicit approval
 - Preserve project conventions (88 char line limit, etc.)
 
-### Release Process (Simplified)
-- **Current version**: 0.2.2 (manually managed in pyproject.toml and __init__.py)
+### Release Process (Fully Automated)
+- **Current version**: 0.2.6 (manually managed in pyproject.toml and __init__.py)
 - **Version management**: Manual versioning (simple and clear)
 - **Build system**: hatchling (minimal dependencies)
-- **Release process**:
-  1. Update version in `pyproject.toml` and `src/semantic_scholar_mcp/__init__.py`
-  2. Create GitHub Release with tag `v0.2.3`
-  3. Automatic PyPI publish via GitHub Actions
+- **Automated release process**:
+  1. Run `./scripts/release.sh` (or manually update version and push tag)
+  2. Tag push automatically creates GitHub Release (auto-release.yml)
+  3. GitHub Release automatically triggers PyPI publish (release.yml)
 - **TestPyPI**: Manual workflow dispatch only (for testing)
 - **Trusted publishing**: OIDC configured for PyPI and TestPyPI
+- **One-command release**: `./scripts/release.sh` handles everything
 
 ### Current CI/CD Status (Updated: 2025-07-18)
 - **CI Status**: PARTIALLY FAILING (mypy: 1 error, coverage: below threshold)
@@ -173,46 +174,68 @@ git describe --tags --dirty
 git tag --list --sort=-version:refname | head -5
 ```
 
-### Simplified Release Process
+### Automated Release Process
 ```bash
-# Step 1: Update version in both files
-# - pyproject.toml: version = "0.2.3"
-# - src/semantic_scholar_mcp/__init__.py: __version__ = "0.2.3"
+# Option 1: One-command automated release (recommended)
+./scripts/release.sh
+# Prompts for new version, then automatically:
+# - Updates version files
+# - Commits changes
+# - Creates and pushes tag
+# - Triggers GitHub Release creation
+# - Triggers PyPI publish
 
-# Step 2: Create GitHub release (this triggers PyPI publish automatically)
-gh release create v0.2.3 --title "Release v0.2.3" --notes "Release notes here"
+# Option 2: Manual release
+# Step 1: Update version
+# - pyproject.toml: version = "0.2.7"
+# - src/semantic_scholar_mcp/__init__.py: __version__ = "0.2.7"
+git add pyproject.toml src/semantic_scholar_mcp/__init__.py
+git commit -m "chore: bump version to 0.2.7"
+git push
+
+# Step 2: Create and push tag (triggers everything automatically)
+git tag -a v0.2.7 -m "Release 0.2.7"
+git push origin v0.2.7
 
 # Optional: Test release to TestPyPI first
 gh workflow run test-pypi.yml
 ```
 
-### Simplified Release Workflow
+### Fully Automated Release Workflow
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                   SIMPLIFIED RELEASE WORKFLOW                   │
+│                 FULLY AUTOMATED RELEASE WORKFLOW                │
 ├─────────────────────────────────────────────────────────────────┤
-│ 1. UPDATE VERSION                                               │
-│    ├─── Edit pyproject.toml: version = "X.Y.Z"                 │
-│    └─── Edit __init__.py: __version__ = "X.Y.Z"                │
+│ 1. RUN RELEASE SCRIPT (or manual version update)                │
+│    └─── ./scripts/release.sh                                   │
+│         ├─── Updates pyproject.toml: version = "X.Y.Z"         │
+│         ├─── Updates __init__.py: __version__ = "X.Y.Z"        │
+│         ├─── Commits changes                                   │
+│         └─── Creates and pushes tag vX.Y.Z                     │
 │                                                                 │
-│ 2. CREATE GITHUB RELEASE                                        │
-│    └─── GitHub Release with tag vX.Y.Z                         │
-│         (Automatically triggers PyPI publish)                   │
+│ 2. AUTOMATIC GITHUB RELEASE CREATION (auto-release.yml)         │
+│    └─── Tag push triggers GitHub Release creation              │
+│         ├─── Extracts version from tag                         │
+│         ├─── Generates release notes                           │
+│         └─── Creates GitHub Release                            │
 │                                                                 │
-│ 3. AUTOMATED BUILD & PUBLISH                                    │
-│    ├─── Verify version matches tag                             │
-│    ├─── Build packages (uv build)                              │
-│    ├─── Validate artifacts                                     │
-│    └─── Publish to PyPI (OIDC)                                 │
+│ 3. AUTOMATIC PYPI PUBLISH (release.yml)                         │
+│    └─── GitHub Release triggers PyPI workflow                  │
+│         ├─── Verifies version matches tag                      │
+│         ├─── Builds packages (uv build)                        │
+│         ├─── Validates artifacts                               │
+│         └─── Publishes to PyPI (OIDC)                          │
 │                                                                 │
 │ OPTIONAL: TestPyPI                                              │
 │    └─── Manual workflow dispatch only                          │
 └─────────────────────────────────────────────────────────────────┘
 
-CURRENT STATUS: ✅ READY FOR RELEASE
+CURRENT STATUS: ✅ FULLY AUTOMATED
 - All quality gates passing
 - Tests: 98/98 passing (53.80% coverage)
-- Version management: Manual and clear
+- One-command release: ./scripts/release.sh
+- Auto GitHub Release: Tag push → Release creation
+- Auto PyPI publish: Release creation → PyPI
 ```
 
 ### Branch Protection Investigation

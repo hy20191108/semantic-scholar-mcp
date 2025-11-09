@@ -1,97 +1,88 @@
 #!/bin/bash
-
-# Simple release script for semantic-scholar-mcp
-# Usage: ./scripts/release.sh [patch|minor|major]
-
 set -e
 
-# Default to patch if no argument provided
-BUMP_TYPE=${1:-patch}
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
-echo "🚀 Starting release process..."
+# Get current version
+CURRENT_VERSION=$(grep '^version = ' pyproject.toml | cut -d'"' -f2)
 
-# Check if git is clean
-if [ -n "$(git status --porcelain)" ]; then
-    echo "❌ Git working directory is not clean. Please commit or stash changes first."
+echo -e "${GREEN}Current version: ${CURRENT_VERSION}${NC}"
+echo ""
+echo "Enter new version (e.g., 0.2.7):"
+read NEW_VERSION
+
+if [ -z "$NEW_VERSION" ]; then
+    echo -e "${RED}Error: Version cannot be empty${NC}"
     exit 1
 fi
 
-# Check if we're on main branch
-CURRENT_BRANCH=$(git branch --show-current)
-if [ "$CURRENT_BRANCH" != "main" ]; then
-    echo "❌ Not on main branch. Please switch to main branch first."
+# Validate version format (semantic versioning)
+if ! [[ "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo -e "${RED}Error: Invalid version format. Use semantic versioning (e.g., 0.2.7)${NC}"
     exit 1
 fi
 
-# Get current version from git tags
-LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.3")
-LAST_VERSION=$(echo $LAST_TAG | sed 's/^v//')
+echo ""
+echo -e "${YELLOW}This will:${NC}"
+echo "  1. Update version to ${NEW_VERSION} in pyproject.toml and __init__.py"
+echo "  2. Commit the changes"
+echo "  3. Create and push tag v${NEW_VERSION}"
+echo "  4. Automatically create GitHub Release (via GitHub Actions)"
+echo "  5. Automatically publish to PyPI (via GitHub Actions)"
+echo ""
+echo "Continue? (y/N)"
+read CONFIRM
 
-echo "📋 Current version: $LAST_VERSION"
-
-# Parse version components
-MAJOR=$(echo $LAST_VERSION | cut -d. -f1)
-MINOR=$(echo $LAST_VERSION | cut -d. -f2)
-PATCH=$(echo $LAST_VERSION | cut -d. -f3)
-
-# Increment version based on type
-case $BUMP_TYPE in
-    major)
-        MAJOR=$((MAJOR + 1))
-        MINOR=0
-        PATCH=0
-        ;;
-    minor)
-        MINOR=$((MINOR + 1))
-        PATCH=0
-        ;;
-    patch)
-        PATCH=$((PATCH + 1))
-        ;;
-    *)
-        echo "❌ Invalid bump type: $BUMP_TYPE. Use patch, minor, or major."
-        exit 1
-        ;;
-esac
-
-NEW_VERSION="$MAJOR.$MINOR.$PATCH"
-NEW_TAG="v$NEW_VERSION"
-
-echo "🔄 Bumping version: $LAST_VERSION → $NEW_VERSION"
-
-# Check if tag already exists
-if git rev-parse "$NEW_TAG" >/dev/null 2>&1; then
-    echo "❌ Tag $NEW_TAG already exists!"
-    exit 1
+if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
+    echo -e "${YELLOW}Aborted${NC}"
+    exit 0
 fi
 
-# Pull latest changes
-echo "📥 Pulling latest changes..."
-git pull origin main
+echo ""
+echo -e "${GREEN}Step 1: Updating version files...${NC}"
 
-# Sync dependencies
-echo "📦 Syncing dependencies..."
-uv sync --all-extras
+# Update pyproject.toml
+sed -i.bak "s/^version = \".*\"/version = \"${NEW_VERSION}\"/" pyproject.toml
+rm -f pyproject.toml.bak
 
-# Run tests
-echo "🧪 Running tests..."
-uv run pytest tests/ -v --tb=short || {
-    echo "❌ Tests failed! Please fix them before releasing."
-    exit 1
-}
+# Update __init__.py
+sed -i.bak "s/__version__ = \".*\"/__version__ = \"${NEW_VERSION}\"/" src/semantic_scholar_mcp/__init__.py
+rm -f src/semantic_scholar_mcp/__init__.py.bak
 
-# Run linting
-echo "🔍 Running linter..."
-uv run ruff check . || {
-    echo "❌ Linting failed! Please fix issues before releasing."
-    exit 1
-}
+echo -e "${GREEN}✓ Version updated to ${NEW_VERSION}${NC}"
 
-# Create and push tag
-echo "🏷️  Creating tag $NEW_TAG..."
-git tag -a "$NEW_TAG" -m "Release $NEW_VERSION"
-git push origin "$NEW_TAG"
+echo ""
+echo -e "${GREEN}Step 2: Committing changes...${NC}"
 
-echo "✅ Release $NEW_VERSION created successfully!"
-echo "📦 GitHub Actions will now build and publish to PyPI automatically."
-echo "🔗 Check the workflow: https://github.com/hy20191108/semantic-scholar-mcp/actions"
+git add pyproject.toml src/semantic_scholar_mcp/__init__.py
+git commit -m "chore: bump version to ${NEW_VERSION}"
+
+echo -e "${GREEN}✓ Changes committed${NC}"
+
+echo ""
+echo -e "${GREEN}Step 3: Creating and pushing tag...${NC}"
+
+git tag -a "v${NEW_VERSION}" -m "Release ${NEW_VERSION}"
+git push origin HEAD
+git push origin "v${NEW_VERSION}"
+
+echo -e "${GREEN}✓ Tag v${NEW_VERSION} created and pushed${NC}"
+
+echo ""
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}Release initiated successfully!${NC}"
+echo -e "${GREEN}========================================${NC}"
+echo ""
+echo "Next steps (automatic):"
+echo "  1. GitHub Actions will create a GitHub Release"
+echo "  2. GitHub Actions will publish to PyPI"
+echo ""
+echo "Monitor progress:"
+echo "  - GitHub Actions: https://github.com/hy20191108/semantic-scholar-mcp/actions"
+echo "  - GitHub Releases: https://github.com/hy20191108/semantic-scholar-mcp/releases"
+echo "  - PyPI: https://pypi.org/project/semantic-scholar-mcp/"
+echo ""

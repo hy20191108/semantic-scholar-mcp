@@ -1,0 +1,76 @@
+name: Auto Create GitHub Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG_NAME#v}
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          cat > release_notes.md <<EOF
+          ## Release ${{ steps.version.outputs.version }}
+
+          ### What's Changed
+
+          This release includes:
+          - Simplified version management (manual versioning)
+          - Streamlined GitHub Actions workflows
+          - Updated documentation for uv-based development
+          - Improved release process clarity
+
+          ### Installation
+
+          \`\`\`bash
+          # Using uvx (recommended)
+          uvx semantic-scholar-mcp
+
+          # Or using pip
+          pip install semantic-scholar-mcp
+          \`\`\`
+
+          ### Documentation
+
+          - [User Guide](https://github.com/hy20191108/semantic-scholar-mcp#readme)
+          - [Release Process](https://github.com/hy20191108/semantic-scholar-mcp/blob/main/docs/RELEASE_PROCESS.md)
+          - [Developer Guide](https://github.com/hy20191108/semantic-scholar-mcp/blob/main/docs/DEVELOPER_GUIDE.md)
+
+          ### Full Changelog
+
+          **Full Changelog**: https://github.com/hy20191108/semantic-scholar-mcp/compare/v0.2.5...${{ steps.version.outputs.tag_name }}
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag_name }}
+          name: Release ${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release created
+        run: |
+          echo "✅ GitHub Release created: ${{ steps.version.outputs.tag_name }}"
+          echo "🚀 PyPI publish will be triggered automatically"

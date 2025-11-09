@@ -1,42 +1,66 @@
 # Release Process
 
-This document describes the simplified release process for the semantic-scholar-mcp project.
+This document describes the **fully automated** release process for the semantic-scholar-mcp project.
 
 ## Overview
 
-The project uses **manual version management** for simplicity and clarity:
+The project uses **manual version management with automated releases**:
 - Version numbers are explicitly set in source files
-- GitHub Releases trigger automated PyPI publishing
-- No automatic version generation or complex tag management
-- Single source of truth: `pyproject.toml` and `__init__.py`
+- Git tags automatically trigger GitHub Release creation
+- GitHub Releases automatically trigger PyPI publishing
+- Complete automation: version bump → tag push → everything else is automatic
 
-## Quick Release Guide
+## Quick Release Guide (Automated)
 
-### Step 1: Update Version
+### One-Command Release
 
-Edit version in **two files**:
+Use the automated release script:
+
+```bash
+# Run the release script
+./scripts/release.sh
+
+# It will prompt you for the new version
+# Then automatically:
+# 1. Update version in pyproject.toml and __init__.py
+# 2. Commit changes
+# 3. Create and push git tag
+# 4. Trigger automatic GitHub Release creation
+# 5. Trigger automatic PyPI publishing
+```
+
+### Manual Release (Alternative)
+
+If you prefer manual control:
+
+**Step 1: Update Version**
 
 ```bash
 # 1. pyproject.toml
-version = "0.2.3"
+version = "0.2.7"
 
 # 2. src/semantic_scholar_mcp/__init__.py
-__version__ = "0.2.3"
+__version__ = "0.2.7"
 ```
 
-### Step 2: Create GitHub Release
+**Step 2: Commit and Push Tag**
 
 ```bash
-# Create a GitHub Release (this automatically triggers PyPI publish)
-gh release create v0.2.3 \
-  --title "Release v0.2.3" \
-  --notes "Release notes here"
+# Commit version bump
+git add pyproject.toml src/semantic_scholar_mcp/__init__.py
+git commit -m "chore: bump version to 0.2.7"
+git push
+
+# Create and push tag (this triggers automatic release)
+git tag -a v0.2.7 -m "Release 0.2.7"
+git push origin v0.2.7
 ```
 
-That's it! The GitHub Actions workflow will:
-1. Verify version matches the tag
-2. Build distribution packages
-3. Publish to PyPI
+That's it! The automation will:
+1. Create GitHub Release (auto-release.yml)
+2. Verify version matches tag (release.yml)
+3. Build distribution packages (release.yml)
+4. Publish to PyPI (release.yml)
 
 ## Pre-Release Checklist
 
