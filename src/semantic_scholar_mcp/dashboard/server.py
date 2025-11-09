@@ -188,7 +188,7 @@ class DashboardAPI:
         while port <= 65535:
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                    sock.bind(("0.0.0.0", port))  # noqa: S104
+                    sock.bind(("127.0.0.1", port))
                     return port
             except OSError:
                 port += 1
@@ -197,14 +197,14 @@ class DashboardAPI:
 
     def run(
         self,
-        host: str = "0.0.0.0",  # noqa: S104
+        host: str = "127.0.0.1",
         port: int = 0x5EDA,
     ) -> int:
         """
         Run Flask dashboard server.
 
         Args:
-            host: Host to bind to (default: 0.0.0.0)
+            host: Host to bind to (default: 127.0.0.1)
             port: Port to bind to (default: 0x5EDA = 24282)
 
         Returns:
@@ -226,7 +226,7 @@ class DashboardAPI:
 
     def run_in_thread(
         self,
-        host: str = "0.0.0.0",  # noqa: S104
+        host: str = "127.0.0.1",
         port: int | None = None,
     ) -> tuple[threading.Thread, int]:
         """

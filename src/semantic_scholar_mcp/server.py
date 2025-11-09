@@ -820,12 +820,14 @@ async def get_paper_citations(
         limit=actual_limit,
         offset=actual_offset,
     )
-    citations_data = _serialize_items(citations)
+    citations_data = _serialize_items(citations.data)
     payload = {
         "data": citations_data,
+        "total": citations.total,
         "count": len(citations_data),
-        "offset": actual_offset,
-        "limit": actual_limit,
+        "offset": citations.offset,
+        "limit": citations.limit,
+        "has_more": citations.has_more,
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
@@ -872,12 +874,14 @@ async def get_paper_references(
         limit=actual_limit,
         offset=actual_offset,
     )
-    references_data = _serialize_items(references)
+    references_data = _serialize_items(references.data)
     payload = {
         "data": references_data,
+        "total": references.total,
         "count": len(references_data),
-        "offset": actual_offset,
-        "limit": actual_limit,
+        "offset": references.offset,
+        "limit": references.limit,
+        "has_more": references.has_more,
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
@@ -916,9 +920,6 @@ async def get_paper_authors(
         - Identify recurring collaborators or leading authors
         - Ask for author profiles to evaluate expertise
         - Follow up with get_author_papers for a selected researcher
-
-    Returns:
-        JSON object as described above.
     """
     actual_limit, actual_offset = extract_pagination_params(limit, offset, 100)
 
@@ -1003,9 +1004,6 @@ async def get_author_papers(
         - Scan the publication list for themes or collaborations
         - Request summaries of standout papers for a quick brief
         - Compare with other authors to spot overlapping research
-
-    Returns:
-        JSON object as described above.
     """
     result = await _call_client_method(
         "get_author_papers",
@@ -1294,8 +1292,14 @@ async def search_papers_match(
         title=title,
         fields=actual_fields,
     )
-    papers_data = _serialize_items(papers, actual_fields)
-    payload = {"data": papers_data, "count": len(papers_data)}
+    papers_data = _serialize_items(papers.data, actual_fields)
+    payload = {
+        "data": papers_data,
+        "total": papers.total,
+        "count": len(papers_data),
+        "offset": papers.offset,
+        "limit": papers.limit,
+    }
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
@@ -1487,8 +1491,8 @@ async def get_dataset_releases() -> ToolResult:
         - Fetch detailed metadata via get_dataset_info
     """
     releases = await _call_client_method("get_dataset_releases")
-    releases_data = _serialize_items(releases)
-    payload = {"data": releases_data, "count": len(releases_data)}
+    # releases is a list of strings (release IDs), not objects
+    payload = {"data": releases, "count": len(releases)}
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 

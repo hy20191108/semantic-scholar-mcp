@@ -263,22 +263,6 @@ class Paper(BaseModel):
     # External identifiers
     external_ids: dict[str, str] = Field(default_factory=dict, alias="externalIds")
 
-    @field_validator("external_ids", mode="before")
-    @classmethod
-    def normalize_external_ids(cls, value: Any) -> dict[str, str]:
-        """Convert external ID values to strings for consistent typing."""
-        if value is None:
-            return {}
-        if not isinstance(value, dict):
-            return {}
-
-        normalized: dict[str, str] = {}
-        for key, raw in value.items():
-            if raw is None:
-                continue
-            normalized[key] = str(raw)
-        return normalized
-
     doi: str | None = None
     arxiv_id: str | None = Field(None, alias="arxivId")
 
