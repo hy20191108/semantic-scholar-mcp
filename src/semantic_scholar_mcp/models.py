@@ -196,10 +196,52 @@ class Paper(BaseModel):
                 return None  # Convert invalid year to None
         return v if v != 0 else None  # Convert 0 to None
 
+    @field_validator("external_ids", mode="before")
+    @classmethod
+    def validate_external_ids(cls, v):
+        """Convert all external ID values to strings.
+
+        Args:
+            v: External IDs dictionary (may have numeric values)
+
+        Returns:
+            External IDs with all values as strings
+
+        Note:
+            API sometimes returns CorpusId as an integer, which needs
+            to be converted to string.
+        """
+        if isinstance(v, dict):
+            return {k: str(val) if val is not None else "" for k, val in v.items()}
+        return v or {}
+
+    @field_validator("publication_types", mode="before")
+    @classmethod
+    def validate_publication_types(cls, v):
+        """Convert publication types to list if needed.
+
+        Args:
+            v: Publication types (may be string, list, or None)
+
+        Returns:
+            List of PublicationType values
+
+        Note:
+            API may return publication types in various formats.
+            This validator ensures consistent list format.
+        """
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [v]
+        if isinstance(v, list):
+            return v
+        return []
+
     venue: str | None = None
 
     # Publication details
-    publication_types: list[PublicationType] = Field(
+    publication_types: list[str] = Field(
         default_factory=list, alias="publicationTypes"
     )
     publication_date: datetime | None = Field(None, alias="publicationDate")

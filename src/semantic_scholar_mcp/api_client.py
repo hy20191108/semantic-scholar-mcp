@@ -557,7 +557,7 @@ class SemanticScholarClient:
         # Parse response
         papers = [Paper(**paper_data) for paper_data in data.get("data", [])]
         response = PaginatedResponse[Paper](
-            items=papers,
+            data=papers,
             total=data.get("total", 0),
             offset=query.offset,
             limit=query.limit,
@@ -600,12 +600,12 @@ class SemanticScholarClient:
 
         # Fetch additional data if requested
         if include_citations:
-            citations = await self.get_paper_citations(paper_id)
-            paper.citations = citations
+            citations_response = await self.get_paper_citations(paper_id)
+            paper.citations = citations_response.data
 
         if include_references:
-            references = await self.get_paper_references(paper_id)
-            paper.references = references
+            references_response = await self.get_paper_references(paper_id)
+            paper.references = references_response.data
 
         # Cache result
         if self.cache and not (include_citations or include_references):
@@ -619,7 +619,7 @@ class SemanticScholarClient:
         fields: Fields | None = None,
         offset: int = 0,
         limit: int = 100,
-    ) -> list[Citation]:
+    ) -> PaginatedResponse[Citation]:
         """Get citations for a paper."""
         fields = fields or CITATION_FIELDS
         params = {"fields": ",".join(fields), "offset": offset, "limit": limit}
@@ -628,7 +628,19 @@ class SemanticScholarClient:
             "GET", f"/paper/{paper_id}/citations", params=params
         )
 
-        return [Citation(**cite) for cite in data.get("data", [])]
+        # Extract citingPaper from each citation
+        citations = []
+        for cite_data in data.get("data", []):
+            citing_paper = cite_data.get("citingPaper", {})
+            if citing_paper:
+                citations.append(Citation(**citing_paper))
+
+        return PaginatedResponse[Citation](
+            data=citations,
+            total=data.get("total", len(citations)),
+            offset=offset,
+            limit=limit,
+        )
 
     async def get_paper_references(
         self,
@@ -636,7 +648,7 @@ class SemanticScholarClient:
         fields: Fields | None = None,
         offset: int = 0,
         limit: int = 100,
-    ) -> list[Reference]:
+    ) -> PaginatedResponse[Reference]:
         """Get references for a paper."""
         fields = fields or CITATION_FIELDS
         params = {"fields": ",".join(fields), "offset": offset, "limit": limit}
@@ -645,7 +657,19 @@ class SemanticScholarClient:
             "GET", f"/paper/{paper_id}/references", params=params
         )
 
-        return [Reference(**ref) for ref in data.get("data", [])]
+        # Extract citedPaper from each reference
+        references = []
+        for ref_data in data.get("data", []):
+            cited_paper = ref_data.get("citedPaper", {})
+            if cited_paper:
+                references.append(Reference(**cited_paper))
+
+        return PaginatedResponse[Reference](
+            data=references,
+            total=data.get("total", len(references)),
+            offset=offset,
+            limit=limit,
+        )
 
     async def get_paper_authors(
         self,
@@ -669,7 +693,7 @@ class SemanticScholarClient:
         authors = [Author(**author_data) for author_data in data.get("data", [])]
 
         return PaginatedResponse[Author](
-            items=authors,
+            data=authors,
             total=data.get("total", 0),
             offset=offset,
             limit=limit,
@@ -774,7 +798,7 @@ class SemanticScholarClient:
         papers = [Paper(**paper_data) for paper_data in data.get("data", [])]
 
         return PaginatedResponse[Paper](
-            items=papers, total=data.get("total", 0), offset=offset, limit=limit
+            data=papers, total=data.get("total", 0), offset=offset, limit=limit
         )
 
     async def search_authors(
@@ -797,7 +821,7 @@ class SemanticScholarClient:
         authors = [Author(**author_data) for author_data in data.get("data", [])]
 
         return PaginatedResponse[Author](
-            items=authors, total=data.get("total", 0), offset=offset, limit=limit
+            data=authors, total=data.get("total", 0), offset=offset, limit=limit
         )
 
     async def get_recommendations_for_paper(
@@ -1014,7 +1038,7 @@ class SemanticScholarClient:
         snippets = data.get("data", [])
 
         return PaginatedResponse[dict[str, Any]](
-            items=snippets, total=data.get("total", 0), offset=offset, limit=limit
+            data=snippets, total=data.get("total", 0), offset=offset, limit=limit
         )
 
     async def batch_get_authors(
@@ -1138,7 +1162,7 @@ class SemanticScholarClient:
         papers = [Paper(**paper_data) for paper_data in data.get("data", [])]
 
         return PaginatedResponse[Paper](
-            items=papers,
+            data=papers,
             total=data.get("total", 0),
             offset=query.offset,
             limit=query.limit,
