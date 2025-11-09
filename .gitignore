@@ -158,6 +158,7 @@ mcp-logs/
 *.sqlite
 logs/
 cache/
+.semantic_scholar_mcp/
 
 # Editor specific
 .cursor/
@@ -202,3 +203,4 @@ src/semantic_scholar_mcp/_version.py
 tmp/
 .serena/
 .claude/hooks/
+serena/

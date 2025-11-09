@@ -248,7 +248,7 @@ class FastMCPServer {
   -config: ApplicationConfig
   -logger: ILogger
   -metrics: IMetricsCollector
-  <<22 Tools>>
+  <<23 Tools>>
   +search_papers()
   +get_paper()
   +get_paper_citations()
@@ -316,7 +316,7 @@ PaginatedResponse ..> Author
 
 MCPErrorHandler ..> ErrorRecoveryStrategy
 
-note top of FastMCPServer : MCP Server Implementation\n• 22 Tools for API access\n• 2 Resources for direct data\n• 3 AI Prompts for research\n• FastMCP framework based
+note top of FastMCPServer : MCP Server Implementation\n• 23 Tools for API access\n• 2 Resources for direct data\n• 3 AI Prompts for research\n• FastMCP framework based
 
 note top of SemanticScholarClient : Enterprise API Client\n• Circuit breaker pattern\n• Rate limiting\n• Caching & metrics\n• Retry with backoff
 

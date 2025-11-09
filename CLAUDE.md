@@ -1,6 +1,14 @@
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Explain in japanese.
+Use Serena MCP.
+Use uv for Python tooling.
+
+## Response Schema & Instructions Policy
+
+- Return Schema: Every tool returns a compact JSON with top-level `data`. Paginated endpoints include `total`, `offset`, `limit`, `has_more`. Batch/recommendation endpoints expose `count`. Single-resource endpoints only return `data`.
+- Instruction SSOT: Tool guidance (Next Steps) is sourced from YAML in `src/semantic_scholar_mcp/resources/tool_instructions/**/*.yml`. Treat YAML as the single source of truth; Markdown templates exist for compatibility only.
 
 **CRITICAL**: Always update the "Important Information Tracking" section with:
 - Current PyPI version when checking releases
@@ -48,7 +56,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Local Git Version**: v0.2.2-refactored (major tool name refactoring completed)
 - **Test Coverage**: 53.80% (minimum required: 30%) - ✅ PASSING
 - **Test Status**: 98 tests total (98 passing, 0 failing)
-- **Tool Names**: ✅ FULLY REFACTORED - All 22 tools renamed to clean, consistent naming
+- **Tool Names**: ✅ FULLY REFACTORED - 24 tools follow the clean naming pattern (includes `get_paper_fulltext` for PDF conversion)
 - **Quality Status**: All quality gates passing (ruff, mypy, pytest, MCP server)
 
 ### Important Notes
@@ -68,6 +76,94 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Documentation**: README.md, CLAUDE.md, USER_GUIDE.md all updated
 - **Files Modified**: server.py, test files, documentation - all references updated
 
+#### Serena-Style Tool Instructions (Updated: 2025-10-25)
+- **✅ MIGRATED**: All 24 tools now use docstring-based instruction mechanism (Serena approach)
+- **Architecture Change**: Moved from JSON-embedded instructions to comprehensive docstrings
+- **Docstring Structure**: Each tool now has:
+  - Clear description of functionality
+  - Detailed parameter documentation with types and defaults
+  - Return value specification with structure
+  - **Next Steps** section with guidance for the LLM
+- **Verification**: Test confirms all 24 tools have "Next Steps" guidance visible in MCP tool descriptions
+- **Benefits**:
+  - Better LLM understanding (instructions in tool description, not hidden in JSON)
+  - Consistent with Serena's proven pattern
+  - More maintainable (single source of truth in docstring)
+- **Backward Compatibility**: JSON instruction injection still active via `@with_tool_instructions` decorator
+- **Template Files**: Original instruction templates preserved in `resources/tool_instructions/` as reference
+- **Example** (search_papers):
+  ```python
+  """
+  Search Semantic Scholar papers with optional filters.
+  ...
+  Next Steps:
+      - Review the returned papers list and identify items worth reading
+      - Request summaries or full details of papers that stand out
+      - Refine your search query or add filters if results are too broad
+  """
+  ```
+- **Quality**: All 112 tests passing, 57% coverage, zero regressions
+
+#### PDF Markdown Tool Integration (Updated: 2025-10-25)
+- **✅ IMPLEMENTED**: `get_paper_fulltext` provides PDF→Markdown/chunk conversion with caching and optional image extraction
+- **Artifacts**: Stored under `.semantic_scholar_mcp/artifacts/` with SHA-1 partitioning, plus cache index metadata
+- **Configuration**: `PDFProcessingConfig` controls limits, directories, TTL (env-overridable)
+- **Testing**: Unit coverage for cache reuse, image extraction keyword, and `max_pages`; error-path tests pending (see `.serena/memories/pdf_markdown_todos.md`)
+- **Licensing**: PyMuPDF4LLM (AGPL) notice added to README; advise commercial users to review licensing
+
+#### Resource-Based Tool Instructions Architecture (Updated: 2025-10-25)
+- **✅ IMPLEMENTED**: External template-based tool instruction system inspired by Serena architecture
+- **Directory Structure**: `src/semantic_scholar_mcp/resources/tool_instructions/` with 5 categories (paper, author, dataset, pdf, prompts)
+- **Template Loader**: New `instruction_loader.py` module with LRU caching for efficient template loading
+- **Benefits**:
+  - **Maintainability**: Instructions now in external Markdown files, easier to edit and version control
+  - **Scalability**: Future module splitting (e.g., `paper_tools.py`) prepared with organized structure
+  - **Performance**: LRU cache (`@lru_cache`) reduces disk I/O for repeated template loads
+  - **Flexibility**: Fallback to default instructions if templates missing or malformed
+- **Migration**: All 24 tool instructions successfully migrated from hardcoded dict to external templates
+- **Files Modified**:
+  - Created: `src/semantic_scholar_mcp/instruction_loader.py` (template loader with caching)
+  - Created: 24 template files in `resources/tool_instructions/{paper,author,dataset,pdf,prompts}/`
+  - Modified: `server.py` (replaced TOOL_INSTRUCTIONS dict with load_tool_instructions())
+- **Testing**: All 112 tests passing, 57% coverage, MCP server loads 24 templates successfully on startup
+
+#### Tool Name Improvement - get_paper_fulltext (Updated: 2025-11-08)
+- **✅ COMPLETED**: Renamed `get_markdown_from_pdf` → `get_paper_fulltext` for improved LLM clarity
+- **Rationale**: Format-centric naming (markdown) obscured semantic purpose (fulltext extraction)
+- **Benefits**:
+  - More intuitive for LLMs to understand the tool's purpose
+  - Aligns with proven Zotero MCP naming pattern (`get_item_fulltext`)
+  - Emphasizes what users get (paper content) not how (markdown format)
+  - Consistent with domain terminology (papers, fulltext)
+- **Files Modified**: server.py, pdf_processor.py, instruction_loader.py, template files, README.md, CLAUDE.md, USER_GUIDE.md, tests
+- **Backward Compatibility**: None (clean migration, no deprecated aliases)
+- **Quality**: All tests passing, all quality gates pass
+
+#### Dashboard Design (Updated: 2025-10-25)
+- **✅ DESIGNED**: Comprehensive monitoring and analytics dashboard for semantic-scholar-mcp
+- **Inspiration**: Based on Serena's Flask + jQuery + Chart.js dashboard architecture
+- **Design Document**: `.serena/memories/dashboard_design.md` contains complete specifications
+- **Dashboard Sections** (6 main areas):
+  1. **Server Status** - Uptime, API key status, rate limits, circuit breaker
+  2. **Real-time Logs** - Auto-scrolling log viewer with filtering and correlation IDs
+  3. **Tool Usage Statistics** - Call counts, response times, cache hit rates, error tracking
+  4. **Search Analytics** - Popular queries, trending papers, field distribution
+  5. **Performance Metrics** - Cache performance, response time percentiles, PDF stats
+  6. **API Health** - Rate limit tracker, circuit breaker status, recent errors
+- **API Endpoints**: 12 total (6 core + 6 semantic-scholar specific)
+- **Technology Stack**:
+  - Backend: Flask 3.x, Pydantic, Threading
+  - Frontend: HTML5/CSS3, Vanilla JS or jQuery, Chart.js 4.x
+  - Styling: CSS Variables for theming, monospace fonts, responsive design
+- **Implementation Plan** (3 phases):
+  - Phase 1 (MVP): Basic monitoring (~900 lines)
+  - Phase 2 (Analytics): semantic-scholar specific insights (+600 lines)
+  - Phase 3 (Polish): Production features (+400 lines)
+- **Data Collection**: New `DashboardStats` class integrated with existing logging and metrics
+- **Configuration**: Optional feature (disabled by default), configurable port and retention
+- **Security**: Local-only by default, no auth required for read-only dashboard
+- **Status**: Design complete, ready for implementation
+
 #### Shared Server Environment Constraints (Updated: 2025-07-19)
 - **Server Environment**: 共有開発サーバー（複数開発者が使用）
 - **Forbidden Commands**: 全体影響のあるコマンド実行禁止
@@ -80,9 +176,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - typecheckジョブはタイムアウト発生（共有リソース制約）
 - **Recommendation**: ローカル環境では直接uvコマンドでCI相当のテスト実行を推奨
 
-#### MCP Server 22ツール全動作テスト結果 (Updated: 2025-07-18)
-- **✅ 全22ツール動作確認完了** - 100%成功率
-- **Paper Tools (7)**: search_papers, get_paper, get_paper_citations, get_paper_references, get_paper_authors, batch_get_papers, get_paper_with_embeddings
+#### MCP Server 23ツール全動作テスト結果 (Updated: 2025-07-18)
+- **✅ 全23ツール動作確認完了** - 100%成功率
+- **Paper Tools (8)**: search_papers, get_paper, get_paper_citations, get_paper_references, get_paper_authors, batch_get_papers, get_paper_with_embeddings, get_paper_fulltext
 - **Author Tools (4)**: get_author, get_author_papers, search_authors, batch_get_authors  
 - **Search Tools (4)**: bulk_search_papers, search_papers_match, autocomplete_query, search_snippets
 - **AI/ML Tools (3)**: get_recommendations_for_paper, get_recommendations_batch, search_papers_with_embeddings
@@ -95,7 +191,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Pydantic v2 migration**: COMPLETED - all 7 Field() env kwargs migrated to json_schema_extra
 - **Coverage**: ✅ ACHIEVED 32.68% (exceeds 30% threshold) - 25 total tests (25 passing)
 - **Ruff linting**: All checks pass
-- **MCP Server**: 22 tools, 3 prompts operational
+- **MCP Server**: 23 tools, 3 prompts operational
 - **Test Purpose**: テストはこのMCPがSemantic Scholar APIに対して、呼び出しをできるかどうかをチェックするためのものです
 - **API Specifications**: Semantic Scholarの仕様は docs/api-specifications/ にあります
   - semantic-scholar-datasets-v1.json
@@ -144,12 +240,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **✅ Type Checking**: mypy passes (ignore_errors=true configuration)
 - **✅ Coverage**: 53.80% (exceeds 30% requirement by 79%)
 - **✅ Pydantic v2**: All migrations completed, no deprecation warnings
-- **✅ MCP Server**: 22 tools, 3 prompts available with clean naming
+- **✅ MCP Server**: 23 tools, 3 prompts available with clean naming
 - **✅ Tool Names**: Fully refactored to clean, consistent naming convention
 
 ### MCP Server Testing Status
 - **✅ MCP Configuration**: `.mcp.json` properly configured with `semantic-scholar-dev` 
-- **✅ Tools Available**: 22 tools (11 Paper, 3 Author, 4 Dataset, 4 AI/ML)
+- **✅ Tools Available**: 23 tools across paper research, authors, datasets, recommendations, and PDF conversion
 - **✅ Prompts Available**: 3 prompts (literature_review, citation_analysis, research_trend_analysis)
 - **✅ Server Startup**: Normal startup/shutdown with debug logging
 - **✅ Inspector Test**: Use `npx @modelcontextprotocol/inspector semantic-scholar-dev` for full testing
@@ -371,22 +467,21 @@ asyncio.run(test())
 "
 ```
 
-**Expected Results**: 22 tools, 3 prompts, 0 resources, JSON structured logging
+**Expected Results**: 23 tools, 3 prompts, 0 resources, JSON structured logging
 
-#### MCP Server 22ツール全動作テスト (Claude使用)
+#### MCP Server 23ツール全動作テスト (Claude使用)
 ```bash
 # MCP Inspector でClaude経由テスト
 npx @modelcontextprotocol/inspector --config .mcp.json --server semantic-scholar-dev
 
 # 各ツールをClaude経由で実行:
-# 1. Paper検索: search_papers (query: "machine learning", limit: 2)
-# 2. Paper詳細: get_paper (paper_id: "204e3073870fae3d05bcbc2f6a8e263d9b72e776")
-# 3-11. 他Paper関連ツール: citations, references, embeddings等
-# 12-14. Author関連: search_authors, get_author, get_author_papers
-# 15-18. Dataset関連: releases, info, download_links, updates
-# 19-22. AI/ML関連: recommendations, embeddings, bulk_search等
+# ・Paper関連: search_papers, get_paper, citations, references, authors, batch系, embeddings, get_paper_fulltext
+# ・Author関連: search_authors, get_author, get_author_papers, batch_get_authors
+# ・Dataset関連: get_dataset_releases, get_dataset_info, get_dataset_download_links, get_incremental_dataset_updates
+# ・検索/スニペット: bulk_search_papers, search_papers_match, autocomplete_query, search_snippets
+# ・AI/ML関連: get_recommendations_for_paper, get_recommendations_batch, search_papers_with_embeddings
 
-# 期待結果: 22/22 tools success
+# 期待結果: 23/23 tools success
 ```
 
 ### Build and Release
@@ -424,7 +519,7 @@ This is a **Semantic Scholar MCP Server** that provides access to millions of ac
 
 1. **MCP Server** (`src/semantic_scholar_mcp/server.py`)
    - FastMCP-based implementation
-   - 22 tools, 2 resources, 3 prompts
+  - 23 tools, 2 resources, 3 prompts
    - Comprehensive error handling and logging
 
 2. **API Client** (`src/semantic_scholar_mcp/api_client.py`)
@@ -442,20 +537,32 @@ This is a **Semantic Scholar MCP Server** that provides access to millions of ac
 4. **Data Models** (`src/semantic_scholar_mcp/`)
    - `models.py`: Unified data models (Paper, Author, etc.)
 
+5. **Resource Templates** (`src/semantic_scholar_mcp/resources/`)
+   - `tool_instructions/`: External Markdown templates for tool guidance
+   - Organized by category (paper, author, dataset, pdf, prompts)
+
 ### Package Structure
 ```
 src/
-├── semantic_scholar_mcp/    # Main package
-│   ├── server.py           # MCP server implementation
-│   ├── api_client.py       # HTTP client with resilience
-│   ├── models.py           # Unified Pydantic models
-│   └── utils.py            # Utility functions
-└── core/                   # Shared infrastructure
-    ├── config.py           # Configuration
-    ├── error_handler.py    # Error handling
-    ├── logging.py          # Structured logging
-    ├── cache.py            # Caching layer
-    └── metrics_collector.py # Performance metrics
+├── semantic_scholar_mcp/           # Main package
+│   ├── server.py                  # MCP server implementation
+│   ├── api_client.py              # HTTP client with resilience
+│   ├── models.py                  # Unified Pydantic models
+│   ├── instruction_loader.py      # Tool instruction template loader
+│   ├── utils.py                   # Utility functions
+│   └── resources/                 # External resource files
+│       └── tool_instructions/     # Tool instruction templates
+│           ├── paper/             # Paper tool instructions (10 tools)
+│           ├── author/            # Author tool instructions (4 tools)
+│           ├── dataset/           # Dataset tool instructions (4 tools)
+│           ├── pdf/               # PDF tool instructions (1 tool)
+│           └── prompts/           # Advanced search/AI tools (5 tools)
+└── core/                          # Shared infrastructure
+    ├── config.py                  # Configuration
+    ├── error_handler.py           # Error handling
+    ├── logging.py                 # Structured logging
+    ├── cache.py                   # Caching layer
+    └── metrics_collector.py       # Performance metrics
 ```
 
 ## MCP Configuration
@@ -771,7 +878,7 @@ This is a **Semantic Scholar MCP Server** that provides access to millions of ac
 
 1. **MCP Server** (`src/semantic_scholar_mcp/server.py`)
    - FastMCP-based implementation
-   - 22 tools, 2 resources, 3 prompts
+  - 23 tools, 2 resources, 3 prompts
    - Comprehensive error handling and logging
 
 2. **API Client** (`src/semantic_scholar_mcp/api_client.py`)
@@ -789,20 +896,32 @@ This is a **Semantic Scholar MCP Server** that provides access to millions of ac
 4. **Data Models** (`src/semantic_scholar_mcp/`)
    - `models.py`: Unified data models (Paper, Author, etc.)
 
+5. **Resource Templates** (`src/semantic_scholar_mcp/resources/`)
+   - `tool_instructions/`: External Markdown templates for tool guidance
+   - Organized by category (paper, author, dataset, pdf, prompts)
+
 ### Package Structure
 ```
 src/
-├── semantic_scholar_mcp/    # Main package
-│   ├── server.py           # MCP server implementation
-│   ├── api_client.py       # HTTP client with resilience
-│   ├── models.py           # Unified Pydantic models
-│   └── utils.py            # Utility functions
-└── core/                   # Shared infrastructure
-    ├── config.py           # Configuration
-    ├── error_handler.py    # Error handling
-    ├── logging.py          # Structured logging
-    ├── cache.py            # Caching layer
-    └── metrics_collector.py # Performance metrics
+├── semantic_scholar_mcp/           # Main package
+│   ├── server.py                  # MCP server implementation
+│   ├── api_client.py              # HTTP client with resilience
+│   ├── models.py                  # Unified Pydantic models
+│   ├── instruction_loader.py      # Tool instruction template loader
+│   ├── utils.py                   # Utility functions
+│   └── resources/                 # External resource files
+│       └── tool_instructions/     # Tool instruction templates
+│           ├── paper/             # Paper tool instructions (10 tools)
+│           ├── author/            # Author tool instructions (4 tools)
+│           ├── dataset/           # Dataset tool instructions (4 tools)
+│           ├── pdf/               # PDF tool instructions (1 tool)
+│           └── prompts/           # Advanced search/AI tools (5 tools)
+└── core/                          # Shared infrastructure
+    ├── config.py                  # Configuration
+    ├── error_handler.py           # Error handling
+    ├── logging.py                 # Structured logging
+    ├── cache.py                   # Caching layer
+    └── metrics_collector.py       # Performance metrics
 ```
 
 ### Built with Enterprise-Grade Patterns

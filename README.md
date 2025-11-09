@@ -6,6 +6,25 @@
 
 Access millions of academic papers from Semantic Scholar using the Model Context Protocol (MCP). Works with Claude Code, Claude Desktop, Cursor, VS Code, and other MCP-compatible editors.
 
+## Response Schema (Contract)
+
+All tools return a compact JSON object shaped around a top-level `data` key. Pagination metadata is included only when applicable:
+
+- Always: `data`
+- Paginated endpoints (e.g., `search_papers`, `search_authors`, `search_snippets`): `total`, `offset`, `limit`, `has_more`
+- Count-only endpoints (e.g., recommendations, batch ops, datasets list): `count`
+- Non-paginated single-item endpoints (e.g., `get_paper`, `get_author`, dataset info): only `data`
+
+This keeps payloads predictable and compact for MCP clients.
+
+## Instruction Templates (SSOT)
+
+Tool guidance (“Next Steps”) is injected from YAML files and treated as the single source of truth (SSOT):
+
+- Location: `src/semantic_scholar_mcp/resources/tool_instructions/**/*.yml`
+- Server auto-injects guidance into tool descriptions and responses
+- Markdown templates are kept only for backward compatibility
+
 ## Features
 
 - **Smart Search**: Search papers with filters for year, fields of study, and sorting
@@ -14,6 +33,7 @@ Access millions of academic papers from Semantic Scholar using the Model Context
 - **Citation Network**: Analyze citation relationships and impact
 - **AI-Powered**: Get paper recommendations and research insights
 - **Fast & Reliable**: Built-in caching, rate limiting, and error recovery
+- **PDF Conversion**: Turn open-access PDFs into Markdown or semantic chunks with optional image capture
 
 ## Installation
 
@@ -69,16 +89,17 @@ Ask in natural language:
 
 ### 📄 Paper Tools
 
-| Tool                   | Description                        | Example                                                |
-| ---------------------- | ---------------------------------- | ------------------------------------------------------ |
-| `search_papers`        | Search papers with filters         | *"Search for deep learning papers from 2023"*          |
-| `get_paper`            | Get detailed paper info            | *"Get full details for paper ID abc123"*               |
-| `get_paper_citations`  | Get papers citing this paper       | *"Find papers that cite the attention paper"*          |
-| `get_paper_references` | Get papers this paper cites        | *"Show references from the BERT paper"*                |
-| `get_paper_authors`    | Get detailed author info for paper | *"Show authors of paper abc123"*                       |
-| `batch_get_papers`     | Get multiple papers efficiently    | *"Get details for papers: abc123, def456, ghi789"*     |
-| `bulk_search_papers`   | Advanced search with filters       | *"Search ML papers from 2020-2023 with 50+ citations"* |
-| `search_papers_match`  | Search by exact title match        | *"Find paper with title 'Attention Is All You Need'"*  |
+| Tool                    | Description                                    | Example                                                |
+| ----------------------- | ---------------------------------------------- | ------------------------------------------------------ |
+| `search_papers`         | Search papers with filters                     | *"Search for deep learning papers from 2023"*          |
+| `get_paper`             | Get detailed paper info                        | *"Get full details for paper ID abc123"*               |
+| `get_paper_fulltext` | Convert open-access PDFs to Markdown or chunks | *"Convert the PDF for paper abc123 into Markdown"*     |
+| `get_paper_citations`   | Get papers citing this paper                   | *"Find papers that cite the attention paper"*          |
+| `get_paper_references`  | Get papers this paper cites                    | *"Show references from the BERT paper"*                |
+| `get_paper_authors`     | Get detailed author info for paper             | *"Show authors of paper abc123"*                       |
+| `batch_get_papers`      | Get multiple papers efficiently                | *"Get details for papers: abc123, def456, ghi789"*     |
+| `bulk_search_papers`    | Advanced search with filters                   | *"Search ML papers from 2020-2023 with 50+ citations"* |
+| `search_papers_match`   | Search by exact title match                    | *"Find paper with title 'Attention Is All You Need'"*  |
 
 ### 👤 Author Tools
 
@@ -169,6 +190,31 @@ Ask in natural language:
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
+
+> ⚠️ The `get_paper_fulltext` tool relies on [PyMuPDF4LLM](https://github.com/pymupdf/PyMuPDF4LLM), which is AGPL licensed. Commercial usage of the PDF conversion feature may require a commercial PyMuPDF license.
+
+### PDF Markdown Tips
+
+- **Chunk-only output**
+  ```bash
+  uv run semantic-scholar-mcp --tool get_paper_fulltext --argument '{
+    "paper_id": "649def34f8be52c8b66281af98ae884c09aef38b",
+    "output_mode": "chunks"
+  }'
+  ```
+- **Include extracted images**
+  ```bash
+  uv run semantic-scholar-mcp --tool get_paper_fulltext --argument '{
+    "paper_id": "649def34f8be52c8b66281af98ae884c09aef38b",
+    "output_mode": "both",
+    "include_images": true
+  }'
+  ```
+- **Manual cache cleanup** (respects `PDF_PROCESSING__ARTIFACT_TTL_HOURS`)
+  ```bash
+  uv run python -c "from semantic_scholar_mcp.pdf_processor import cleanup_pdf_cache; cleanup_pdf_cache()"
+  ```
+  Cached artifacts auto-expire after the configured TTL, and you can trigger cleanup manually with the command above.
 
 ## Acknowledgments
 

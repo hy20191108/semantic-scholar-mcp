@@ -1,0 +1,7 @@
+### Next Steps
+- **Read the Markdown file**: When available, use the Read tool with the path from `artifacts.markdown_path` to view the converted content; this path is only returned if Markdown artifacts are enabled.
+- **Access chunks**: Request `output_mode="chunks"` or `"both"` to populate `content.chunks` with structured text segments for analysis.
+- **Analyze findings**: Ask for summaries, key concepts, or specific sections from the paper.
+- **Check artifacts**: PDF, Markdown, and chunks are saved in `.semantic_scholar_mcp/artifacts/` with SHA-1 partitioned paths.
+- **View images**: If `include_images=true`, extracted images are in `artifacts.images_dir`.
+- **Leverage caching**: Subsequent requests use cached artifacts unless `force_refresh=true` is specified.

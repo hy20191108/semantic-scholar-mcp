@@ -1,0 +1,7 @@
+tool_name: get_dataset_download_links
+category: dataset
+description: ''
+next_steps:
+- Record the download URLs and any authentication notes.
+- Ask for guidance on verifying file integrity.
+- Plan storage or processing steps before downloading.

@@ -14,7 +14,13 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 # Type variables
 T = TypeVar("T")
@@ -256,6 +262,23 @@ class Paper(BaseModel):
 
     # External identifiers
     external_ids: dict[str, str] = Field(default_factory=dict, alias="externalIds")
+
+    @field_validator("external_ids", mode="before")
+    @classmethod
+    def normalize_external_ids(cls, value: Any) -> dict[str, str]:
+        """Convert external ID values to strings for consistent typing."""
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            return {}
+
+        normalized: dict[str, str] = {}
+        for key, raw in value.items():
+            if raw is None:
+                continue
+            normalized[key] = str(raw)
+        return normalized
+
     doi: str | None = None
     arxiv_id: str | None = Field(None, alias="arxivId")
 
@@ -295,6 +318,32 @@ class Citation(BaseModel):
             return str(v)
         return v
 
+    @model_validator(mode="before")
+    @classmethod
+    def extract_citing_paper(cls, data: Any) -> dict[str, Any]:
+        """Extract fields from nested citingPaper structure."""
+        if not isinstance(data, dict):
+            return data
+
+        # If citingPaper exists, extract its fields to root level
+        if "citingPaper" in data:
+            citing_paper = data["citingPaper"]
+            if isinstance(citing_paper, dict):
+                # Merge citingPaper fields with root data
+                extracted = {**data, **citing_paper}
+                # Remove the nested structure
+                extracted.pop("citingPaper", None)
+                return extracted
+
+        return data
+
+    @field_validator("paper_id", mode="before")
+    @classmethod
+    def normalize_paper_id(cls, value):
+        if value is None:
+            raise ValueError("paperId is required for citation entries")
+        return str(value)
+
     title: str | None = None
     year: int | None = None
     authors: list[Author] = Field(default_factory=list)
@@ -320,6 +369,32 @@ class Reference(BaseModel):
         if v is not None and not isinstance(v, str):
             return str(v)
         return v
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_cited_paper(cls, data: Any) -> dict[str, Any]:
+        """Extract fields from nested citedPaper structure."""
+        if not isinstance(data, dict):
+            return data
+
+        # If citedPaper exists, extract its fields to root level
+        if "citedPaper" in data:
+            cited_paper = data["citedPaper"]
+            if isinstance(cited_paper, dict):
+                # Merge citedPaper fields with root data
+                extracted = {**data, **cited_paper}
+                # Remove the nested structure
+                extracted.pop("citedPaper", None)
+                return extracted
+
+        return data
+
+    @field_validator("paper_id", mode="before")
+    @classmethod
+    def normalize_paper_id(cls, value):
+        if value is None:
+            raise ValueError("paperId is required for reference entries")
+        return str(value)
 
     title: str | None = None
     year: int | None = None
@@ -388,11 +463,34 @@ class PaginatedResponse(BaseModel, Generic[T]):
 
     model_config = ConfigDict(extra="allow")
 
+    data: list[T]
     total: int
     limit: int
     offset: int
     next_offset: int | None = Field(None, alias="next")
-    data: list[T]
+    has_more_flag: bool | None = Field(default=None, alias="hasMore")
+
+    @model_validator(mode="before")
+    @classmethod
+    def transform_items_to_data(cls, data):
+        """Transform 'items' field to 'data' for backward compatibility."""
+        if isinstance(data, dict):
+            # If 'items' exists but 'data' doesn't, copy items to data
+            if "items" in data and "data" not in data:
+                data = data.copy()
+                data["data"] = data["items"]
+        return data
+
+    @property
+    def has_more(self) -> bool:
+        """Infer whether more results are available."""
+        if isinstance(self.has_more_flag, bool):
+            return self.has_more_flag
+        if self.next_offset is not None:
+            return True
+        if self.total is None:
+            return False
+        return (self.offset + self.limit) < self.total
 
     @property
     def has_more(self) -> bool:
