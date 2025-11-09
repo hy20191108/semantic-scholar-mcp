@@ -622,8 +622,12 @@ class SemanticScholarClient:
     ) -> Paper:
         """Get paper details with optional citations and references."""
         # Validate paper ID
-        if not paper_id:
-            raise ValidationError("Paper ID cannot be empty", field="paper_id")
+        if not paper_id or not isinstance(paper_id, str) or not paper_id.strip():
+            raise ValidationError(
+                f"Paper ID must be a non-empty string, got: "
+                f"{type(paper_id).__name__} '{paper_id}'",
+                field="paper_id",
+            )
 
         # Use cache
         cache_key = f"paper:{paper_id}"

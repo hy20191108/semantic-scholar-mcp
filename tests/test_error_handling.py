@@ -1,6 +1,7 @@
 """Comprehensive tests for error handling and logging systems."""
 
 import asyncio
+import json
 
 import pytest
 
@@ -8,7 +9,6 @@ from core.error_handler import (
     ErrorRecoveryStrategy,
     MCPErrorHandler,
     mcp_error_handler,
-    validation_error_handler,
 )
 from core.exceptions import (
     APIError,
@@ -251,13 +251,14 @@ class TestMCPErrorHandler:
         handler = MCPErrorHandler()
 
         error = ValueError("Test error")
-        response = await handler.handle_mcp_tool_error(
+        response_str = await handler.handle_mcp_tool_error(
             error=error,
             tool_name="test_tool",
             arguments={"param": "value"},
             context={"session_id": "test-session"},
         )
 
+        response = json.loads(response_str)
         assert response["success"] is False
         assert "error" in response
         assert response["error"]["code"] == "E1001"  # INTERNAL_ERROR
@@ -268,42 +269,47 @@ class TestMCPErrorHandler:
         handler = MCPErrorHandler()
 
         error = FileNotFoundError("Resource not found")
-        response = await handler.handle_mcp_resource_error(
+        response_str = await handler.handle_mcp_resource_error(
             error=error,
             resource_uri="papers/123",
             resource_type="paper",
         )
 
+        response = json.loads(response_str)
         assert "error" in response
         assert response["error"]["code"] == "E5000"  # NOT_FOUND
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(reason="handle_mcp_prompt_error removed from error_handler.py")
     async def test_mcp_prompt_error_handling(self):
         """Test MCP prompt error handling."""
         handler = MCPErrorHandler()
 
         error = ValueError("Invalid prompt arguments")
-        response = await handler.handle_mcp_prompt_error(
+        response_str = await handler.handle_mcp_prompt_error(
             error=error,
             prompt_name="test_prompt",
             prompt_args={"topic": "test"},
         )
 
+        response = json.loads(response_str)
         assert "error" in response
         assert response["error"]["code"] == "E2000"  # VALIDATION_ERROR
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(reason="handle_validation_error removed from error_handler.py")
     async def test_validation_error_handling(self):
         """Test validation error handling."""
         handler = MCPErrorHandler()
 
         error = ValueError("Invalid value")
-        response = await handler.handle_validation_error(
+        response_str = await handler.handle_validation_error(
             error=error,
             field="test_field",
             value="invalid_value",
         )
 
+        response = json.loads(response_str)
         assert "error" in response
         assert response["error"]["code"] == "E2000"  # VALIDATION_ERROR
 
@@ -343,16 +349,18 @@ class TestErrorHandlerDecorators:
         async def failing_function():
             raise ValueError("Test error")
 
-        result = await failing_function()
-        assert isinstance(result, dict)
+        result_str = await failing_function()
+        assert isinstance(result_str, str)
+        result = json.loads(result_str)
         assert result["success"] is False
         assert "error" in result
 
     @pytest.mark.asyncio
+    @pytest.mark.skip(reason="validation_error_handler removed from error_handler.py")
     async def test_validation_error_handler_decorator(self):
         """Test validation error handler decorator."""
 
-        @validation_error_handler(field="test_field")
+        # @validation_error_handler(field="test_field")  # Removed decorator
         async def validating_function(value: str) -> str:
             if not value:
                 raise ValueError("Value cannot be empty")
@@ -515,7 +523,7 @@ class TestIntegratedErrorHandling:
         # Simulate a complex error scenario
         original_error = MCPTimeoutError("Request timed out", timeout_duration=30.0)
 
-        response = await handler.handle_mcp_tool_error(
+        response_str = await handler.handle_mcp_tool_error(
             error=original_error,
             tool_name="search_papers",
             arguments={"query": "test", "limit": 10},
@@ -523,6 +531,7 @@ class TestIntegratedErrorHandling:
         )
 
         # Verify error response structure
+        response = json.loads(response_str)
         assert response["success"] is False
         assert "error" in response
         assert (
@@ -551,7 +560,8 @@ class TestIntegratedErrorHandling:
 
         # Verify all errors were handled
         assert len(results) == 5
-        for result in results:
+        for result_str in results:
+            result = json.loads(result_str)
             assert result["success"] is False
             assert "error" in result
 
@@ -571,13 +581,14 @@ class TestIntegratedErrorHandling:
             inner_exception=original,
         )
 
-        response = await handler.handle_mcp_tool_error(
+        response_str = await handler.handle_mcp_tool_error(
             error=wrapped,
             tool_name="test_tool",
             arguments={},
         )
 
         # Verify error chain information
+        response = json.loads(response_str)
         assert response["success"] is False
         assert "error" in response
         assert response["error"]["inner_error"]["type"] == "ValueError"

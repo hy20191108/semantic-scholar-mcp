@@ -41,13 +41,9 @@ def convert_tool_body(tool_name: str, source: str, category: str) -> str:
 
     # Find function end (next @inject or end of file)
     next_func = re.search(r"\n@inject_yaml_instructions\(", source[func_start + 10 :])
-    if next_func:
-        func_end = func_start + 10 + next_func.start()
-    else:
-        func_end = len(source)
+    func_end = func_start + 10 + next_func.start() if next_func else len(source)
 
     func_body = source[func_start:func_end]
-    original_body = func_body
 
     # Remove try: line
     func_body = re.sub(r"\n        try:\s*\n", "\n", func_body)
@@ -158,9 +154,8 @@ def convert_tool_body(tool_name: str, source: str, category: str) -> str:
     )
 
     # Replace in source
-    source = source[:func_start] + func_body + source[func_end:]
+    return source[:func_start] + func_body + source[func_end:]
 
-    return source
 
 
 def main():

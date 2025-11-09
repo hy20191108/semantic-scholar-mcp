@@ -1,19 +1,18 @@
 """Comprehensive error handler for MCP operations."""
 
 import asyncio
+import json
 import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
 from functools import wraps
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from .exceptions import (
-    MCPPromptError,
     MCPResourceError,
     MCPToolError,
     RetryExhaustedError,
     SemanticScholarMCPError,
-    ValidationError,
     create_error_response,
 )
 from .logging import (
@@ -178,7 +177,7 @@ class MCPErrorHandler:
         tool_name: str,
         arguments: dict[str, Any],
         context: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> str:
         """Handle MCP tool execution errors.
 
         Args:
@@ -232,7 +231,8 @@ class MCPErrorHandler:
         # Add success flag
         response["success"] = False
 
-        return response
+        # Return as JSON string for Serena-style MCP tools
+        return json.dumps(response, ensure_ascii=False, indent=2)
 
     async def handle_mcp_resource_error(
         self,
@@ -240,7 +240,7 @@ class MCPErrorHandler:
         resource_uri: str,
         resource_type: str | None = None,
         context: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> str:
         """Handle MCP resource errors.
 
         Args:
@@ -282,104 +282,10 @@ class MCPErrorHandler:
         # Update metrics
         self._update_metrics(mcp_error)
 
-        return create_error_response(mcp_error, include_internal_details=False)
-
-    async def handle_mcp_prompt_error(
-        self,
-        error: Exception,
-        prompt_name: str,
-        prompt_args: dict[str, Any],
-        context: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Handle MCP prompt errors.
-
-        Args:
-            error: Exception that occurred
-            prompt_name: Name of the prompt
-            prompt_args: Prompt arguments
-            context: Additional context
-
-        Returns:
-            Error response dictionary
-        """
-        error_context = {
-            "prompt_name": prompt_name,
-            "prompt_args": prompt_args,
-            **(context or {}),
-        }
-
-        # Set context variables
-        mcp_operation_var.set("prompt_execution")
-
-        # Log error with context
-        logger.log_error_with_context(
-            error,
-            context=error_context,
-            recovery_actions=["validate_args", "retry"],
-        )
-
-        # Wrap exception if needed
-        if not isinstance(error, SemanticScholarMCPError):
-            mcp_error = MCPPromptError(
-                message=str(error),
-                prompt_name=prompt_name,
-                prompt_args=prompt_args,
-                inner_exception=error,
-            )
-        else:
-            mcp_error = error
-
-        # Update metrics
-        self._update_metrics(mcp_error)
-
-        return create_error_response(mcp_error, include_internal_details=False)
-
-    async def handle_validation_error(
-        self,
-        error: Exception,
-        field: str | None = None,
-        value: Any = None,
-        context: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Handle validation errors.
-
-        Args:
-            error: Exception that occurred
-            field: Field that failed validation
-            value: Invalid value
-            context: Additional context
-
-        Returns:
-            Error response dictionary
-        """
-        error_context = {
-            "field": field,
-            "value": value,
-            **(context or {}),
-        }
-
-        # Log error with context
-        logger.log_error_with_context(
-            error,
-            context=error_context,
-            recovery_actions=["validate_input", "provide_default"],
-        )
-
-        # Wrap exception if needed
-        if not isinstance(error, ValidationError):
-            validation_error = ValidationError(
-                message=str(error),
-                field=field,
-                value=value,
-                inner_exception=error,
-            )
-        else:
-            validation_error = error
-
-        # Update metrics
-        self._update_metrics(validation_error)
-
-        return create_error_response(validation_error, include_internal_details=False)
+        # Return as JSON string for Serena-style MCP tools
+        response = create_error_response(mcp_error, include_internal_details=False)
+        response["success"] = False
+        return json.dumps(response, ensure_ascii=False, indent=2)
 
 
 def mcp_error_handler(
@@ -428,8 +334,8 @@ def mcp_error_handler(
                 return result
 
             except Exception as error:
-                # Handle the error
-                return await handler.handle_mcp_tool_error(
+                # Handle the error and return JSON string
+                error_result = await handler.handle_mcp_tool_error(
                     error=error,
                     tool_name=actual_tool_name,
                     arguments={"args": args, "kwargs": kwargs},
@@ -439,8 +345,7 @@ def mcp_error_handler(
                         "request_id": request_id,
                     },
                 )
-
-                # Return error response instead of raising
+                return cast(T, error_result)
 
         @wraps(func)
         def sync_wrapper(*args, **kwargs) -> T:
@@ -455,89 +360,24 @@ def mcp_error_handler(
     return decorator
 
 
-def validation_error_handler(
-    field: str | None = None,
-    error_handler: MCPErrorHandler | None = None,
-):
-    """Decorator for validation error handling.
-
-    Args:
-        field: Field name being validated
-        error_handler: Error handler instance
-
-    Returns:
-        Decorated function
-    """
-
-    def decorator(func: Callable[..., T]) -> Callable[..., T]:
-        handler = error_handler or MCPErrorHandler()
-
-        @wraps(func)
-        async def async_wrapper(*args, **kwargs) -> T:
-            try:
-                return await func(*args, **kwargs)
-            except Exception as error:
-                # Handle validation error
-                return await handler.handle_validation_error(
-                    error=error,
-                    field=field,
-                    value=kwargs.get("value") or (args[0] if args else None),
-                    context={
-                        "function": func.__name__,
-                        "args": args,
-                        "kwargs": kwargs,
-                    },
-                )
-
-        @wraps(func)
-        def sync_wrapper(*args, **kwargs) -> T:
-            try:
-                return func(*args, **kwargs)
-            except Exception as error:
-                # Handle validation error synchronously
-                return asyncio.run(
-                    handler.handle_validation_error(
-                        error=error,
-                        field=field,
-                        value=kwargs.get("value") or (args[0] if args else None),
-                        context={
-                            "function": func.__name__,
-                            "args": args,
-                            "kwargs": kwargs,
-                        },
-                    )
-                )
-
-        # Return appropriate wrapper based on function type
-        if asyncio.iscoroutinefunction(func):
-            return async_wrapper
-        return sync_wrapper
-
-    return decorator
-
-
 # Global error handler instance
-global_error_handler = MCPErrorHandler()
+_global_error_handler: MCPErrorHandler | None = None
 
 
 def set_global_error_handler(handler: MCPErrorHandler) -> None:
-    """Set the global error handler.
+    """Set global error handler instance.
 
     Args:
-        handler: Error handler instance
+        handler: Error handler instance to set globally
     """
-    global global_error_handler
-    global_error_handler = handler
+    global _global_error_handler
+    _global_error_handler = handler
 
 
-def get_global_error_handler() -> MCPErrorHandler:
-    """Get the global error handler.
+def get_global_error_handler() -> MCPErrorHandler | None:
+    """Get global error handler instance.
 
     Returns:
-        Global error handler instance
+        Global error handler instance or None if not set
     """
-    return global_error_handler
-
-
-# Alias for backward compatibility
-ErrorHandler = MCPErrorHandler
+    return _global_error_handler

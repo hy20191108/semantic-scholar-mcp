@@ -79,10 +79,7 @@ def extract_function_body(content: str, func_name: str) -> tuple[str, int, int] 
     next_func_pattern = r"\n@[\w_]+\([^)]*\)\s*\nasync def \w+\("
     next_match = re.search(next_func_pattern, content[match.end() :])
 
-    if next_match:
-        end_pos = match.end() + next_match.start()
-    else:
-        end_pos = len(content)
+    end_pos = match.end() + next_match.start() if next_match else len(content)
 
     return content[start_pos:end_pos], start_pos, end_pos
 
@@ -248,13 +245,12 @@ def transform_function(func_body: str, tool: ToolInfo) -> str:
     )
 
     # 9. Remove isinstance checks for error dict returns
-    result = re.sub(
+    return re.sub(
         r"    if isinstance\(\w+, dict\):\s*\n\s*return \w+\s*\n\s*\n",
         "",
         result,
     )
 
-    return result
 
 
 def main() -> None:

@@ -56,7 +56,6 @@ def main():
             print(f"  Removing RequestContext at line {i + 1}")
             # Skip this line, dedent following lines
             i += 1
-            indent_to_remove = 4
 
             # Process following indented lines
             while i < len(lines):
@@ -87,7 +86,7 @@ def main():
     import_section_end = 0
     lines = content.split("\n")
     for i, line in enumerate(lines):
-        if line.startswith("from ") or line.startswith("import "):
+        if line.startswith(("from ", "import ")):
             import_section_end = i
 
     # Prepare additions
