@@ -620,7 +620,20 @@ class SemanticScholarClient:
         offset: int = 0,
         limit: int = 100,
     ) -> PaginatedResponse[Citation]:
-        """Get citations for a paper."""
+        """Get citations for a paper.
+
+        Args:
+            paper_id: Paper identifier
+            fields: Optional fields to include in response
+            offset: Pagination offset
+            limit: Maximum number of results
+
+        Returns:
+            Paginated response with Citation objects
+
+        Note:
+            Filters out citations without valid paperId.
+        """
         fields = fields or CITATION_FIELDS
         params = {"fields": ",".join(fields), "offset": offset, "limit": limit}
 
@@ -628,11 +641,11 @@ class SemanticScholarClient:
             "GET", f"/paper/{paper_id}/citations", params=params
         )
 
-        # Extract citingPaper from each citation
+        # Extract citingPaper from nested response structure
         citations = []
         for cite_data in data.get("data", []):
             citing_paper = cite_data.get("citingPaper", {})
-            if citing_paper:
+            if citing_paper and citing_paper.get("paperId"):
                 citations.append(Citation(**citing_paper))
 
         return PaginatedResponse[Citation](
@@ -649,7 +662,20 @@ class SemanticScholarClient:
         offset: int = 0,
         limit: int = 100,
     ) -> PaginatedResponse[Reference]:
-        """Get references for a paper."""
+        """Get references for a paper.
+
+        Args:
+            paper_id: Paper identifier
+            fields: Optional fields to include in response
+            offset: Pagination offset
+            limit: Maximum number of results
+
+        Returns:
+            Paginated response with Reference objects
+
+        Note:
+            Filters out references without valid paperId.
+        """
         fields = fields or CITATION_FIELDS
         params = {"fields": ",".join(fields), "offset": offset, "limit": limit}
 
@@ -657,11 +683,11 @@ class SemanticScholarClient:
             "GET", f"/paper/{paper_id}/references", params=params
         )
 
-        # Extract citedPaper from each reference
+        # Extract citedPaper from nested response structure
         references = []
         for ref_data in data.get("data", []):
             cited_paper = ref_data.get("citedPaper", {})
-            if cited_paper:
+            if cited_paper and cited_paper.get("paperId"):
                 references.append(Reference(**cited_paper))
 
         return PaginatedResponse[Reference](

@@ -44,11 +44,7 @@ async def execute_api_with_error_handling(operation_name: str, operation_func):
             return await operation_func()
     except Exception as e:
         logger.error(f"Error in {operation_name}: {e!s}")
-        return (
-            error_handler.handle_error(e)
-            if error_handler
-            else {"success": False, "error": {"type": "error", "message": str(e)}}
-        )
+        return {"success": False, "error": {"type": "error", "message": str(e)}}
 
 
 def extract_pagination_params(limit=None, offset=None, default_limit=10):
@@ -284,14 +280,14 @@ async def search_papers(
 
             logger.debug_mcp(
                 "Search completed successfully",
-                result_count=len(result.items),
+                result_count=len(result.data),
                 total=result.total,
                 has_more=result.has_more,
             )
 
             # Format response
             papers_data = []
-            for paper in result.items:
+            for paper in result.data:
                 paper_dict = paper.model_dump(exclude_none=True)
                 # Apply field selection if requested
                 if actual_fields:
@@ -305,7 +301,7 @@ async def search_papers(
                     "total": result.total,
                     "offset": result.offset,
                     "limit": result.limit,
-                    "has_more": result.has_more,
+                    "has_more": (result.offset + result.limit) < result.total,
                 },
             }
 
@@ -532,12 +528,12 @@ async def get_paper_authors(
                 "success": True,
                 "data": {
                     "authors": [
-                        author.model_dump(exclude_none=True) for author in result.items
+                        author.model_dump(exclude_none=True) for author in result.data
                     ],
                     "total": result.total,
                     "offset": result.offset,
                     "limit": result.limit,
-                    "has_more": result.has_more,
+                    "has_more": (result.offset + result.limit) < result.total,
                 },
             }
 
@@ -599,12 +595,12 @@ async def get_author_papers(
                 "success": True,
                 "data": {
                     "papers": [
-                        paper.model_dump(exclude_none=True) for paper in result.items
+                        paper.model_dump(exclude_none=True) for paper in result.data
                     ],
                     "total": result.total,
                     "offset": result.offset,
                     "limit": result.limit,
-                    "has_more": result.has_more,
+                    "has_more": (result.offset + result.limit) < result.total,
                 },
             }
 
@@ -646,12 +642,12 @@ async def search_authors(
                 "success": True,
                 "data": {
                     "authors": [
-                        author.model_dump(exclude_none=True) for author in result.items
+                        author.model_dump(exclude_none=True) for author in result.data
                     ],
                     "total": result.total,
                     "offset": result.offset,
                     "limit": result.limit,
-                    "has_more": result.has_more,
+                    "has_more": (result.offset + result.limit) < result.total,
                 },
             }
 
@@ -811,13 +807,13 @@ async def bulk_search_papers(
                 papers = await api_client.search_papers_bulk(
                     query=query,
                     fields=actual_fields,
-                    publication_types=publication_types,
-                    fields_of_study=fields_of_study,
-                    year_range=year_range,
-                    venue=venue,
-                    min_citation_count=min_citation_count,
-                    open_access_pdf=open_access_pdf,
-                    sort=sort,
+                    publication_types=extract_field_value(publication_types),
+                    fields_of_study=extract_field_value(fields_of_study),
+                    year_range=extract_field_value(year_range),
+                    venue=extract_field_value(venue),
+                    min_citation_count=extract_field_value(min_citation_count),
+                    open_access_pdf=extract_field_value(open_access_pdf),
+                    sort=extract_field_value(sort),
                 )
 
             # Format response with field selection
@@ -954,11 +950,11 @@ async def search_snippets(
             return {
                 "success": True,
                 "data": {
-                    "snippets": result.items,
+                    "snippets": result.data,
                     "total": result.total,
                     "offset": result.offset,
                     "limit": result.limit,
-                    "has_more": result.has_more,
+                    "has_more": (result.offset + result.limit) < result.total,
                 },
             }
 
@@ -1246,12 +1242,12 @@ async def search_papers_with_embeddings(
                 "success": True,
                 "data": {
                     "papers": [
-                        paper.model_dump(exclude_none=True) for paper in result.items
+                        paper.model_dump(exclude_none=True) for paper in result.data
                     ],
                     "total": result.total,
                     "offset": result.offset,
                     "limit": result.limit,
-                    "has_more": result.has_more,
+                    "has_more": (result.offset + result.limit) < result.total,
                 },
             }
 

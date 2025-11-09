@@ -241,9 +241,7 @@ class Paper(BaseModel):
     venue: str | None = None
 
     # Publication details
-    publication_types: list[str] = Field(
-        default_factory=list, alias="publicationTypes"
-    )
+    publication_types: list[str] = Field(default_factory=list, alias="publicationTypes")
     publication_date: datetime | None = Field(None, alias="publicationDate")
     publication_venue: PublicationVenue | None = Field(None, alias="publicationVenue")
     journal: dict[str, Any] | None = None
@@ -286,7 +284,7 @@ class Citation(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
-    paper_id: str = Field(alias="paperId")
+    paper_id: str | None = Field(None, alias="paperId")
     corpus_id: str | None = Field(None, alias="corpusId")
 
     @field_validator("corpus_id", mode="before")
@@ -312,7 +310,7 @@ class Reference(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
-    paper_id: str = Field(alias="paperId")
+    paper_id: str | None = Field(None, alias="paperId")
     corpus_id: str | None = Field(None, alias="corpusId")
 
     @field_validator("corpus_id", mode="before")
@@ -395,6 +393,11 @@ class PaginatedResponse(BaseModel, Generic[T]):
     offset: int
     next_offset: int | None = Field(None, alias="next")
     data: list[T]
+
+    @property
+    def has_more(self) -> bool:
+        """Check if there are more items available."""
+        return (self.offset + self.limit) < self.total
 
 
 # =============================================================================
