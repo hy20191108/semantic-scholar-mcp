@@ -354,7 +354,7 @@ async def initialize_server():
 
     # Create API client
     api_client = SemanticScholarClient(
-        config=config.semantic_scholar,
+        config=config,
         rate_limit_config=config.rate_limit,
         retry_config=config.retry,
         logger=logger,
@@ -1606,6 +1606,44 @@ async def get_paper_fulltext(
         default=False,
         description="Force re-download and regeneration of artifacts.",
     ),
+    start_line: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "The 0-based index of the first line to be retrieved. "
+            "If None, start from the beginning."
+        ),
+    ),
+    end_line: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "The 0-based index of the last line to be retrieved (inclusive). "
+            "If None, read until the end."
+        ),
+    ),
+    search_pattern: str | None = Field(
+        default=None,
+        description=(
+            "Optional regex pattern to search for in the markdown content. "
+            "When specified, only lines containing matches and their "
+            "context will be returned."
+        ),
+    ),
+    context_lines_before: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Number of lines to include before each match when using search_pattern."
+        ),
+    ),
+    context_lines_after: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Number of lines to include after each match when using search_pattern."
+        ),
+    ),
 ) -> str:
     """
     Download an open-access PDF and expose Markdown content to MCP clients.
@@ -1621,6 +1659,12 @@ async def get_paper_fulltext(
         include_images: Whether to extract images from the PDF (default: False)
         max_pages: Limit pages to convert, defaults to server configuration
         force_refresh: Force re-download and regeneration of artifacts (default: False)
+        start_line: The 0-based index of the first line to be retrieved (default: None)
+        end_line: The 0-based index of the last line to be retrieved,
+            inclusive (default: None)
+        search_pattern: Optional regex pattern to search for in the markdown content.
+        context_lines_before: Number of lines to include before each match.
+        context_lines_after: Number of lines to include after each match.
 
     Returns:
         JSON object with:
@@ -1677,6 +1721,11 @@ async def get_paper_fulltext(
             include_images=extract_field_value(include_images),
             max_pages=extract_field_value(max_pages),
             force_refresh=extract_field_value(force_refresh),
+            start_line=extract_field_value(start_line),
+            end_line=extract_field_value(end_line),
+            search_pattern=extract_field_value(search_pattern),
+            context_lines_before=extract_field_value(context_lines_before),
+            context_lines_after=extract_field_value(context_lines_after),
         )
 
     result = await _with_api_client(_runner)

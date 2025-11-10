@@ -20,6 +20,23 @@ DASHBOARD_DIR = Path(__file__).parent / "static"
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 
+def _validate_port_range(port: int) -> None:
+    """
+    Validate port number is in valid range.
+
+    Args:
+        port: Port number to validate
+
+    Raises:
+        ValueError: If port is outside valid range (1024-65535)
+    """
+    if not 1024 <= port <= 65535:
+        raise ValueError(
+            f"Port {port} outside valid range (1024-65535). "
+            "Ports below 1024 require root privileges."
+        )
+
+
 # Pydantic models for API requests/responses
 class RequestLog(BaseModel):
     """Request model for log pagination."""
@@ -183,33 +200,83 @@ class DashboardAPI:
 
     @staticmethod
     def _find_first_free_port(start_port: int) -> int:
-        """Find first available port starting from start_port (Serena-style)."""
+        """
+        Find first available port starting from start_port.
+
+        Args:
+            start_port: Starting port number to search from
+
+        Returns:
+            First available port number
+
+        Raises:
+            ValueError: If start_port is outside valid range (1024-65535)
+            RuntimeError: If no free ports found up to 65535
+        """
+        # Validate port range using shared validation logic
+        _validate_port_range(start_port)
+
         port = start_port
+        attempts = 0
+        last_error = None
+
         while port <= 65535:
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
                     sock.bind(("127.0.0.1", port))
+                    logger.debug(f"Found free port: {port}")
+                    if attempts > 0:
+                        logger.info(
+                            f"Found free port {port} after trying {attempts} ports "
+                            f"(starting from {start_port})"
+                        )
                     return port
-            except OSError:
+            except OSError as e:
+                last_error = str(e)
+                logger.debug(f"Port {port} unavailable: {e}. Trying next port...")
+                attempts += 1
+                # Log at INFO level every 10 failed attempts for production visibility
+                if attempts % 10 == 0:
+                    logger.info(
+                        f"Still searching for free port... tried {attempts} ports "
+                        f"(current: {port})"
+                    )
                 port += 1
 
-        raise RuntimeError(f"No free ports found starting from {start_port}")
+        # Include detailed context in final error for troubleshooting
+        raise RuntimeError(
+            f"No free ports found in range {start_port}-65535 "
+            f"after trying {attempts} ports. "
+            f"Last error: {last_error}. "
+            "Please check if other services are using all available ports."
+        )
 
     def run(
         self,
         host: str = "127.0.0.1",
-        port: int = 0x5EDA,
+        port: int = 25000,
     ) -> int:
         """
         Run Flask dashboard server.
 
         Args:
             host: Host to bind to (default: 127.0.0.1)
-            port: Port to bind to (default: 0x5EDA = 24282)
+            port: Port to bind to (default: 25000)
 
         Returns:
             Port number the server is running on
+
+        Raises:
+            ValueError: If port is outside valid range (1024-65535)
+
+        Note:
+            This method uses the specified port directly.
+            If the port is already in use, Flask will raise an error.
+            For automatic port selection with fallback, use run_in_thread() instead
         """
+        # Validate port range using shared validation logic
+        _validate_port_range(port)
+
         # Suppress Flask's startup banner
         from flask import cli
 
@@ -230,23 +297,35 @@ class DashboardAPI:
         port: int | None = None,
     ) -> tuple[threading.Thread, int]:
         """
-        Run Dashboard in background thread.
+        Run Dashboard in background thread with automatic port selection.
 
         Args:
-            host: Preferred bind address for the dashboard.
-            port: Preferred port (ignored, for compatibility only).
+            host: Bind address for the dashboard.
+            port: Preferred port (default: 25000). If in use, finds next available port.
 
         Returns:
             Tuple of (thread, port_number)
 
         Note:
-            Following Serena's simple and reliable approach:
-            Always finds first free port starting from default (0x5EDA = 24282).
-            Configuration port is ignored to ensure dashboard always starts
-            successfully.
+            Attempts to use the specified port first. If unavailable,
+            automatically finds the next free port starting from the specified port.
+            This ensures the dashboard always starts successfully while respecting
+            port preferences.
         """
-        # Always find free port, Serena-style (simple and reliable)
-        chosen_port = self._find_first_free_port(0x5EDA)
+        # Use specified port or default to 25000
+        # Find first available port starting from preferred port
+        start_port = port if port is not None else 25000
+        chosen_port = self._find_first_free_port(start_port)
+
+        # Log port selection information
+        if chosen_port != start_port:
+            logger.info(
+                f"Preferred port {start_port} unavailable. "
+                f"Using port {chosen_port} instead."
+            )
+        else:
+            logger.info(f"Dashboard using preferred port {chosen_port}")
+
         thread = threading.Thread(
             target=lambda: self.run(host=host, port=chosen_port),
             daemon=True,
