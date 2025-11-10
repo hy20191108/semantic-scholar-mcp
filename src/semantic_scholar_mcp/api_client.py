@@ -9,7 +9,11 @@ from typing import Any, TypeVar
 
 import httpx
 
-from core.config import RateLimitConfig, RetryConfig, SemanticScholarConfig
+from core.config import (
+    ApplicationConfig,
+    RateLimitConfig,
+    RetryConfig,
+)
 from core.exceptions import (
     CircuitBreakerError,
     NetworkError,
@@ -291,7 +295,7 @@ class SemanticScholarClient:
 
     def __init__(
         self,
-        config: SemanticScholarConfig,
+        config: ApplicationConfig,
         rate_limit_config: RateLimitConfig | None = None,
         retry_config: RetryConfig | None = None,
         logger: ILogger | None = None,
@@ -313,24 +317,22 @@ class SemanticScholarClient:
             )
 
         # Initialize resilience components
+        # Note: Using getattr() for defensive programming - ensures backward
+        # compatibility if config schema evolves or partial configs are provided.
+        # Provides safe fallback to sensible defaults if attributes are missing.
         self.circuit_breaker = CircuitBreaker(
-            failure_threshold=getattr(
-                getattr(config, "circuit_breaker", None), "failure_threshold", 5
-            ),
-            recovery_timeout=getattr(
-                getattr(config, "circuit_breaker", None), "recovery_timeout", 60.0
-            ),
+            failure_threshold=getattr(config.circuit_breaker, "failure_threshold", 5),
+            recovery_timeout=getattr(config.circuit_breaker, "recovery_timeout", 60.0),
             logger=self.logger.with_context(component="circuit_breaker"),
         )
 
         # Resolve rate limit configuration. Always allow explicit overrides but
         # fall back to sensible defaults based on whether an API key is present.
-        resolved_rate_config = self._rate_limit_config
-        if resolved_rate_config is None and hasattr(config, "rate_limit"):
-            resolved_rate_config = config.rate_limit
+        resolved_rate_config = self._rate_limit_config or config.rate_limit
 
         api_key_present = bool(
-            getattr(config, "api_key", None) and config.api_key.get_secret_value()
+            config.semantic_scholar.api_key
+            and config.semantic_scholar.api_key.get_secret_value()
         )
 
         # Semantic Scholar allows higher throughput when an API key is supplied.
@@ -356,9 +358,7 @@ class SemanticScholarClient:
             logger=self.logger.with_context(component="rate_limiter"),
         )
 
-        resolved_retry_config = self._retry_config
-        if resolved_retry_config is None and hasattr(config, "retry"):
-            resolved_retry_config = config.retry
+        resolved_retry_config = self._retry_config or config.retry
         if resolved_retry_config is None:
             resolved_retry_config = RetryConfig()
 
@@ -377,12 +377,12 @@ class SemanticScholarClient:
     async def __aenter__(self):
         """Enter async context."""
         self._client = httpx.AsyncClient(
-            base_url=self.config.base_url,
+            base_url=self.config.semantic_scholar.base_url,
             headers=self._build_headers(),
-            timeout=self.config.timeout,
+            timeout=self.config.semantic_scholar.timeout,
             limits=httpx.Limits(
-                max_connections=self.config.max_connections,
-                max_keepalive_connections=self.config.max_keepalive_connections,
+                max_connections=self.config.semantic_scholar.max_connections,
+                max_keepalive_connections=self.config.semantic_scholar.max_keepalive_connections,
             ),
         )
         return self
@@ -395,14 +395,14 @@ class SemanticScholarClient:
     def _build_headers(self) -> dict[str, str]:
         """Build request headers."""
         headers = {
-            "User-Agent": f"{self.config.server.name}/{self.config.server.version}"
-            if hasattr(self.config, "server")
-            else "semantic-scholar-mcp/0.1.0",
+            "User-Agent": f"{self.config.server.name}/{self.config.server.version}",
             "Accept": "application/json",
         }
 
-        if self.config.api_key:
-            headers["x-api-key"] = self.config.api_key.get_secret_value()
+        if self.config.semantic_scholar.api_key:
+            headers["x-api-key"] = (
+                self.config.semantic_scholar.api_key.get_secret_value()
+            )
 
         return headers
 
@@ -514,7 +514,7 @@ class SemanticScholarClient:
                     self.logger.error(
                         "Request timeout",
                         url=str(e.request.url) if e.request else None,
-                        timeout=self.config.timeout,
+                        timeout=self.config.semantic_scholar.timeout,
                     )
                     if self.metrics:
                         self.metrics.increment(
@@ -522,7 +522,9 @@ class SemanticScholarClient:
                             tags={"method": method, "status": "timeout"},
                         )
                     raise NetworkError(
-                        "Request timed out", url=path, timeout=self.config.timeout
+                        "Request timed out",
+                        url=path,
+                        timeout=self.config.semantic_scholar.timeout,
                     )
 
                 except httpx.NetworkError as e:
@@ -577,7 +579,7 @@ class SemanticScholarClient:
                 return cached
 
         # Prepare request
-        fields = fields or self.config.default_fields
+        fields = fields or self.config.semantic_scholar.default_fields
         params = {
             "query": query.query,
             "fields": ",".join(fields),
@@ -590,10 +592,12 @@ class SemanticScholarClient:
 
         # Apply filters
         if query.filters:
-            if query.filters.year:
-                params["year"] = str(query.filters.year)
+            if query.filters.year_range:
+                params["year"] = str(query.filters.year_range)
             if query.filters.fields_of_study:
                 params["fieldsOfStudy"] = ",".join(query.filters.fields_of_study)
+            if query.filters.open_access_pdf:
+                params["openAccessPdf"] = "true"
 
         # Make request
         data = await self._make_request("GET", "/paper/search", params=params)
@@ -1229,11 +1233,8 @@ class SemanticScholarClient:
                 )
             if query.filters.fields_of_study:
                 params["fieldsOfStudy"] = ",".join(query.filters.fields_of_study)
-            if query.filters.year:
-                params["year"] = str(query.filters.year)
             if query.filters.year_range:
-                start, end = query.filters.year_range
-                params["year"] = f"{start}-{end}"
+                params["year"] = str(query.filters.year_range)
             if query.filters.min_citation_count:
                 params["minCitationCount"] = str(query.filters.min_citation_count)
             if query.filters.open_access_only:

@@ -152,6 +152,7 @@ class ValidationError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
+        kwargs.pop("error_code", None)  # Avoid duplicate error_code argument
 
         if field:
             details["field"] = field
@@ -189,6 +190,7 @@ class APIError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
+        kwargs.pop("error_code", None)  # Avoid duplicate error_code argument
 
         if status_code:
             details["status_code"] = status_code
@@ -232,6 +234,7 @@ class RateLimitError(SemanticScholarMCPError):
         self.requests_per_second = kwargs.pop("requests_per_second", None)
 
         details = kwargs.pop("details", {})
+        kwargs.pop("error_code", None)  # Avoid duplicate error_code argument
 
         if retry_after is not None:
             details["retry_after"] = retry_after
@@ -271,6 +274,7 @@ class NetworkError(APIError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
+        kwargs.pop("error_code", None)  # Avoid duplicate error_code argument
 
         if url:
             details["url"] = url
@@ -300,6 +304,7 @@ class ConfigurationError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
+        kwargs.pop("error_code", None)  # Avoid duplicate error_code argument
 
         if config_key:
             details["config_key"] = config_key
@@ -333,6 +338,7 @@ class CacheError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
+        kwargs.pop("error_code", None)  # Avoid duplicate error_code argument
 
         if cache_key:
             details["cache_key"] = cache_key
@@ -366,6 +372,7 @@ class NotFoundError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
+        kwargs.pop("error_code", None)  # Avoid duplicate error_code argument
 
         if resource_type:
             details["resource_type"] = resource_type
@@ -397,6 +404,7 @@ class UnauthorizedError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
+        kwargs.pop("error_code", None)  # Avoid duplicate error_code argument
 
         if realm:
             details["realm"] = realm
@@ -428,6 +436,7 @@ class ForbiddenError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
+        kwargs.pop("error_code", None)  # Avoid duplicate error_code argument
 
         if resource:
             details["resource"] = resource
@@ -461,6 +470,7 @@ class DatabaseError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
+        kwargs.pop("error_code", None)  # Avoid duplicate error_code argument
 
         if query:
             details["query"] = query
@@ -494,6 +504,7 @@ class ServiceUnavailableError(APIError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
+        kwargs.pop("error_code", None)  # Avoid duplicate error_code argument
 
         if service_name:
             details["service_name"] = service_name
@@ -523,6 +534,7 @@ class MCPTimeoutError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
+        kwargs.pop("error_code", None)  # Avoid duplicate error_code argument
 
         if timeout_duration is not None:
             details["timeout_duration"] = timeout_duration
@@ -554,6 +566,7 @@ class CircuitBreakerError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
+        kwargs.pop("error_code", None)  # Avoid duplicate error_code argument
 
         if failure_count is not None:
             details["failure_count"] = failure_count
@@ -591,6 +604,7 @@ class RetryExhaustedError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
+        kwargs.pop("error_code", None)  # Avoid duplicate error_code argument
 
         if max_retries is not None:
             details["max_retries"] = max_retries
@@ -632,6 +646,7 @@ class MCPToolError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
+        kwargs.pop("error_code", None)  # Avoid duplicate error_code argument
 
         details["tool_name"] = tool_name
         if arguments:
@@ -666,6 +681,7 @@ class MCPResourceError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
+        kwargs.pop("error_code", None)  # Avoid duplicate error_code argument
 
         details["resource_uri"] = resource_uri
         if resource_type:
@@ -698,6 +714,7 @@ class MCPPromptError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
+        kwargs.pop("error_code", None)  # Avoid duplicate error_code argument
 
         details["prompt_name"] = prompt_name
         if prompt_args:
@@ -732,6 +749,7 @@ class DataProcessingError(SemanticScholarMCPError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
+        kwargs.pop("error_code", None)  # Avoid duplicate error_code argument
 
         if data_type:
             details["data_type"] = data_type
@@ -769,6 +787,7 @@ class ExternalServiceError(APIError):
             **kwargs: Additional arguments for base exception
         """
         details = kwargs.pop("details", {})
+        kwargs.pop("error_code", None)  # Avoid duplicate error_code argument
 
         details["service_name"] = service_name
         if service_endpoint:

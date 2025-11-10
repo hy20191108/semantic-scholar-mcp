@@ -362,3 +362,256 @@ async def test_conversion_error_propagates_without_artifacts(
     chunks_path = config.markdown_dir / prefix / f"{hashed_id}.chunks.json"
     assert not chunks_path.exists()
     assert not config.cache_index_file.exists()
+
+
+@pytest.mark.anyio
+async def test_line_filtering_basic(sample_paper, tmp_path, monkeypatch):
+    """Test basic start_line/end_line filtering."""
+    config = build_config(tmp_path)
+    app_config = build_app_config(config)
+    client = build_client(sample_paper)
+
+    async def fake_fetch_pdf(**kwargs):
+        pdf_file = config.pdf_dir / kwargs["prefix"] / f"{kwargs['hashed_id']}.pdf"
+        pdf_file.parent.mkdir(parents=True, exist_ok=True)
+        pdf_file.write_bytes(b"%PDF-1.4\n%%EOF")
+        return pdf_file
+
+    def fake_convert_pdf(path, conversion_kwargs):
+        return [
+            {"page": 1, "text": "Line 0\nLine 1\nLine 2\nLine 3\nLine 4"},
+        ]
+
+    monkeypatch.setattr(pdf_processor, "_fetch_pdf_to_disk", fake_fetch_pdf)
+    monkeypatch.setattr(pdf_processor, "_convert_pdf_to_chunks", fake_convert_pdf)
+
+    # Test start_line only
+    result = await get_paper_fulltext(
+        paper_id=sample_paper.paper_id,
+        client=client,
+        app_config=app_config,
+        output_mode="markdown",
+        start_line=2,
+    )
+    assert result.markdown is not None
+    lines = result.markdown.split("\n")
+    assert lines == ["Line 2", "Line 3", "Line 4"]
+
+    # Test end_line only
+    result = await get_paper_fulltext(
+        paper_id=sample_paper.paper_id,
+        client=client,
+        app_config=app_config,
+        output_mode="markdown",
+        end_line=2,
+        force_refresh=True,
+    )
+    assert result.markdown is not None
+    lines = result.markdown.split("\n")
+    assert lines == ["Line 0", "Line 1", "Line 2"]
+
+    # Test both start_line and end_line
+    result = await get_paper_fulltext(
+        paper_id=sample_paper.paper_id,
+        client=client,
+        app_config=app_config,
+        output_mode="markdown",
+        start_line=1,
+        end_line=3,
+        force_refresh=True,
+    )
+    assert result.markdown is not None
+    lines = result.markdown.split("\n")
+    assert lines == ["Line 1", "Line 2", "Line 3"]
+
+
+@pytest.mark.anyio
+async def test_line_filtering_start_greater_than_end(
+    sample_paper, tmp_path, monkeypatch
+):
+    """Test that start_line > end_line raises a validation error."""
+    config = build_config(tmp_path)
+    app_config = build_app_config(config)
+    client = build_client(sample_paper)
+
+    async def fake_fetch_pdf(**kwargs):
+        pdf_file = config.pdf_dir / kwargs["prefix"] / f"{kwargs['hashed_id']}.pdf"
+        pdf_file.parent.mkdir(parents=True, exist_ok=True)
+        pdf_file.write_bytes(b"%PDF-1.4\n%%EOF")
+        return pdf_file
+
+    def fake_convert_pdf(path, conversion_kwargs):
+        return [
+            {"page": 1, "text": "Line 0\nLine 1\nLine 2"},
+        ]
+
+    monkeypatch.setattr(pdf_processor, "_fetch_pdf_to_disk", fake_fetch_pdf)
+    monkeypatch.setattr(pdf_processor, "_convert_pdf_to_chunks", fake_convert_pdf)
+
+    with pytest.raises(ValidationError) as exc_info:
+        await get_paper_fulltext(
+            paper_id=sample_paper.paper_id,
+            client=client,
+            app_config=app_config,
+            output_mode="markdown",
+            start_line=5,
+            end_line=2,
+        )
+
+    assert "start_line must be less than or equal to end_line" in str(exc_info.value)
+
+
+@pytest.mark.anyio
+async def test_search_pattern_with_context(sample_paper, tmp_path, monkeypatch):
+    """Test search_pattern with context lines."""
+    config = build_config(tmp_path)
+    app_config = build_app_config(config)
+    client = build_client(sample_paper)
+
+    async def fake_fetch_pdf(**kwargs):
+        pdf_file = config.pdf_dir / kwargs["prefix"] / f"{kwargs['hashed_id']}.pdf"
+        pdf_file.parent.mkdir(parents=True, exist_ok=True)
+        pdf_file.write_bytes(b"%PDF-1.4\n%%EOF")
+        return pdf_file
+
+    def fake_convert_pdf(path, conversion_kwargs):
+        return [
+            {
+                "page": 1,
+                "text": "Line 0\nLine 1 MATCH\nLine 2\nLine 3\nLine 4 MATCH\nLine 5",
+            },
+        ]
+
+    monkeypatch.setattr(pdf_processor, "_fetch_pdf_to_disk", fake_fetch_pdf)
+    monkeypatch.setattr(pdf_processor, "_convert_pdf_to_chunks", fake_convert_pdf)
+
+    # Test search_pattern without context
+    result = await get_paper_fulltext(
+        paper_id=sample_paper.paper_id,
+        client=client,
+        app_config=app_config,
+        output_mode="markdown",
+        search_pattern=r"MATCH",
+    )
+    assert result.markdown is not None
+    assert "Line 1 MATCH" in result.markdown
+    assert "Line 4 MATCH" in result.markdown
+
+    # Test search_pattern with context_lines_before
+    result = await get_paper_fulltext(
+        paper_id=sample_paper.paper_id,
+        client=client,
+        app_config=app_config,
+        output_mode="markdown",
+        search_pattern=r"MATCH",
+        context_lines_before=1,
+        force_refresh=True,
+    )
+    assert result.markdown is not None
+    assert "Line 0" in result.markdown
+    assert "Line 1 MATCH" in result.markdown
+    assert "Line 3" in result.markdown
+    assert "Line 4 MATCH" in result.markdown
+
+    # Test search_pattern with context_lines_after
+    result = await get_paper_fulltext(
+        paper_id=sample_paper.paper_id,
+        client=client,
+        app_config=app_config,
+        output_mode="markdown",
+        search_pattern=r"MATCH",
+        context_lines_after=1,
+        force_refresh=True,
+    )
+    assert result.markdown is not None
+    assert "Line 1 MATCH" in result.markdown
+    assert "Line 2" in result.markdown
+    assert "Line 4 MATCH" in result.markdown
+    assert "Line 5" in result.markdown
+
+
+@pytest.mark.anyio
+async def test_search_pattern_mutually_exclusive_with_line_filter(
+    sample_paper, tmp_path, monkeypatch
+):
+    """Test that search_pattern and line filtering cannot be used together."""
+    config = build_config(tmp_path)
+    app_config = build_app_config(config)
+    client = build_client(sample_paper)
+
+    async def fake_fetch_pdf(**kwargs):
+        pdf_file = config.pdf_dir / kwargs["prefix"] / f"{kwargs['hashed_id']}.pdf"
+        pdf_file.parent.mkdir(parents=True, exist_ok=True)
+        pdf_file.write_bytes(b"%PDF-1.4\n%%EOF")
+        return pdf_file
+
+    def fake_convert_pdf(path, conversion_kwargs):
+        return [
+            {"page": 1, "text": "Line 0\nLine 1\nLine 2"},
+        ]
+
+    monkeypatch.setattr(pdf_processor, "_fetch_pdf_to_disk", fake_fetch_pdf)
+    monkeypatch.setattr(pdf_processor, "_convert_pdf_to_chunks", fake_convert_pdf)
+
+    # Test with both search_pattern and start_line
+    with pytest.raises(ValidationError) as exc_info:
+        await get_paper_fulltext(
+            paper_id=sample_paper.paper_id,
+            client=client,
+            app_config=app_config,
+            output_mode="markdown",
+            search_pattern=r"Line",
+            start_line=1,
+        )
+
+    assert "Cannot specify both search_pattern and line filtering" in str(
+        exc_info.value
+    )
+
+    # Test with both search_pattern and end_line
+    with pytest.raises(ValidationError) as exc_info:
+        await get_paper_fulltext(
+            paper_id=sample_paper.paper_id,
+            client=client,
+            app_config=app_config,
+            output_mode="markdown",
+            search_pattern=r"Line",
+            end_line=2,
+        )
+
+    assert "Cannot specify both search_pattern and line filtering" in str(
+        exc_info.value
+    )
+
+
+@pytest.mark.anyio
+async def test_search_pattern_invalid_regex(sample_paper, tmp_path, monkeypatch):
+    """Test that invalid regex patterns raise a validation error."""
+    config = build_config(tmp_path)
+    app_config = build_app_config(config)
+    client = build_client(sample_paper)
+
+    async def fake_fetch_pdf(**kwargs):
+        pdf_file = config.pdf_dir / kwargs["prefix"] / f"{kwargs['hashed_id']}.pdf"
+        pdf_file.parent.mkdir(parents=True, exist_ok=True)
+        pdf_file.write_bytes(b"%PDF-1.4\n%%EOF")
+        return pdf_file
+
+    def fake_convert_pdf(path, conversion_kwargs):
+        return [
+            {"page": 1, "text": "Line 0\nLine 1\nLine 2"},
+        ]
+
+    monkeypatch.setattr(pdf_processor, "_fetch_pdf_to_disk", fake_fetch_pdf)
+    monkeypatch.setattr(pdf_processor, "_convert_pdf_to_chunks", fake_convert_pdf)
+
+    with pytest.raises(ValidationError) as exc_info:
+        await get_paper_fulltext(
+            paper_id=sample_paper.paper_id,
+            client=client,
+            app_config=app_config,
+            output_mode="markdown",
+            search_pattern=r"[invalid(regex",
+        )
+
+    assert "Invalid regex pattern" in str(exc_info.value)

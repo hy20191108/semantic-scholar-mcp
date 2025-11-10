@@ -91,9 +91,9 @@ lsof -i :25000
 
 | Service | Default Port | Conflict Risk |
 |---------|-------------|---------------|
-| Serena Dashboard | 24282 (0x5EDA) | ⚠️ **AVOIDED** (we changed to 25000) |
-| Semantic Scholar MCP | 25000 | ✅ Safe |
-| Multiple MCP Instances | 25000-25009 | Auto-fallback enabled |
+| Serena Dashboard | 24282 (0x5EDA) | ⚠️ Avoided (auto-fallback from 25000) |
+| Semantic Scholar MCP | 25000 (auto-scan start) | ✅ Safe |
+| Multiple MCP Instances | 25001-25009 | Auto-fallback enabled |
 
 ### Custom Port Configuration
 
@@ -123,15 +123,16 @@ class DashboardConfig(BaseModel):
 
 The dashboard includes automatic port fallback:
 
-1. Tries configured port (default: 25000)
-2. If unavailable, scans for next available port (25001, 25002, ...)
+1. Starts scanning from port 25000 (to avoid Serena's default 24282)
+2. Finds first available port (25000, 25001, 25002, ...)
 3. Logs the actual port in use
 
 **Example log output:**
-```json
-{"message": "Configured dashboard port 25000 on host 0.0.0.0 is unavailable; falling back to automatic port selection."}
-{"message": "Dashboard started at http://0.0.0.0:25001/dashboard/"}
 ```
+Dashboard started at http://0.0.0.0:25000/dashboard/
+```
+
+If port 25000 is busy, it automatically tries 25001, 25002, etc.
 
 ## Configuration Reference
 
@@ -282,7 +283,7 @@ DASHBOARD__PORT=25002 uv run semantic-scholar-mcp
 |---------|--------|---------------------|
 | Framework | Flask | Flask ✅ |
 | Threading | Daemon thread | Daemon thread ✅ |
-| Default Port | 24282 (0x5EDA) | 25000 (changed) |
+| Default Port | 24282 (0x5EDA) | 25000 (auto-scan start) |
 | Real-time Logs | ✅ | ✅ |
 | Tool Statistics | ✅ | ✅ |
 | Charts | jQuery + Chart.js | Vanilla JS + Chart.js |
