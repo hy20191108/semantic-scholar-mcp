@@ -153,7 +153,7 @@ def create_api_client():
 
     config = get_config()
     return SemanticScholarClient(
-        config=config.semantic_scholar,
+        config=config,  # Pass full ApplicationConfig as expected by refactored client
         rate_limit_config=config.rate_limit,
         retry_config=config.retry,
         cache=get_service(InMemoryCache),
