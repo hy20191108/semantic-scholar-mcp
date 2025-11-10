@@ -62,6 +62,49 @@ Use uv for Python tooling.
 ### Important Notes
 <!-- Add important discoveries, issues, and decisions here -->
 
+#### Root File Organization (Updated: 2025-11-10)
+- **✅ COMPLETED**: Cleaned up root directory for better project structure
+- **Changes**:
+  - `DASHBOARD.md` → `docs/DASHBOARD.md`
+  - `TODO.md` → Removed (obsolete, information moved to CLAUDE.md)
+  - `check_all_24_tools.py` → **Removed** (redundant with pytest and MCP Inspector)
+- **Rationale for Removing check_all_24_tools.py**:
+  - ❌ Misleading name (claims "24 tools" but can't test all without MCP server)
+  - ❌ Redundant with existing `tests/test_all_tools.py` (pytest)
+  - ❌ Complex API client initialization required (async context manager)
+  - ✅ Better alternatives exist: MCP Inspector (interactive) + pytest (automated)
+- **Recommended Testing Methods**:
+  - **Interactive**: `npx @modelcontextprotocol/inspector semantic-scholar-dev`
+  - **Automated**: `uv run pytest tests/test_all_tools.py -v`
+- **Root Directory Now Contains**:
+  - Core docs: `README.md`, `CLAUDE.md`, `AGENTS.md`, `IMPLEMENTATION_PLAN.md`
+  - Additional docs moved to `docs/` directory
+  - Development scripts in `scripts/` directory
+
+#### Dashboard Port Management Improvement (Updated: 2025-11-10)
+- **✅ COMPLETED**: Strict port management for dashboard server
+- **Changes**:
+  - Unified default port to 25000 (consistent with config.py)
+  - `run()` method: Uses specified port directly (default: 25000)
+  - `run_in_thread()`: Respects port preferences with automatic fallback
+  - Added port range validation (1024-65535, avoiding privileged ports)
+  - Enhanced error messages for port conflicts
+  - Added detailed logging for port selection
+- **Port Selection Logic**:
+  - Preferred port is tried first
+  - If unavailable, automatically finds next free port
+  - Logs port selection decisions for transparency
+- **Error Handling**:
+  - ValueError for invalid port ranges (< 1024 or > 65535)
+  - RuntimeError if no free ports found in valid range
+  - Clear error messages with troubleshooting guidance
+- **Testing**: All port management features verified:
+  - ✓ Free port discovery
+  - ✓ Invalid port range rejection
+  - ✓ Port preference respect
+  - ✓ Automatic fallback on conflict
+  - ✓ Proper logging output
+
 #### Tool Name Refactoring Completion (Updated: 2025-08-02)
 - **✅ COMPLETED**: Comprehensive tool name refactoring from verbose to clean naming
 - **Before→After Examples**:
