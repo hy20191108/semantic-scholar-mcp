@@ -11,9 +11,9 @@
     - `_generate_markdown_artifacts`: PyMuPDF4LLMでMarkdown／チャンクを生成し、成果物を書き出す  
   - MCPツール登録: `server.py`で`@mcp.tool()`として公開し、引数は`paper_id`, `output_mode`（全文/チャンク）, `include_images`, `max_pages`, `force_refresh`を想定。  
   - 設定拡張: `core/config`に`pdf_processing`設定（最大サイズ、キャッシュディレクトリ、TTLなど）を追加し、`.env`から上書き可能にする。デフォルトのキャッシュ保存先は`.semantic_scholar_mcp/pdf`、Markdown出力は`.semantic_scholar_mcp/md`に保存。Serenaと同様、構成値は
-    1. `.serena/project.yml`（プロジェクト設定）  
-    2. `.env`（環境変数）  
-    3. コード上のデフォルト  
+    1. `.semantic_scholar_mcp/project.yml`（プロジェクト設定）
+    2. `.env`（環境変数）
+    3. コード上のデフォルト
     の優先順で決まるように統一。  
   - エラーハンドリング: 非公開論文、サイズ超過、変換失敗などに対して一貫したエラーコードを返す。
 

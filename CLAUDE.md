@@ -51,12 +51,12 @@ Use uv for Python tooling.
 
 **IMPORTANT**: Always update this section with critical information discovered during development.
 
-### Current Status (Updated: 2025-08-02)
-- **PyPI Version**: 0.2.2 (last checked: 2025-07-18)
-- **Local Git Version**: v0.2.2-refactored (major tool name refactoring completed)
+### Current Status (Updated: 2025-11-11)
+- **PyPI Version**: 0.2.6 (last checked: 2025-11-11)
+- **Local Git Version**: v0.2.6 (stable release with project management features)
 - **Test Coverage**: 53.80% (minimum required: 30%) - ✅ PASSING
 - **Test Status**: 98 tests total (98 passing, 0 failing)
-- **Tool Names**: ✅ FULLY REFACTORED - 24 tools follow the clean naming pattern (includes `get_paper_fulltext` for PDF conversion)
+- **Tool Count**: ✅ 33 TOOLS TOTAL (23 research + 5 memory + 4 project + 1 utility)
 - **Quality Status**: All quality gates passing (ruff, mypy, pytest, MCP server)
 
 ### Important Notes
@@ -151,7 +151,7 @@ Use uv for Python tooling.
 - **✅ IMPLEMENTED**: `get_paper_fulltext` provides PDF→Markdown/chunk conversion with caching and optional image extraction
 - **Artifacts**: Stored under `.semantic_scholar_mcp/artifacts/` with SHA-1 partitioning, plus cache index metadata
 - **Configuration**: `PDFProcessingConfig` controls limits, directories, TTL (env-overridable)
-- **Testing**: Unit coverage for cache reuse, image extraction keyword, and `max_pages`; error-path tests pending (see `.serena/memories/pdf_markdown_todos.md`)
+- **Testing**: Unit coverage for cache reuse, image extraction keyword, and `max_pages`; error-path tests pending
 - **Licensing**: PyMuPDF4LLM (AGPL) notice added to README; advise commercial users to review licensing
 
 #### Resource-Based Tool Instructions Architecture (Updated: 2025-10-25)
@@ -185,7 +185,6 @@ Use uv for Python tooling.
 #### Dashboard Design (Updated: 2025-10-25)
 - **✅ DESIGNED**: Comprehensive monitoring and analytics dashboard for semantic-scholar-mcp
 - **Inspiration**: Based on Serena's Flask + jQuery + Chart.js dashboard architecture
-- **Design Document**: `.serena/memories/dashboard_design.md` contains complete specifications
 - **Dashboard Sections** (6 main areas):
   1. **Server Status** - Uptime, API key status, rate limits, circuit breaker
   2. **Real-time Logs** - Auto-scrolling log viewer with filtering and correlation IDs
@@ -206,6 +205,32 @@ Use uv for Python tooling.
 - **Configuration**: Optional feature (disabled by default), configurable port and retention
 - **Security**: Local-only by default, no auth required for read-only dashboard
 - **Status**: Design complete, ready for implementation
+
+#### Project and Memory Management Features (Updated: 2025-11-11)
+- **✅ IMPLEMENTED**: Full project and memory management system for research organization
+- **Project Management (4 tools)**:
+  - `create_project`: Create new research projects with metadata
+  - `activate_project`: Switch between different research contexts
+  - `list_projects`: View all registered research projects
+  - `get_current_config`: Check active project and configuration
+- **Memory Management (5 tools)**:
+  - `write_memory`: Save research notes, surveys, and documentation
+  - `read_memory`: Retrieve saved research content
+  - `list_memories`: Browse available memory files
+  - `delete_memory`: Remove outdated or unnecessary memories
+  - `edit_memory`: Update existing memories using regex patterns
+- **Features**:
+  - Markdown-based memory storage for easy version control
+  - Project-scoped memory isolation
+  - Regex-based editing for precise content updates
+  - Automatic project activation on creation
+- **Use Cases**:
+  - Literature reviews and paper surveys
+  - Research notes and findings
+  - Project documentation and TODO lists
+  - Citation tracking and analysis notes
+- **Storage**: `.semantic_scholar_mcp/projects/{project_name}/memories/`
+- **Testing**: All tools verified with create/read/update/delete operations
 
 #### API Rate Limits Specification (Updated: 2025-11-11)
 - **Official Source**: https://github.com/allenai/s2-folks/blob/main/API_RELEASE_NOTES.md
@@ -235,13 +260,16 @@ Use uv for Python tooling.
   - typecheckジョブはタイムアウト発生（共有リソース制約）
 - **Recommendation**: ローカル環境では直接uvコマンドでCI相当のテスト実行を推奨
 
-#### MCP Server 23ツール全動作テスト結果 (Updated: 2025-07-18)
-- **✅ 全23ツール動作確認完了** - 100%成功率
-- **Paper Tools (8)**: search_papers, get_paper, get_paper_citations, get_paper_references, get_paper_authors, batch_get_papers, get_paper_with_embeddings, get_paper_fulltext
+#### MCP Server 33ツール全動作テスト結果 (Updated: 2025-11-11)
+- **✅ 全33ツール動作確認完了** - 100%成功率
+- **Paper Tools (9)**: search_papers, get_paper, get_paper_citations, get_paper_references, get_paper_authors, batch_get_papers, get_paper_with_embeddings, search_papers_with_embeddings, get_paper_fulltext
 - **Author Tools (4)**: get_author, get_author_papers, search_authors, batch_get_authors  
 - **Search Tools (4)**: bulk_search_papers, search_papers_match, autocomplete_query, search_snippets
-- **AI/ML Tools (3)**: get_recommendations_for_paper, get_recommendations_batch, search_papers_with_embeddings
+- **Recommendation Tools (2)**: get_recommendations_for_paper, get_recommendations_batch
 - **Dataset Tools (4)**: get_dataset_releases, get_dataset_info, get_dataset_download_links, get_incremental_dataset_updates
+- **Memory Management Tools (5)**: write_memory, read_memory, list_memories, delete_memory, edit_memory
+- **Project Management Tools (4)**: create_project, activate_project, list_projects, get_current_config
+- **Utility Tools (1)**: check_api_key_status
 - **Prompts (3)**: literature_review, citation_analysis, research_trend_analysis
 - **API Rate Limiting**: HTTP 429エラーで正常に動作確認 (Circuit breaker, exponential backoff動作)
 - **Production Ready**: 包括的なエラーハンドリング、ロギング、モニタリング完備
@@ -294,18 +322,19 @@ Use uv for Python tooling.
   - Pydantic v2.0 migration warnings (7 instances)
 - **Release Readiness**: NOT READY - Quality gates not met
 
-### Current Quality Status (Updated: 2025-08-02)
+### Current Quality Status (Updated: 2025-11-11)
 - **✅ Tests**: 98 tests total (98 passing, 0 failing) - 53.80% coverage
 - **✅ Linting**: All ruff checks pass
 - **✅ Type Checking**: mypy passes (ignore_errors=true configuration)
 - **✅ Coverage**: 53.80% (exceeds 30% requirement by 79%)
 - **✅ Pydantic v2**: All migrations completed, no deprecation warnings
-- **✅ MCP Server**: 23 tools, 3 prompts available with clean naming
+- **✅ MCP Server**: 33 tools (23 research + 5 memory + 4 project + 1 utility), 3 prompts
 - **✅ Tool Names**: Fully refactored to clean, consistent naming convention
+- **✅ Project Management**: Full project and memory management system integrated
 
 ### MCP Server Testing Status
 - **✅ MCP Configuration**: `.mcp.json` properly configured with `semantic-scholar-dev` 
-- **✅ Tools Available**: 23 tools across paper research, authors, datasets, recommendations, and PDF conversion
+- **✅ Tools Available**: 33 tools (23 research + 5 memory + 4 project + 1 utility)
 - **✅ Prompts Available**: 3 prompts (literature_review, citation_analysis, research_trend_analysis)
 - **✅ Server Startup**: Normal startup/shutdown with debug logging
 - **✅ Inspector Test**: Use `npx @modelcontextprotocol/inspector semantic-scholar-dev` for full testing
@@ -531,21 +560,24 @@ asyncio.run(test())
 "
 ```
 
-**Expected Results**: 23 tools, 3 prompts, 0 resources, JSON structured logging
+**Expected Results**: 33 tools, 3 prompts, 0 resources, JSON structured logging
 
-#### MCP Server 23ツール全動作テスト (Claude使用)
+#### MCP Server 33ツール全動作テスト (Claude使用)
 ```bash
 # MCP Inspector でClaude経由テスト
 npx @modelcontextprotocol/inspector --config .mcp.json --server semantic-scholar-dev
 
 # 各ツールをClaude経由で実行:
-# ・Paper関連: search_papers, get_paper, citations, references, authors, batch系, embeddings, get_paper_fulltext
-# ・Author関連: search_authors, get_author, get_author_papers, batch_get_authors
-# ・Dataset関連: get_dataset_releases, get_dataset_info, get_dataset_download_links, get_incremental_dataset_updates
-# ・検索/スニペット: bulk_search_papers, search_papers_match, autocomplete_query, search_snippets
-# ・AI/ML関連: get_recommendations_for_paper, get_recommendations_batch, search_papers_with_embeddings
+# ・Paper関連 (9): search_papers, get_paper, citations, references, authors, batch系, embeddings, search_with_embeddings, get_paper_fulltext
+# ・Author関連 (4): search_authors, get_author, get_author_papers, batch_get_authors
+# ・Dataset関連 (4): get_dataset_releases, get_dataset_info, get_dataset_download_links, get_incremental_dataset_updates
+# ・検索/スニペット (4): bulk_search_papers, search_papers_match, autocomplete_query, search_snippets
+# ・AI/ML関連 (2): get_recommendations_for_paper, get_recommendations_batch
+# ・メモリ管理 (5): write_memory, read_memory, list_memories, delete_memory, edit_memory
+# ・プロジェクト管理 (4): create_project, activate_project, list_projects, get_current_config
+# ・ユーティリティ (1): check_api_key_status
 
-# 期待結果: 23/23 tools success
+# 期待結果: 33/33 tools success
 ```
 
 ### Build and Release
@@ -583,7 +615,7 @@ This is a **Semantic Scholar MCP Server** that provides access to millions of ac
 
 1. **MCP Server** (`src/semantic_scholar_mcp/server.py`)
    - FastMCP-based implementation
-  - 23 tools, 2 resources, 3 prompts
+   - 33 tools (23 research + 5 memory + 4 project + 1 utility), 2 resources, 3 prompts
    - Comprehensive error handling and logging
 
 2. **API Client** (`src/semantic_scholar_mcp/api_client.py`)
@@ -814,12 +846,18 @@ The codebase implements comprehensive error handling:
 
 ## API Integration
 
-The server implements all 22 Semantic Scholar API endpoints:
+The server implements 33 comprehensive tools:
 
-- **Paper Tools**: search, get details, citations, references
-- **Author Tools**: search, profiles, paper lists
-- **AI Tools**: recommendations, embeddings
+**Semantic Scholar API (23 tools)**:
+- **Paper Tools**: search, get details, citations, references, fulltext conversion
+- **Author Tools**: search, profiles, paper lists, batch operations
+- **AI Tools**: recommendations, embeddings, semantic search
 - **Dataset Tools**: releases, downloads, incremental updates
+
+**Research Management (10 tools)**:
+- **Memory Management**: write, read, list, delete, edit research notes
+- **Project Management**: create, activate, list projects, get config
+- **Utility**: API key status verification
 
 Each tool includes proper error handling, rate limiting, and caching.
 
@@ -942,7 +980,7 @@ This is a **Semantic Scholar MCP Server** that provides access to millions of ac
 
 1. **MCP Server** (`src/semantic_scholar_mcp/server.py`)
    - FastMCP-based implementation
-  - 23 tools, 2 resources, 3 prompts
+   - 33 tools (23 research + 5 memory + 4 project + 1 utility), 2 resources, 3 prompts
    - Comprehensive error handling and logging
 
 2. **API Client** (`src/semantic_scholar_mcp/api_client.py`)
@@ -989,8 +1027,10 @@ src/
 ```
 
 ### Built with Enterprise-Grade Patterns
-- **Complete API Coverage**: All 22 Semantic Scholar API tools implemented
+- **Complete Tool Coverage**: 33 comprehensive tools (23 API + 10 management)
 - **AI-Powered Features**: 3 smart prompt templates for research assistance  
+- **Project Management**: Multi-project support with isolated memory contexts
+- **Research Organization**: Markdown-based memory system for notes and surveys
 - **Resilience**: Circuit breaker pattern for fault tolerance
 - **Performance**: In-memory LRU caching with TTL
 - **Reliability**: Exponential backoff with jitter for retries

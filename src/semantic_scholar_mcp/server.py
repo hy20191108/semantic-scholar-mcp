@@ -35,6 +35,7 @@ from core.logging import (
 )
 from core.metrics_collector import MetricsCollector
 
+from .agent import ResearchAgent
 from .api_client import SemanticScholarClient
 from .dashboard import DashboardAPI, DashboardStats
 from .instruction_loader import inject_yaml_instructions, load_all_instructions
@@ -72,6 +73,7 @@ mcp = FastMCP(name="semantic-scholar-mcp", instructions=INITIAL_MCP_INSTRUCTIONS
 # Global instances (initialized in initialize_server)
 config: ApplicationConfig | None = None
 api_client: SemanticScholarClient | None = None
+research_agent: ResearchAgent | None = None  # Project management agent
 error_handler: MCPErrorHandler | None = None
 metrics_collector: MetricsCollector | None = None
 dashboard_stats: DashboardStats | None = None
@@ -274,7 +276,7 @@ def _launch_dashboard_browser(url: str) -> None:
 
 async def initialize_server():
     """Initialize server components."""
-    global config, api_client, error_handler, metrics_collector
+    global config, api_client, research_agent, error_handler, metrics_collector
     global dashboard_stats, dashboard_api
 
     # Load .env file with robust path discovery
@@ -359,6 +361,12 @@ async def initialize_server():
         retry_config=config.retry,
         logger=logger,
         cache=cache,
+    )
+
+    # Create Research Agent for project management
+    research_agent = ResearchAgent(
+        api_client=api_client,
+        config=config,
     )
 
     # Initialize error handler and metrics collector
@@ -2007,6 +2015,288 @@ async def check_api_key_status() -> str:
     }
 
     return json.dumps({"success": True, "data": payload}, ensure_ascii=False, indent=2)
+
+
+# ============================================================================
+# Project Management & Memory Tools (Serena-compliant)
+# ============================================================================
+
+
+@mcp.tool()
+@mcp_error_handler(tool_name="write_memory")
+async def write_memory(
+    memory_name: str,
+    content: str,
+    max_chars: int = Field(
+        default=100000, description="Maximum characters allowed in memory content"
+    ),
+) -> str:
+    """
+    Write or update a memory file in the active project.
+
+    Args:
+        memory_name: Name of the memory (without .md extension)
+        content: Content to save (Markdown format)
+        max_chars: Maximum characters allowed (default: 100000)
+
+    Returns:
+        Success message with memory name
+    """
+    if research_agent is None:
+        return json.dumps(
+            {
+                "success": False,
+                "error": "ResearchAgent not initialized. Please restart the server.",
+            },
+            ensure_ascii=False,
+        )
+
+    from .tools.memory_tools import WriteMemoryTool
+
+    tool = research_agent.get_tool(WriteMemoryTool)
+    result = tool.apply(memory_name=memory_name, content=content, max_chars=max_chars)
+    return json.dumps({"success": True, "data": result}, ensure_ascii=False)
+
+
+@mcp.tool()
+@mcp_error_handler(tool_name="read_memory")
+async def read_memory(memory_name: str) -> str:
+    """
+    Read a memory file from the active project.
+
+    Args:
+        memory_name: Name of the memory to read
+
+    Returns:
+        Memory content as string
+    """
+    if research_agent is None:
+        return json.dumps(
+            {
+                "success": False,
+                "error": "ResearchAgent not initialized. Please restart the server.",
+            },
+            ensure_ascii=False,
+        )
+
+    from .tools.memory_tools import ReadMemoryTool
+
+    tool = research_agent.get_tool(ReadMemoryTool)
+    result = tool.apply(memory_name=memory_name)
+    return json.dumps({"success": True, "data": result}, ensure_ascii=False)
+
+
+@mcp.tool()
+@mcp_error_handler(tool_name="list_memories")
+async def list_memories() -> str:
+    """
+    List all memories in the active project.
+
+    Returns:
+        JSON array of memory names
+    """
+    if research_agent is None:
+        return json.dumps(
+            {
+                "success": False,
+                "error": "ResearchAgent not initialized. Please restart the server.",
+            },
+            ensure_ascii=False,
+        )
+
+    from .tools.memory_tools import ListMemoriesTool
+
+    tool = research_agent.get_tool(ListMemoriesTool)
+    return tool.apply()
+
+
+@mcp.tool()
+@mcp_error_handler(tool_name="delete_memory")
+async def delete_memory(memory_name: str) -> str:
+    """
+    Delete a memory file from the active project.
+
+    Args:
+        memory_name: Name of the memory to delete
+
+    Returns:
+        Success message
+    """
+    if research_agent is None:
+        return json.dumps(
+            {
+                "success": False,
+                "error": "ResearchAgent not initialized. Please restart the server.",
+            },
+            ensure_ascii=False,
+        )
+
+    from .tools.memory_tools import DeleteMemoryTool
+
+    tool = research_agent.get_tool(DeleteMemoryTool)
+    result = tool.apply(memory_name=memory_name)
+    return json.dumps({"success": True, "data": result}, ensure_ascii=False)
+
+
+@mcp.tool()
+@mcp_error_handler(tool_name="edit_memory")
+async def edit_memory(
+    memory_name: str,
+    regex: str,
+    repl: str,
+    allow_multiple_occurrences: bool = False,
+) -> str:
+    """
+    Edit a memory file using regex replacement.
+
+    Args:
+        memory_name: Name of the memory to edit
+        regex: Python regex pattern to match
+        repl: Replacement string (supports backreferences)
+        allow_multiple_occurrences: If True, replace all matches (default: False)
+
+    Returns:
+        Success message with replacement count
+    """
+    if research_agent is None:
+        return json.dumps(
+            {
+                "success": False,
+                "error": "ResearchAgent not initialized. Please restart the server.",
+            },
+            ensure_ascii=False,
+        )
+
+    from .tools.memory_tools import EditMemoryTool
+
+    tool = research_agent.get_tool(EditMemoryTool)
+    result = tool.apply(
+        memory_name=memory_name,
+        regex=regex,
+        repl=repl,
+        allow_multiple_occurrences=allow_multiple_occurrences,
+    )
+    return json.dumps({"success": True, "data": result}, ensure_ascii=False)
+
+
+@mcp.tool()
+@mcp_error_handler(tool_name="create_project")
+async def create_project(
+    project_root: str,
+    project_name: str,
+    research_topic: str | None = None,
+    activate: bool = True,
+    default_fields_of_study: list[str] | None = None,
+) -> str:
+    """
+    Create a new research project.
+
+    Args:
+        project_root: Root directory for the project
+        project_name: Name of the project
+        research_topic: Optional research topic description
+        activate: Activate project after creation (default: True)
+        default_fields_of_study: Default fields for searches
+
+    Returns:
+        Success message with project information
+    """
+    if research_agent is None:
+        return json.dumps(
+            {
+                "success": False,
+                "error": "ResearchAgent not initialized. Please restart the server.",
+            },
+            ensure_ascii=False,
+        )
+
+    from .tools.project_tools import CreateProjectTool
+
+    tool = research_agent.get_tool(CreateProjectTool)
+    result = tool.apply(
+        project_root=project_root,
+        project_name=project_name,
+        research_topic=research_topic,
+        activate=activate,
+        default_fields_of_study=default_fields_of_study,
+    )
+    return json.dumps({"success": True, "data": result}, ensure_ascii=False)
+
+
+@mcp.tool()
+@mcp_error_handler(tool_name="activate_project")
+async def activate_project(project_path_or_name: str) -> str:
+    """
+    Activate a research project.
+
+    Args:
+        project_path_or_name: Project path or registered name
+
+    Returns:
+        Activation message with project info
+    """
+    if research_agent is None:
+        return json.dumps(
+            {
+                "success": False,
+                "error": "ResearchAgent not initialized. Please restart the server.",
+            },
+            ensure_ascii=False,
+        )
+
+    from .tools.project_tools import ActivateProjectTool
+
+    tool = research_agent.get_tool(ActivateProjectTool)
+    result = tool.apply(project_path_or_name)
+    return json.dumps({"success": True, "data": result}, ensure_ascii=False)
+
+
+@mcp.tool()
+@mcp_error_handler(tool_name="list_projects")
+async def list_projects() -> str:
+    """
+    List all registered research projects.
+
+    Returns:
+        JSON with project information
+    """
+    if research_agent is None:
+        return json.dumps(
+            {
+                "success": False,
+                "error": "ResearchAgent not initialized. Please restart the server.",
+            },
+            ensure_ascii=False,
+        )
+
+    from .tools.project_tools import ListProjectsTool
+
+    tool = research_agent.get_tool(ListProjectsTool)
+    return tool.apply()
+
+
+@mcp.tool()
+@mcp_error_handler(tool_name="get_current_config")
+async def get_current_config() -> str:
+    """
+    Get current agent configuration overview.
+
+    Returns:
+        JSON with agent configuration details
+    """
+    if research_agent is None:
+        return json.dumps(
+            {
+                "success": False,
+                "error": "ResearchAgent not initialized. Please restart the server.",
+            },
+            ensure_ascii=False,
+        )
+
+    from .tools.project_tools import GetCurrentConfigTool
+
+    tool = research_agent.get_tool(GetCurrentConfigTool)
+    return tool.apply()
 
 
 _UNUSED_INSTRUCTION_KEYS = TOOL_INSTRUCTION_KEYS - REGISTERED_TOOL_NAMES
