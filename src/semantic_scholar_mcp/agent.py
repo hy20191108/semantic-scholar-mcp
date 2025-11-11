@@ -121,10 +121,18 @@ class ResearchAgent:
         Raises:
             ProjectNotFoundError: If project cannot be found or created
         """
-        # Check if it's a registered project name
+        # Normalize the path to ensure consistent lookup
+        normalized_path = str(Path(project_path_or_name).resolve())
+
+        # Check if it's a registered project (by name or path)
         if project_path_or_name in self._registered_projects:
             project_path = self._registered_projects[project_path_or_name]
-            logger.info(f"Activating registered project: {project_path_or_name}")
+            logger.info(
+                f"Activating registered project by name: {project_path_or_name}"
+            )
+        elif normalized_path in self._registered_projects:
+            project_path = self._registered_projects[normalized_path]
+            logger.info(f"Activating registered project by path: {normalized_path}")
         else:
             # Treat it as a path
             project_path = Path(project_path_or_name).resolve()
@@ -171,10 +179,20 @@ class ResearchAgent:
         # Set as active project
         self._active_project = project
 
-        # Auto-register if not already registered
-        if project_path_or_name not in self._registered_projects:
-            project_name = project.project_name
+        # Auto-register if not already registered (by both name and path)
+        project_name = project.project_name
+        project_path_str = str(project.project_root)
+
+        # Register by project name if not already registered
+        if project_name not in self._registered_projects:
             self.register_project(project_name, project_path)
+
+        # Also register by path for faster lookup on subsequent activations
+        if project_path_str not in self._registered_projects:
+            self._registered_projects[project_path_str] = Path(project_path_str)
+            logger.debug(
+                f"Registered project path '{project_path_str}' for fast lookup"
+            )
 
         logger.info(f"Project '{project.project_name}' activated")
 

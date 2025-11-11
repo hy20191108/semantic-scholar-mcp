@@ -2022,6 +2022,31 @@ async def check_api_key_status() -> str:
 # ============================================================================
 
 
+def _check_active_project() -> tuple[bool, str | None]:
+    """
+    Check if a project is currently active.
+
+    Returns:
+        Tuple of (is_active, error_message)
+        - (True, None) if project is active
+        - (False, error_message) if not active
+    """
+    if research_agent is None:
+        return (
+            False,
+            "ResearchAgent not initialized. Please restart the server.",
+        )
+
+    if research_agent.get_active_project() is None:
+        return (
+            False,
+            "No project is currently active. "
+            "Please use create_project or activate_project first.",
+        )
+
+    return (True, None)
+
+
 @mcp.tool()
 @mcp_error_handler(tool_name="write_memory")
 async def write_memory(
@@ -2042,12 +2067,11 @@ async def write_memory(
     Returns:
         Success message with memory name
     """
-    if research_agent is None:
+    # Check if project is active
+    is_active, error_msg = _check_active_project()
+    if not is_active:
         return json.dumps(
-            {
-                "success": False,
-                "error": "ResearchAgent not initialized. Please restart the server.",
-            },
+            {"success": False, "error": error_msg},
             ensure_ascii=False,
         )
 
@@ -2070,12 +2094,11 @@ async def read_memory(memory_name: str) -> str:
     Returns:
         Memory content as string
     """
-    if research_agent is None:
+    # Check if project is active
+    is_active, error_msg = _check_active_project()
+    if not is_active:
         return json.dumps(
-            {
-                "success": False,
-                "error": "ResearchAgent not initialized. Please restart the server.",
-            },
+            {"success": False, "error": error_msg},
             ensure_ascii=False,
         )
 
@@ -2095,12 +2118,11 @@ async def list_memories() -> str:
     Returns:
         JSON array of memory names
     """
-    if research_agent is None:
+    # Check if project is active
+    is_active, error_msg = _check_active_project()
+    if not is_active:
         return json.dumps(
-            {
-                "success": False,
-                "error": "ResearchAgent not initialized. Please restart the server.",
-            },
+            {"success": False, "error": error_msg},
             ensure_ascii=False,
         )
 
@@ -2122,12 +2144,11 @@ async def delete_memory(memory_name: str) -> str:
     Returns:
         Success message
     """
-    if research_agent is None:
+    # Check if project is active
+    is_active, error_msg = _check_active_project()
+    if not is_active:
         return json.dumps(
-            {
-                "success": False,
-                "error": "ResearchAgent not initialized. Please restart the server.",
-            },
+            {"success": False, "error": error_msg},
             ensure_ascii=False,
         )
 
@@ -2158,12 +2179,11 @@ async def edit_memory(
     Returns:
         Success message with replacement count
     """
-    if research_agent is None:
+    # Check if project is active
+    is_active, error_msg = _check_active_project()
+    if not is_active:
         return json.dumps(
-            {
-                "success": False,
-                "error": "ResearchAgent not initialized. Please restart the server.",
-            },
+            {"success": False, "error": error_msg},
             ensure_ascii=False,
         )
 
