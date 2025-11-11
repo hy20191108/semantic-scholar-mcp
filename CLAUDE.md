@@ -207,6 +207,22 @@ Use uv for Python tooling.
 - **Security**: Local-only by default, no auth required for read-only dashboard
 - **Status**: Design complete, ready for implementation
 
+#### API Rate Limits Specification (Updated: 2025-11-11)
+- **Official Source**: https://github.com/allenai/s2-folks/blob/main/API_RELEASE_NOTES.md
+- **Authenticated Users (API Key - Free Tier)**:
+  - Rate limit: **1 RPS (1 request per second) on all endpoints**
+  - Window: Per second
+  - As of May 2024: All new API keys receive 1 RPS limit
+- **Unauthenticated Users (No API Key)**:
+  - Rate limit: **5,000 requests per 5 minutes (shared among all unauthenticated users)**
+  - Window: 5 minutes (shared pool)
+- **Daily Limits**: Not specified in official documentation (limits enforced per second or per 5-minute window)
+- **Important Requirements**:
+  - Exponential backoff strategy required (mandatory as of 2024)
+  - API keys inactive for ~60 days are automatically pruned (as of November 2024)
+- **API Key Application**: Restricted to non-free email domains since August 2024
+- **Previous Implementation Error**: Incorrectly stated "Unlimited (1 req/s)" and "No daily request limit" - corrected to reflect official documentation
+
 #### Shared Server Environment Constraints (Updated: 2025-07-19)
 - **Server Environment**: 共有開発サーバー（複数開発者が使用）
 - **Forbidden Commands**: 全体影響のあるコマンド実行禁止

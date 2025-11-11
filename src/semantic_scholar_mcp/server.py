@@ -1958,13 +1958,16 @@ async def check_api_key_status() -> str:
     config = get_config()
     api_key_configured = bool(config.semantic_scholar.api_key)
 
-    # Get API client configuration
-    # Note: Free tier API keys have 1 req/s limit (same as anonymous)
-    # Premium API keys would have higher limits (e.g., 100 req/s)
+    # Get API client configuration based on official Semantic Scholar documentation
+    # Source: https://github.com/allenai/s2-folks/blob/main/API_RELEASE_NOTES.md
+    # As of May 2024: All new API keys receive 1 RPS on all endpoints
     rate_limit_info = {
-        "requests_per_second": 1,  # Free tier and anonymous both have 1 req/s
-        "daily_limit": (
-            "Unlimited (1 req/s)" if api_key_configured else "5,000 requests"
+        "requests_per_second": 1 if api_key_configured else "Shared pool",
+        "rate_limit_window": "Per second" if api_key_configured else "5 minutes",
+        "limit_details": (
+            "1 RPS on all endpoints"
+            if api_key_configured
+            else "5,000 requests per 5 minutes (shared among all unauthenticated users)"
         ),
         "mode": ("authenticated (free tier)" if api_key_configured else "anonymous"),
     }
@@ -1986,8 +1989,8 @@ async def check_api_key_status() -> str:
         "api_key_preview": api_key_preview,
         "rate_limits": rate_limit_info,
         "benefits_with_key": [
-            "No daily request limit (unlimited requests at 1 req/s)",
-            "More stable service (authenticated requests)",
+            "Dedicated 1 RPS rate limit (not shared with other users)",
+            "More stable and predictable service",
             "Access to all endpoints",
             "Required for production applications",
         ],
