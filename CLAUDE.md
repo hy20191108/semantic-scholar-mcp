@@ -62,6 +62,13 @@ Use uv for Python tooling.
 ### Important Notes
 <!-- Add important discoveries, issues, and decisions here -->
 
+#### Dashboard Default Hidden (Updated: 2026-02-08)
+- **✅ COMPLETED**: Dashboard remains disabled by default in all environments
+- **Behavior**:
+  - Requires explicit `DASHBOARD__ENABLED=true` to show the UI
+  - Explicit configuration continues to be respected
+- **Rationale**: Keeps the UI opt-in unless intentionally enabled
+
 #### Root File Organization (Updated: 2025-11-10)
 - **✅ COMPLETED**: Cleaned up root directory for better project structure
 - **Changes**:

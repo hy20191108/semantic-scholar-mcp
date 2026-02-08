@@ -49,6 +49,9 @@ DASHBOARD__OPEN_ON_LAUNCH=true
 DASHBOARD__PORT=25000  # Default port
 ```
 
+> Note: The dashboard is disabled by default. Enable it explicitly via
+> `DASHBOARD__ENABLED=true`.
+
 ### 2. Start MCP Server
 
 ```bash
