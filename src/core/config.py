@@ -352,8 +352,6 @@ class ConfigurationManager:
             config.cache.ttl_seconds = 300  # 5 minutes
             config.rate_limit.enabled = False
             config.metrics.enabled = False
-            if "enabled" not in config.dashboard.model_fields_set:
-                config.dashboard.enabled = True
 
         elif env == Environment.TESTING:
             # Testing settings

@@ -62,12 +62,12 @@ Use uv for Python tooling.
 ### Important Notes
 <!-- Add important discoveries, issues, and decisions here -->
 
-#### Dashboard Auto-Enable in Development (Updated: 2026-02-08)
-- **✅ COMPLETED**: Dashboard now defaults to enabled in development environments
+#### Dashboard Default Hidden (Updated: 2026-02-08)
+- **✅ COMPLETED**: Dashboard remains disabled by default in all environments
 - **Behavior**:
-  - Enabled by default when running in development
-  - Respects explicit `DASHBOARD__ENABLED` configuration when set
-- **Rationale**: Ensures the monitoring UI starts without additional setup during local development
+  - Requires explicit `DASHBOARD__ENABLED=true` to show the UI
+  - Explicit configuration continues to be respected
+- **Rationale**: Keeps the UI opt-in unless intentionally enabled
 
 #### Root File Organization (Updated: 2025-11-10)
 - **✅ COMPLETED**: Cleaned up root directory for better project structure
