@@ -38,7 +38,7 @@ from core.metrics_collector import MetricsCollector
 from .agent import ResearchAgent
 from .api_client import SemanticScholarClient
 from .dashboard import DashboardAPI, DashboardStats
-from .instruction_loader import inject_yaml_instructions, load_all_instructions
+from .instruction_loader import load_all_instructions
 from .models import (
     SearchFilters,
     SearchQuery,
@@ -637,7 +637,6 @@ def with_tool_instructions(tool_name: str) -> Callable[[ToolCoroutine], ToolCoro
     return decorator
 
 
-@inject_yaml_instructions("search_papers", "paper")
 @with_tool_instructions("search_papers")
 @mcp.tool()
 @mcp_error_handler(tool_name="search_papers")
@@ -682,11 +681,6 @@ async def search_papers(
         - limit: int page size
         - has_more: bool whether more results are available
 
-    Next Steps:
-        - Review the returned papers list and identify items worth reading
-        - Request summaries or full details of papers that stand out
-        - Refine your search query or add filters if results are too broad
-        - Use pagination (offset/limit) to explore more results if needed
     """
     logger.debug_mcp(
         "Search papers requested",
@@ -747,7 +741,6 @@ async def search_papers(
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-@inject_yaml_instructions("get_paper", "paper")
 @with_tool_instructions("get_paper")
 @mcp.tool()
 @mcp_error_handler(tool_name="get_paper")
@@ -780,10 +773,6 @@ async def get_paper(
         JSON object with:
         - data: Paper (filtered by fields if specified)
 
-    Next Steps:
-        - Examine the abstract, authors, and venue to confirm relevance
-        - Request a summary of specific sections or findings
-        - Consider checking citations or references for deeper context
     """
     actual_fields = extract_field_value(fields)
 
@@ -800,7 +789,6 @@ async def get_paper(
     return json.dumps({"data": paper_dict}, ensure_ascii=False, indent=2)
 
 
-@inject_yaml_instructions("get_paper_citations", "paper")
 @with_tool_instructions("get_paper_citations")
 @mcp.tool()
 @mcp_error_handler(tool_name="get_paper_citations")
@@ -832,10 +820,6 @@ async def get_paper_citations(
         - offset: int request offset
         - limit: int page size
 
-    Next Steps:
-        - Review citing papers to understand follow-up research
-        - Ask for a comparison between key citing works
-        - Use get_paper on notable citations to inspect details
     """
     actual_limit, actual_offset = extract_pagination_params(limit, offset, 100)
 
@@ -857,7 +841,6 @@ async def get_paper_citations(
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-@inject_yaml_instructions("get_paper_references", "paper")
 @with_tool_instructions("get_paper_references")
 @mcp.tool()
 @mcp_error_handler(tool_name="get_paper_references")
@@ -886,10 +869,6 @@ async def get_paper_references(
         - offset: int request offset
         - limit: int page size
 
-    Next Steps:
-        - Scan referenced papers to map the foundational work
-        - Ask for brief summaries of the most influential references
-        - Retrieve full details for any reference with get_paper
     """
     actual_limit, actual_offset = extract_pagination_params(limit, offset, 100)
 
@@ -912,7 +891,6 @@ async def get_paper_references(
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-@inject_yaml_instructions("get_paper_authors", "paper")
 @with_tool_instructions("get_paper_authors")
 @mcp.tool()
 @mcp_error_handler(tool_name="get_paper_authors")
@@ -942,10 +920,6 @@ async def get_paper_authors(
         - limit: int page size
         - has_more: bool whether more results are available
 
-    Next Steps:
-        - Identify recurring collaborators or leading authors
-        - Ask for author profiles to evaluate expertise
-        - Follow up with get_author_papers for a selected researcher
     """
     actual_limit, actual_offset = extract_pagination_params(limit, offset, 100)
 
@@ -969,7 +943,6 @@ async def get_paper_authors(
     )
 
 
-@inject_yaml_instructions("get_author", "author")
 @with_tool_instructions("get_author")
 @mcp.tool()
 @mcp_error_handler(tool_name="get_author")
@@ -987,16 +960,11 @@ async def get_author(author_id: str) -> str:
         JSON object with:
         - data: Author
 
-    Next Steps:
-        - Review the author metrics and affiliations provided
-        - Ask for trends or notable publications in their portfolio
-        - Use get_author_papers for recent work or specific years
     """
     author = await _call_client_method("get_author", author_id=author_id)
     return json.dumps({"data": _model_to_dict(author)}, ensure_ascii=False, indent=2)
 
 
-@inject_yaml_instructions("get_author_papers", "author")
 @with_tool_instructions("get_author_papers")
 @mcp.tool()
 @mcp_error_handler(tool_name="get_author_papers")
@@ -1026,10 +994,6 @@ async def get_author_papers(
         - limit: int page size
         - has_more: bool whether more results are available
 
-    Next Steps:
-        - Scan the publication list for themes or collaborations
-        - Request summaries of standout papers for a quick brief
-        - Compare with other authors to spot overlapping research
     """
     result = await _call_client_method(
         "get_author_papers",
@@ -1051,7 +1015,6 @@ async def get_author_papers(
     )
 
 
-@inject_yaml_instructions("search_authors", "author")
 @with_tool_instructions("search_authors")
 @mcp.tool()
 @mcp_error_handler(tool_name="search_authors")
@@ -1081,10 +1044,6 @@ async def search_authors(
         - limit: int page size
         - has_more: bool whether more results are available
 
-    Next Steps:
-        - Inspect the candidate list and shortlist promising researchers
-        - Request get_author for profiles you want to explore
-        - Note emerging topics or institutions tied to each author
     """
     # Extract actual values from Field objects if needed
     actual_offset = extract_field_value(offset)
@@ -1109,7 +1068,6 @@ async def search_authors(
     )
 
 
-@inject_yaml_instructions("get_recommendations_for_paper", "prompts")
 @with_tool_instructions("get_recommendations_for_paper")
 @mcp.tool()
 @mcp_error_handler(tool_name="get_recommendations_for_paper")
@@ -1138,10 +1096,6 @@ async def get_recommendations_for_paper(
         - data: list[Paper]
         - count: int number of recommendations returned
 
-    Next Steps:
-        - Review recommended papers and note recurring concepts
-        - Ask for summaries or contrasts with the source paper
-        - Queue follow-up searches for promising recommendations
     """
     papers = await _call_client_method(
         "get_recommendations_for_paper",
@@ -1154,7 +1108,6 @@ async def get_recommendations_for_paper(
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-@inject_yaml_instructions("batch_get_papers", "paper")
 @with_tool_instructions("batch_get_papers")
 @mcp.tool()
 @mcp_error_handler(tool_name="batch_get_papers")
@@ -1181,10 +1134,6 @@ async def batch_get_papers(
         - data: list[Paper]
         - count: int number of papers returned
 
-    Next Steps:
-        - Check that each requested paper is present and complete
-        - Ask for a synthesis across the batch to spot shared themes
-        - Plan deeper dives using get_paper where more detail is needed
     """
     validate_batch_size(paper_ids, 500)
     actual_fields = extract_field_value(fields)
@@ -1199,7 +1148,6 @@ async def batch_get_papers(
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-@inject_yaml_instructions("bulk_search_papers", "paper")
 @with_tool_instructions("bulk_search_papers")
 @mcp.tool()
 @mcp_error_handler(tool_name="bulk_search_papers")
@@ -1254,10 +1202,6 @@ async def bulk_search_papers(
         - data: list[Paper]
         - count: int number of papers returned
 
-    Next Steps:
-        - Inspect aggregated hits and decide which query succeeded
-        - Ask for focused summaries of the best-performing results
-        - Iterate on the weaker queries with refined keywords
     """
     # Extract actual field value
     actual_fields = extract_field_value(fields)
@@ -1279,7 +1223,6 @@ async def bulk_search_papers(
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-@inject_yaml_instructions("search_papers_match", "paper")
 @with_tool_instructions("search_papers_match")
 @mcp.tool()
 @mcp_error_handler(tool_name="search_papers_match")
@@ -1305,10 +1248,6 @@ async def search_papers_match(
         - data: list[Paper]
         - count: int number of papers returned
 
-    Next Steps:
-        - Verify the matching titles to confirm precision
-        - Request details on the closest matches for validation
-        - Adjust the exact title or add identifiers if results are sparse
     """
     # Extract actual field value
     actual_fields = extract_field_value(fields)
@@ -1329,7 +1268,6 @@ async def search_papers_match(
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-@inject_yaml_instructions("autocomplete_query", "prompts")
 @with_tool_instructions("autocomplete_query")
 @mcp.tool()
 @mcp_error_handler(tool_name="autocomplete_query")
@@ -1351,10 +1289,6 @@ async def autocomplete_query(
         - data: list[str]
         - count: int number of suggestions
 
-    Next Steps:
-        - Use the suggestions to craft a clearer search prompt
-        - Ask for the pros and cons of the top suggested phrases
-        - Run search_papers with the selected completion
     """
     suggestions = await _call_client_method(
         "autocomplete_query",
@@ -1365,7 +1299,6 @@ async def autocomplete_query(
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-@inject_yaml_instructions("search_snippets", "prompts")
 @with_tool_instructions("search_snippets")
 @mcp.tool()
 @mcp_error_handler(tool_name="search_snippets")
@@ -1393,10 +1326,6 @@ async def search_snippets(
         - limit: int page size
         - has_more: bool whether more results are available
 
-    Next Steps:
-        - Read snippet contexts to judge relevance quickly
-        - Ask for full paper details on the most compelling snippets
-        - Consider refining keywords if noise remains high
     """
     result = await _call_client_method(
         "search_snippets",
@@ -1417,7 +1346,6 @@ async def search_snippets(
     )
 
 
-@inject_yaml_instructions("batch_get_authors", "author")
 @with_tool_instructions("batch_get_authors")
 @mcp.tool()
 @mcp_error_handler(tool_name="batch_get_authors")
@@ -1438,10 +1366,6 @@ async def batch_get_authors(
         - data: list[Author]
         - count: int number of authors returned
 
-    Next Steps:
-        - Confirm that each requested author profile is included
-        - Ask for a comparative overview across these researchers
-        - Plan next queries such as get_author_papers per person
     """
     validate_batch_size(author_ids, 1000)
     authors = await _call_client_method(
@@ -1453,7 +1377,6 @@ async def batch_get_authors(
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-@inject_yaml_instructions("get_recommendations_batch", "prompts")
 @with_tool_instructions("get_recommendations_batch")
 @mcp.tool()
 @mcp_error_handler(tool_name="get_recommendations_batch")
@@ -1479,10 +1402,6 @@ async def get_recommendations_batch(
         - data: list[Paper]
         - count: int number of recommendations returned
 
-    Next Steps:
-        - Scan recommended sets for consensus picks
-        - Ask for clusters or themes spanning the recommendations
-        - Prioritize papers for closer reading or follow-up calls
     """
     papers = await _call_client_method(
         "get_recommendations_batch",
@@ -1495,7 +1414,6 @@ async def get_recommendations_batch(
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-@inject_yaml_instructions("get_dataset_releases", "dataset")
 @with_tool_instructions("get_dataset_releases")
 @mcp.tool()
 @mcp_error_handler(tool_name="get_dataset_releases")
@@ -1511,10 +1429,6 @@ async def get_dataset_releases() -> str:
         - data: list[dict] dataset releases
         - count: int number of releases returned
 
-    Next Steps:
-        - Identify the release that matches your research needs
-        - Ask for differences between adjacent releases if unsure
-        - Fetch detailed metadata via get_dataset_info
     """
     releases = await _call_client_method("get_dataset_releases")
     # releases is a list of strings (release IDs), not objects
@@ -1522,7 +1436,6 @@ async def get_dataset_releases() -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-@inject_yaml_instructions("get_dataset_info", "dataset")
 @with_tool_instructions("get_dataset_info")
 @mcp.tool()
 @mcp_error_handler(tool_name="get_dataset_info")
@@ -1540,10 +1453,6 @@ async def get_dataset_info(release_id: str) -> str:
         JSON object with:
         - data: dict dataset metadata
 
-    Next Steps:
-        - Review dataset size, modality, and coverage carefully
-        - Ask for implications or usage tips for this dataset
-        - Proceed to get_dataset_download_links when ready
     """
     info = await _call_client_method(
         "get_dataset_info",
@@ -1552,7 +1461,6 @@ async def get_dataset_info(release_id: str) -> str:
     return json.dumps({"data": _model_to_dict(info)}, ensure_ascii=False, indent=2)
 
 
-@inject_yaml_instructions("get_dataset_download_links", "dataset")
 @with_tool_instructions("get_dataset_download_links")
 @mcp.tool()
 @mcp_error_handler(tool_name="get_dataset_download_links")
@@ -1570,10 +1478,6 @@ async def get_dataset_download_links(release_id: str, dataset_name: str) -> str:
         JSON object with:
         - data: dict download information
 
-    Next Steps:
-        - Record the download URLs and any authentication notes
-        - Ask for guidance on verifying file integrity
-        - Plan storage or processing steps before downloading
     """
     links = await _call_client_method(
         "get_dataset_download_links",
@@ -1588,7 +1492,6 @@ async def get_dataset_download_links(release_id: str, dataset_name: str) -> str:
     return json.dumps({"data": links_dict}, ensure_ascii=False, indent=2)
 
 
-@inject_yaml_instructions("get_paper_fulltext", "pdf")
 @with_tool_instructions("get_paper_fulltext")
 @mcp.tool()
 @mcp_error_handler(tool_name="get_paper_fulltext")
@@ -1683,20 +1586,6 @@ async def get_paper_fulltext(
             metadata: conversion stats
           }
 
-    Next Steps:
-        - Read the Markdown file: When available, use the Read tool with
-          the path from artifacts.markdown_path to view the converted content;
-          this path is only returned if Markdown artifacts are enabled
-        - Access chunks: Request output_mode="chunks" or "both" to populate
-          content.chunks with structured text segments for analysis
-        - Analyze findings: Ask for summaries, key concepts, or specific
-          sections from the paper
-        - Check artifacts: PDF, Markdown, and chunks are saved in
-          .semantic_scholar_mcp/artifacts/ with SHA-1 partitioned paths
-        - View images: If include_images=true, extracted images are in
-          artifacts.images_dir
-        - Leverage caching: Subsequent requests use cached artifacts unless
-          force_refresh=true is specified
     """
     app_config = _require_config()
     pdf_config = app_config.pdf_processing
@@ -1767,7 +1656,6 @@ async def get_paper_fulltext(
     return json.dumps({"data": payload}, ensure_ascii=False, indent=2)
 
 
-@inject_yaml_instructions("get_paper_with_embeddings", "paper")
 @with_tool_instructions("get_paper_with_embeddings")
 @mcp.tool()
 @mcp_error_handler(tool_name="get_paper_with_embeddings")
@@ -1795,10 +1683,6 @@ async def get_paper_with_embeddings(
         - data: Paper details with embedding vector
         - error: Error details if request failed
 
-    Next Steps:
-        - Use the embedding vector for similarity searches or clustering
-        - Ask for interpretation of key metadata linked to the vector
-        - Combine with search_papers_with_embeddings to expand the set
     """
     paper = await _call_client_method(
         "get_paper_with_embeddings",
@@ -1808,7 +1692,6 @@ async def get_paper_with_embeddings(
     return json.dumps({"data": _model_to_dict(paper)}, ensure_ascii=False, indent=2)
 
 
-@inject_yaml_instructions("search_papers_with_embeddings", "paper")
 @with_tool_instructions("search_papers_with_embeddings")
 @mcp.tool()
 @mcp_error_handler(tool_name="search_papers_with_embeddings")
@@ -1858,10 +1741,6 @@ async def search_papers_with_embeddings(
         - limit: int page size
         - has_more: bool whether more results are available
 
-    Next Steps:
-        - Check each match score to gauge semantic proximity
-        - Ask for a narrative summary of the closest matches
-        - Feed chosen IDs into get_paper for full context
     """
     filters = create_search_filters(
         publication_types=publication_types,
@@ -1892,7 +1771,6 @@ async def search_papers_with_embeddings(
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-@inject_yaml_instructions("get_incremental_dataset_updates", "dataset")
 @with_tool_instructions("get_incremental_dataset_updates")
 @mcp.tool()
 @mcp_error_handler(tool_name="get_incremental_dataset_updates")
@@ -1916,10 +1794,6 @@ async def get_incremental_dataset_updates(
         JSON object with:
         - data: dict incremental update information
 
-    Next Steps:
-        - Examine update windows to schedule data refreshes
-        - Ask for change summaries between the releases
-        - Decide whether a full or incremental download is needed
     """
     updates = await _call_client_method(
         "get_incremental_dataset_updates",
@@ -1934,7 +1808,6 @@ async def get_incremental_dataset_updates(
     return json.dumps({"data": updates_dict}, ensure_ascii=False, indent=2)
 
 
-@inject_yaml_instructions("check_api_key_status", "prompts")
 @with_tool_instructions("check_api_key_status")
 @mcp.tool()
 @mcp_error_handler(tool_name="check_api_key_status")
@@ -1949,10 +1822,6 @@ async def check_api_key_status() -> str:
         JSON object with:
         - data: API key status, configuration guidance, and rate limit info
 
-    Next Steps:
-        - Review the API key status and rate limit guidance provided
-        - Set or rotate SEMANTIC_SCHOLAR_API_KEY if configuration is missing
-        - Ask for usage recommendations or next steps after updating credentials
     """
     import json
     import os
