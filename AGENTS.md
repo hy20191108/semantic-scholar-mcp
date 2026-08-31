@@ -9,6 +9,7 @@
 - 実装は`src/`，外から確認できる期待動作は`tests/`，人向けの説明は`README.md`または`docs/`，完了履歴と時点状態はGitまたはIssueが持つ．新機能には対応するtest，bug修正には再発を検出するtestを加える．
 - APIの挙動や制限は，同梱した`docs/api-specifications/`と現行の公式資料で確認する．古いstatusや作業ログを現行仕様として使わない．
 - 共有hostでは，`docker system prune`や`docker volume prune`など，他者の資源にも影響する全体cleanupを実行しない．操作対象をこのprojectの資源へ限定する．
+- このrepositoryでpushが明示されており，remote更新の取り込みに`git rebase origin/main`が必要な場合は，追加確認なしで実行してよい．競合または未commit差分により安全に実行できない場合は，stash，reset，force pushを行わず停止する．
 
 ## MCPの契約
 
